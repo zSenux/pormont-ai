@@ -27,7 +27,7 @@ function decodeCp850(buf: Buffer) {
   for (const b of buf) s += b < 128 ? String.fromCharCode(b) : CP850_HIGH[b - 128];
   return s;
 }
-function decodeText(buf: Buffer, dos = false) {
+export function decodeText(buf: Buffer, dos = false) {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(buf).replace(/^﻿/, "");
   } catch {
@@ -47,7 +47,7 @@ export function parsePrice(raw: string | undefined | null): number | null {
 }
 
 // ---------- CSV ----------
-function splitCsv(text: string, sep: string) {
+export function splitCsv(text: string, sep: string) {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";

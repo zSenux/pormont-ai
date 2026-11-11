@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { Calendar, Camera, CheckSquare, Clock, Download, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
+import { Calendar, Camera, CheckSquare, Clock, Database, Download, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -59,6 +59,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           { href: "/belege", label: "Belege", icon: FileText },
           { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
           { href: "/pc", label: "Computer", icon: Monitor },
+          { href: "/datenuebernahme", label: "Daten­übernahme", icon: Database },
         ].map((t) => (
           <Link key={t.href} href={t.href} className="card flex flex-col items-center gap-2 p-4 text-center text-sm font-medium">
             <t.icon className="size-6 text-brand" /> {t.label}
@@ -106,6 +107,17 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           (!lex.ok || !mail.ok || !ai) && <p className="text-xs text-steel">Fehlende Verbindungen trägt ein Administrator hier ein.</p>
         )}
       </section>
+
+      {me.role === "ADMIN" && (
+        <section className="card flex flex-wrap items-center gap-3 p-5">
+          <Database className="size-5 shrink-0 text-brand" />
+          <div className="min-w-0 flex-1">
+            <h2 className="font-semibold">Datenübernahme aus dem alten Programm</h2>
+            <p className="text-sm text-steel">Export (Excel, CSV, JSON) aus dem alten ERP/Rechnungsprogramm hochladen: Kunden und Artikel nach Lexware, Projekte nach Jarvis, alte Rechnungen als Archiv.</p>
+          </div>
+          <Link href="/datenuebernahme" className="btn-secondary">Öffnen</Link>
+        </section>
+      )}
 
       <section id="telefon" className="card scroll-mt-20 space-y-3 p-5">
         <h2 className="flex items-center gap-2 font-semibold"><PhoneCall className="size-4 text-brand" /> Jarvis am Telefon</h2>

@@ -665,3 +665,55 @@ model ProjectCost {
 
   @@index([projectId])
 }
+
+/// Datenübernahme aus einem alten Programm (z. B. ERP/Rechnungsprogramm): eine hochgeladene Exportdatei
+model ErpImport {
+  id        String      @id @default(cuid())
+  fileName  String
+  /// "csv" | "xlsx" | "json"
+  format    String
+  /// Tabellen mit erkannter Art und Spaltenzuordnung (für die Anzeige)
+  tables    Json?
+  rows      Int         @default(0)
+  note      String?
+  userName  String?
+  /// Laufende Übernahme nach Lexware ("kunde" | "artikel"), sonst null – Sperre gegen Doppelklick
+  busy      String?
+  busySince DateTime?
+  createdAt DateTime    @default(now())
+  records   ErpRecord[]
+
+  @@index([createdAt])
+}
+
+/// Ein Datensatz aus dem alten Programm (Archiv, durchsuchbar). Kunden/Artikel können nach Lexware, Projekte nach Jarvis übernommen werden.
+model ErpRecord {
+  id        String    @id @default(cuid())
+  importId  String
+  import    ErpImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  /// Tabelle bzw. Blatt in der Exportdatei
+  table     String    @default("")
+  /// "kunde" | "artikel" | "rechnung" | "angebot" | "projekt" | "sonstiges"
+  kind      String
+  number    String?
+  name      String?
+  /// Kunde/Firma bei Rechnung, Angebot, Projekt
+  party     String?
+  date      DateTime?
+  dueDate   DateTime?
+  /// Betrag (brutto, wenn bekannt) bzw. Preis netto bei Artikeln
+  amount    Float?
+  status    String?
+  /// Erkannte Felder (Zuordnung) und Originalzeile
+  fields    Json
+  raw       Json
+  search    String
+  /// Übernommen: Lexware-ID (Kontakt/Artikel) bzw. Projekt-ID in Jarvis
+  lexId     String?
+  projectId String?
+  error     String?
+  createdAt DateTime  @default(now())
+
+  @@index([importId, kind])
+  @@index([kind, date])
+}

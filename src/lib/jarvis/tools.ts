@@ -15,6 +15,7 @@ import { TEAM_TOOLS, TEAM_TOOL_NAMES, runTeamTool } from "./team-tools";
 import { SUPPLIER_TOOLS, SUPPLIER_TOOL_NAMES, runSupplierTool } from "./supplier-tools";
 import { STOCK_TOOLS, STOCK_TOOL_NAMES, runStockTool } from "./stock-tools";
 import { fmtQty, lowStock } from "@/lib/stock";
+import { ERP_TOOLS, ERP_TOOL_NAMES, runErpTool } from "./erp-tools";
 
 // Werkzeuge von Jarvis. Lesen läuft sofort; alles, was in Lexware schreibt, wird nur als Freigabe-Karte vorgeschlagen.
 // Interne Aufgaben/Gedächtnis darf Jarvis direkt ändern (harmlos, sichtbar).
@@ -147,6 +148,7 @@ export const TOOLS: Def[] = [
   ...TEAM_TOOLS,
   ...SUPPLIER_TOOLS,
   ...STOCK_TOOLS,
+  ...ERP_TOOLS,
 ];
 
 const STATUS_MAP: Record<string, string | undefined> = { offen: "open", ueberfaellig: "overdue", bezahlt: "paid,paidoff", entwurf: "draft", angenommen: "accepted", abgelehnt: "rejected", alle: undefined };
@@ -247,6 +249,7 @@ export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promi
   if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
   if (SUPPLIER_TOOL_NAMES.has(name)) return runSupplierTool(name, i, ctx);
   if (STOCK_TOOL_NAMES.has(name)) return runStockTool(name, i, ctx);
+  if (ERP_TOOL_NAMES.has(name)) return runErpTool(name, i).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   if (TEAM_TOOL_NAMES.has(name)) return runTeamTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   if (WORK_TOOL_NAMES.has(name)) return runWorkTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   if (name === "am_pc") return amPc(String(i.auftrag ?? ""), ctx);
