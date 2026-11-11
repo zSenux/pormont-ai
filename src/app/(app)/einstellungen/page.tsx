@@ -1,12 +1,14 @@
 import Link from "next/link";
-import { Calendar, Camera, CheckSquare, Clock, Download, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, Receipt, Target } from "lucide-react";
+import { headers } from "next/headers";
+import { Calendar, Camera, CheckSquare, Clock, Download, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDateTime } from "@/lib/berlin";
 import { lexwareConfigured } from "@/lib/lexware/client";
 import { profile } from "@/lib/lexware/api";
-import { logout, logoutEverywhere } from "@/app/actions";
+import { logout, logoutEverywhere, savePhoneAccess } from "@/app/actions";
+import { StateForm } from "@/components/state-form";
 import { PushToggle } from "@/components/pwa";
 import { AddUserForm, DeleteButton, PasswordForm } from "./forms";
 import { ConnectionsForm } from "./connections";
@@ -35,7 +37,10 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
     db.memory.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
     db.pushSubscription.count({ where: { userId: me.id } }),
   ]);
+  const myPhone = await db.user.findUniqueOrThrow({ where: { id: me.id }, select: { phone: true, phonePinHash: true } });
   const ai = Boolean(process.env.ANTHROPIC_API_KEY);
+  const h = await headers();
+  const origin = process.env.PUBLIC_URL?.replace(/\/$/, "") || `${h.get("x-forwarded-proto")?.split(",")[0] || "https"}://${h.get("x-forwarded-host") || h.get("host")}`;
 
   return (
     <main className="mx-auto max-w-3xl space-y-5 px-4 py-6 md:py-10">
@@ -45,6 +50,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           { href: "/stunden", label: "Stunden", icon: Clock },
           { href: "/spesen", label: "Spesen", icon: Receipt },
           { href: "/akquise", label: "Akquise", icon: Target },
+          { href: "/lieferanten", label: "Lieferanten", icon: Truck },
           { href: "/projekte", label: "Projekte", icon: HardHat },
           { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
           { href: "/kalender", label: "Kalender", icon: Calendar },
@@ -72,6 +78,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${lex.ok ? "bg-ok" : "bg-bad"}`} /> Lexware Office: {lex.text}</p>
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${mail.ok ? "bg-ok" : "bg-bad"}`} /> E-Mail-Postfach: {mail.text}</p>
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${ai ? "bg-ok" : "bg-bad"}`} /> KI (Claude): {ai ? "bereit" : "Schlüssel fehlt"}</p>
+        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${process.env.TWILIO_AUTH_TOKEN ? "bg-ok" : "bg-line"}`} /> Telefon-Jarvis: {process.env.TWILIO_AUTH_TOKEN ? `bereit${process.env.TWILIO_NUMBER ? ` (${process.env.TWILIO_NUMBER})` : ""}` : "nicht eingerichtet (optional)"}</p>
         {me.role === "ADMIN" ? (
           <details className="border-t border-line pt-4" open={Boolean(willkommen) || !lex.ok || !mail.ok || !ai}>
             <summary className="cursor-pointer text-sm font-medium text-brand">Schlüssel und Postfach eintragen</summary>
@@ -88,11 +95,34 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
                 imapPort={settingState("MAIL_IMAP_PORT")}
                 smtpHost={settingState("MAIL_SMTP_HOST")}
                 smtpPort={settingState("MAIL_SMTP_PORT")}
+                twilioToken={settingState("TWILIO_AUTH_TOKEN")}
+                twilioNumber={settingState("TWILIO_NUMBER")}
+                webhookUrl={`${origin}/api/telefon/anruf`}
               />
             </div>
           </details>
         ) : (
           (!lex.ok || !mail.ok || !ai) && <p className="text-xs text-steel">Fehlende Verbindungen trägt ein Administrator hier ein.</p>
+        )}
+      </section>
+
+      <section id="telefon" className="card scroll-mt-20 space-y-3 p-5">
+        <h2 className="flex items-center gap-2 font-semibold"><PhoneCall className="size-4 text-brand" /> Jarvis am Telefon</h2>
+        {process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_NUMBER ? (
+          <p className="text-sm">Ruf an: <a href={`tel:${process.env.TWILIO_NUMBER.replace(/[^\d+]/g, "")}`} className="font-semibold text-brand">{process.env.TWILIO_NUMBER}</a> – Jarvis erkennt deine Handynummer, fragt nach der PIN und dann sprichst du ganz normal mit ihm. Freigaben (Mails, Lexware) bestätigst du danach in der App.</p>
+        ) : (
+          <p className="text-sm text-steel">Noch keine Jarvis-Telefonnummer eingerichtet{me.role === "ADMIN" ? " – oben unter Verbindungen „Telefon-Jarvis (Twilio)“ eintragen" : " – das macht ein Administrator"}. Ohne Nummer geht der Gesprächsmodus in der App (Mikrofon im Jarvis-Chat).</p>
+        )}
+        <StateForm action={savePhoneAccess} submit="Speichern" reset>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input name="phone" defaultValue={myPhone.phone ?? ""} required placeholder="Deine Handynummer, z. B. 0171 1234567" inputMode="tel" className="input" aria-label="Handynummer" />
+            <input name="pin" type="password" inputMode="numeric" autoComplete="new-password" pattern="\d{6,8}" placeholder={myPhone.phonePinHash ? "PIN gespeichert – leer = unverändert" : "Telefon-PIN (6–8 Ziffern)"} className="input" aria-label="Telefon-PIN" />
+          </div>
+        </StateForm>
+        {myPhone.phone && (
+          <form action={async () => { "use server"; const f = new FormData(); f.set("remove", "1"); await savePhoneAccess(undefined, f); }}>
+            <button className="text-xs font-medium text-bad hover:underline">Telefonzugang entfernen</button>
+          </form>
         )}
       </section>
 

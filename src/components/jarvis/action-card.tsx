@@ -6,7 +6,7 @@ import { approveAction, rejectAction } from "@/app/actions";
 
 export type ActionView = { id: string; kind: string; summary: string; status: "PENDING" | "DONE" | "DECLINED" | "ERROR"; result?: string | null; links?: { label: string; url: string }[] | null };
 
-const TITLE: Record<string, string> = { kunde_anlegen: "Kunde anlegen", rechnung_erstellen: "Rechnung erstellen", angebot_erstellen: "Angebot erstellen" };
+const TITLE: Record<string, string> = { kunde_anlegen: "Kunde anlegen", rechnung_erstellen: "Rechnung erstellen", angebot_erstellen: "Angebot erstellen", mail_senden: "E-Mail senden", beleg_hochladen: "Beleg an Lexware", preisanfrage_senden: "Preisanfrage senden" };
 
 /** Freigabe-Karte: erst dieser Klick schreibt in Lexware */
 export function ActionCard({ action, onDone }: { action: ActionView; onDone?: (a: ActionView) => void }) {

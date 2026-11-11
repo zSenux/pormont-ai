@@ -8,16 +8,18 @@ import { mailInput } from "@/lib/mail/input";
 import { z } from "zod";
 import { receiptSummary, receiptData, uploadReceipt } from "@/lib/receipts";
 import { LEXWARE_APP } from "@/lib/lexware/client";
+import { sendRequest, SupplierError } from "@/lib/suppliers";
 import { contactBody, contactInput, invoiceBody, quotationBody, totals, voucherInput } from "@/lib/lexware/payloads";
 
 // Schreibende Schritte in Lexware laufen NIE direkt aus dem Chat: Jarvis legt eine PendingAction an,
 // das Team sieht eine Freigabe-Karte und erst „Freigeben“ führt sie aus (atomar, nur einmal).
 
-export const ACTION_KINDS = ["kunde_anlegen", "rechnung_erstellen", "angebot_erstellen", "mail_senden", "beleg_hochladen"] as const;
+export const ACTION_KINDS = ["kunde_anlegen", "rechnung_erstellen", "angebot_erstellen", "mail_senden", "beleg_hochladen", "preisanfrage_senden"] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
 export type ActionLink = { label: string; url: string };
 
+const anfrageInput = z.object({ requestId: z.cuid(), an: z.string().max(300), betreff: z.string().max(300), text: z.string().max(20000) });
 const belegInput = z.object({ fileId: z.string().min(1).max(40), text: z.string().max(300) });
 
 /** Für die Freigabe-Karte: Belegdaten aus der Datenbank lesen (nie vom Modell übernehmen) */
@@ -40,6 +42,10 @@ export function describe(kind: ActionKind, input: unknown): { summary: string; p
   if (kind === "mail_senden") {
     const m = mailInput.parse(input);
     return { summary: `E-Mail senden an ${m.an}${m.cc ? ` (CC ${m.cc})` : ""}\nBetreff: ${m.betreff}\n\n${m.text}`, payload: m };
+  }
+  if (kind === "preisanfrage_senden") {
+    const r = anfrageInput.parse(input);
+    return { summary: `Preisanfrage senden an ${r.an}\nBetreff: ${r.betreff}\n\n${r.text}`, payload: { requestId: r.requestId } };
   }
   if (kind === "beleg_hochladen") {
     const b = belegInput.parse(input);
@@ -93,6 +99,11 @@ export async function executeAction(id: string, userId: string) {
       await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, inReplyTo: m.antwortAuf ?? null, references: m.referenzen });
       result = `E-Mail an ${m.an} gesendet.`;
       links = [{ label: "Postfach", url: "/mail" }];
+    } else if (a.kind === "preisanfrage_senden") {
+      const { requestId } = z.object({ requestId: z.cuid() }).parse(a.payload);
+      const r = await sendRequest(requestId);
+      result = `Preisanfrage an ${r.supplier} (${r.to}) gesendet.`;
+      links = [{ label: "Anfrage", url: `/lieferanten/anfrage/${requestId}` }];
     } else if (a.kind === "beleg_hochladen") {
       const { fileId } = z.object({ fileId: z.string() }).parse(a.payload);
       await uploadReceipt(fileId);
@@ -103,7 +114,7 @@ export async function executeAction(id: string, userId: string) {
     await appendNote(a.chatId, `✓ Freigegeben und erledigt: ${result} ${links.map((l) => `[${l.label}](${l.url})`).join(" · ")}`);
     return { ok: true as const, result, links };
   } catch (e) {
-    const msg = e instanceof LexwareError || e instanceof MailError ? e.message : e instanceof Error ? e.message : "Unbekannter Fehler.";
+    const msg = e instanceof LexwareError || e instanceof MailError || e instanceof SupplierError ? e.message : e instanceof Error ? e.message : "Unbekannter Fehler.";
     console.error("[aktion]", a.kind, e);
     await db.pendingAction.update({ where: { id }, data: { status: "ERROR", result: msg } });
     await appendNote(a.chatId, `✗ Die freigegebene Aktion ist fehlgeschlagen: ${msg}`);

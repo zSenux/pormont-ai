@@ -8,9 +8,9 @@ import { db } from "@/lib/db";
 // gespiegelt – der übrige Code liest weiter process.env. Echte Umgebungsvariablen haben immer Vorrang.
 // AUTH_SECRET und die VAPID-Schlüssel erzeugt Jarvis beim ersten Start selbst.
 
-export const EDITABLE = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PROVIDER", "MAIL_USER", "MAIL_PASSWORD", "MAIL_FROM_NAME", "MAIL_IMAP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_HOST", "MAIL_SMTP_PORT"] as const;
+export const EDITABLE = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PROVIDER", "MAIL_USER", "MAIL_PASSWORD", "MAIL_FROM_NAME", "MAIL_IMAP_HOST", "MAIL_IMAP_PORT", "MAIL_SMTP_HOST", "MAIL_SMTP_PORT", "TWILIO_AUTH_TOKEN", "TWILIO_NUMBER"] as const;
 export type EditableKey = (typeof EDITABLE)[number];
-const SECRET = new Set<string>(["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PASSWORD", "AUTH_SECRET", "VAPID_PRIVATE_KEY", "SETUP_CODE"]);
+const SECRET = new Set<string>(["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PASSWORD", "TWILIO_AUTH_TOKEN", "AUTH_SECRET", "VAPID_PRIVATE_KEY", "SETUP_CODE"]);
 const AUTO = ["AUTH_SECRET", "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "SETUP_CODE"] as const;
 
 type G = { __pmEnvKeys?: Set<string>; __pmSettingsLoaded?: Promise<void> };
