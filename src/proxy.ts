@@ -17,5 +17,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|manifest.webmanifest|sw.js|offline.html|_next/static|_next/image|favicon.png|logo.png|logo-weiss.png|icon-192.png|icon-512.png|icon-maskable.png|apple-icon.png|api/health|kalender-abo/).*)"],
+  matcher: ["/((?!login|manifest.webmanifest|sw.js|offline.html|_next/static|_next/image|favicon.png|logo.png|logo-weiss.png|logo.svg|logo-weiss.svg|icon-192.png|icon-512.png|icon-maskable.png|apple-icon.png|api/health|kalender-abo/).*)"],
 };
