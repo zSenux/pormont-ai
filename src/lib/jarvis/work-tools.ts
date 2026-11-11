@@ -256,7 +256,7 @@ export async function runWorkTool(name: string, i: Record<string, unknown>, ctx:
       const byProject = new Map<string, number>();
       const byUser = new Map<string, number>();
       for (const r of rows) {
-        byProject.set(r.project.name, (byProject.get(r.project.name) ?? 0) + r.minutes);
+        { const pn = r.project?.name ?? "Ohne Projekt"; byProject.set(pn, (byProject.get(pn) ?? 0) + r.minutes); }
         byUser.set(r.user.name, (byUser.get(r.user.name) ?? 0) + r.minutes);
       }
       const sum = rows.reduce((s, r) => s + r.minutes, 0);

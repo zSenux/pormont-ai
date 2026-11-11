@@ -127,7 +127,7 @@ export function InstallHint() {
   }, []);
   if (!show) return null;
   return (
-    <div className="mx-auto mt-3 max-w-6xl px-4">
+    <div className="mx-auto mt-3 max-w-6xl px-4 print:hidden">
       <div className="card flex items-start gap-3 px-4 py-3 text-sm">
         <Share className="mt-0.5 size-4 shrink-0 text-brand" />
         <p className="flex-1 text-steel">

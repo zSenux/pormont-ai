@@ -83,6 +83,7 @@ const optional = z.string().max(2000).optional();
 const connectionInput = z.object({
   ANTHROPIC_API_KEY: optional,
   LEXWARE_API_KEY: optional,
+  GOOGLE_PLACES_API_KEY: optional,
   MAIL_PROVIDER: z.enum(["strato", "gmx", "ionos", "custom"]).optional(),
   MAIL_USER: z.union([z.literal(""), z.email("Bitte eine gültige E-Mail-Adresse für das Postfach eingeben.")]).optional(),
   MAIL_PASSWORD: optional,
@@ -104,7 +105,7 @@ export async function saveConnections(_prev: { ok?: string; error?: string } | u
     values.MAIL_PROVIDER = MAIL_PROVIDER;
     if (MAIL_PROVIDER !== "custom") Object.assign(values, { MAIL_IMAP_HOST: null, MAIL_IMAP_PORT: null, MAIL_SMTP_HOST: null, MAIL_SMTP_PORT: null });
   }
-  const removable = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "MAIL_PASSWORD"] as const;
+  const removable = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PASSWORD"] as const;
   for (const k of removable) if (clear === k) values[k] = null;
   if (clear === "MAIL") Object.assign(values, { MAIL_USER: null, MAIL_PASSWORD: null });
   await saveSettings(values);

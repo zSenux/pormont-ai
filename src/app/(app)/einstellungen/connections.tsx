@@ -8,6 +8,7 @@ type State = { set: boolean; source: "env" | "app" | null; value: string | null 
 export type ConnectionProps = {
   anthropic: State;
   lexware: State;
+  places: State;
   mailProvider: State;
   mailUser: State;
   mailPassword: State;
@@ -93,6 +94,17 @@ export function ConnectionsForm(p: ConnectionProps) {
           state={p.anthropic}
           placeholder="sk-ant-…"
           help={<>Unter <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" className="font-medium text-brand">console.anthropic.com → API Keys</a> erzeugen. Abgerechnet wird nach Nutzung.</>}
+        />
+      </fieldset>
+
+      <fieldset className="space-y-4 border-t border-line pt-5">
+        <legend className="mb-2 flex items-center gap-2 text-sm font-semibold"><KeyRound className="size-4 text-brand" /> Google (Neukunden-Akquise)</legend>
+        <SecretField
+          name="GOOGLE_PLACES_API_KEY"
+          label="Google-Places-API-Schlüssel"
+          state={p.places}
+          placeholder="AIza…"
+          help={<>In der <a href="https://console.cloud.google.com/apis/library/places.googleapis.com" target="_blank" rel="noreferrer" className="font-medium text-brand">Google Cloud Console</a> „Places API (New)“ aktivieren und einen Schlüssel erzeugen. Eine Suche kostet ca. 3–4 Cent.</>}
         />
       </fieldset>
 
