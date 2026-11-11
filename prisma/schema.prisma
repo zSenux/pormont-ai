@@ -33,6 +33,10 @@ model User {
   times    TimeEntry[]
   pcs      PcDevice[]
   expenses Expense[]          @relation("ExpenseUser")
+
+  /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt)
+  phone        String?   @unique
+  phonePinHash String?
 }
 
 /// Unterhaltung mit Jarvis – Verlauf im Claude-Format (nur anhängen, nie umschreiben)
@@ -195,6 +199,7 @@ model Project {
   events   Event[]
   files    StoredFile[]
   expenses Expense[]
+  requests SupplierRequest[]
 
   @@index([status])
 }
@@ -446,4 +451,139 @@ model PcJob {
 
   @@index([deviceId, status])
   @@index([userId, createdAt])
+}
+
+// ---------- Lieferanten, Preisanfragen, Kataloge ----------
+
+enum SupplierKind {
+  STAHL
+  GROSSHANDEL
+  VERZINKEREI
+  SCHLOSSERTEILE
+  SONSTIGE
+}
+
+/// Lieferant (Stahlhandel, Verzinkerei, Schlosserbedarf …)
+model Supplier {
+  id          String       @id @default(cuid())
+  name        String
+  kind        SupplierKind @default(SONSTIGE)
+  contactName String?
+  email       String?
+  phone       String?
+  website     String?
+  street      String?
+  postalCode  String?
+  city        String?
+  /// Unsere Kundennummer beim Lieferanten
+  customerNo  String?
+  notes       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  requests SupplierRequest[]
+  items    CatalogItem[]
+  imports  CatalogImport[]
+}
+
+enum SupplierRequestStatus {
+  ENTWURF
+  WIRD_GESENDET
+  GESENDET
+  ANGEBOT
+  BESTELLT
+  ABGESAGT
+}
+
+/// Preisanfrage / Kostenvoranschlag an einen Lieferanten (Mail geht erst nach Klick bzw. Freigabe raus)
+model SupplierRequest {
+  id          String                @id @default(cuid())
+  supplierId  String
+  supplier    Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// Positionen [{ menge, einheit, text }]
+  positions   Json                  @default("[]")
+  subject     String
+  text        String
+  /// Antwort gewünscht bis
+  dueAt       DateTime?
+  status      SupplierRequestStatus @default(ENTWURF)
+  sentAt      DateTime?
+  sentTo      String?
+  /// Angebot des Lieferanten (netto, Euro)
+  offerAmount Float?
+  offerNote   String?
+  error       String?
+  createdById String?
+  createdBy   String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([status, createdAt])
+  @@index([supplierId, createdAt])
+}
+
+/// Katalog-Artikel eines Lieferanten (aus CSV/DATANORM/PDF-Preisliste importiert)
+model CatalogItem {
+  id          String   @id @default(cuid())
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  articleNo   String
+  name        String
+  description String?
+  unit        String?
+  /// Preis netto in Euro je Preiseinheit
+  price       Float?
+  /// Preis gilt für so viele Einheiten (z. B. 100)
+  priceUnit   Int      @default(1)
+  /// Listenpreis (true) oder Nettopreis (false)
+  listPrice   Boolean  @default(true)
+  group       String?
+  ean         String?
+  importId    String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([supplierId, articleNo])
+  @@index([supplierId, name])
+}
+
+/// Protokoll eines Katalog-Imports
+model CatalogImport {
+  id         String   @id @default(cuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  fileName   String
+  format     String
+  /// "laeuft" | "fertig" | "fehler"
+  status     String   @default("fertig")
+  created    Int      @default(0)
+  updated    Int      @default(0)
+  skipped    Int      @default(0)
+  note       String?
+  userName   String?
+  createdAt  DateTime @default(now())
+
+  @@index([supplierId, createdAt])
+}
+
+/// Telefon-Jarvis: ein Anruf (Twilio) – Gesprächsverlauf liegt im Chat
+model PhoneCall {
+  id        String   @id @default(cuid())
+  callSid   String   @unique
+  fromNo    String
+  userId    String?
+  chatId    String?
+  /// PIN-Fehlversuche
+  pinTries  Int      @default(0)
+  verified  Boolean  @default(false)
+  /// "idle" | "busy" | "ready"
+  state     String   @default("idle")
+  /// Fertige Antwort zum Vorlesen
+  reply     String?
+  turns     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fromNo, createdAt])
 }

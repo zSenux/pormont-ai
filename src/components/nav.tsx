@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target } from "lucide-react";
+import { Calendar, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck } from "lucide-react";
 import { clsx } from "clsx";
 
 const DESKTOP = [
@@ -14,6 +14,7 @@ const DESKTOP = [
   { href: "/stunden", label: "Stunden", icon: Clock },
   { href: "/spesen", label: "Spesen", icon: Receipt },
   { href: "/akquise", label: "Akquise", icon: Target },
+  { href: "/lieferanten", label: "Lieferanten", icon: Truck },
   { href: "/belege", label: "Belege", icon: FileText },
   { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
   { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
@@ -27,7 +28,7 @@ const MOBILE = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/stunden", "/spesen", "/akquise", "/belege", "/dokumente", "/aufgaben", "/pc"] },
+  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/stunden", "/spesen", "/akquise", "/lieferanten", "/belege", "/dokumente", "/aufgaben", "/pc"] },
 ];
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
@@ -45,7 +46,7 @@ export function TopNav({ name }: { name: string }) {
           {DESKTOP.map((i) => (
             <Link key={i.href} href={i.href} title={i.label} className={clsx("flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
               <i.icon className="size-4" />
-              {/* 13 Bereiche: Beschriftung nur am aktiven Punkt (sonst Tooltip), damit die Leiste nicht überläuft */}
+              {/* 14 Bereiche: Beschriftung nur am aktiven Punkt (sonst Tooltip), damit die Leiste nicht überläuft */}
               <span className={i.href !== "/einstellungen" && active(path, i.href) ? "hidden lg:inline" : "sr-only"}>{i.label}</span>
             </Link>
           ))}

@@ -17,6 +17,9 @@ export type ConnectionProps = {
   imapPort: State;
   smtpHost: State;
   smtpPort: State;
+  twilioToken: State;
+  twilioNumber: State;
+  webhookUrl: string;
 };
 
 function Msg({ s }: { s?: { ok?: string; error?: string } }) {
@@ -105,6 +108,22 @@ export function ConnectionsForm(p: ConnectionProps) {
           state={p.places}
           placeholder="AIza…"
           help={<>In der <a href="https://console.cloud.google.com/apis/library/places.googleapis.com" target="_blank" rel="noreferrer" className="font-medium text-brand">Google Cloud Console</a> „Places API (New)“ aktivieren und einen Schlüssel erzeugen. Eine Suche kostet ca. 3–4 Cent.</>}
+        />
+      </fieldset>
+
+      <fieldset className="space-y-4 border-t border-line pt-5">
+        <legend className="mb-2 flex items-center gap-2 text-sm font-semibold"><KeyRound className="size-4 text-brand" /> Telefon-Jarvis (Twilio)</legend>
+        <div>
+          <label className="label" htmlFor="TWILIO_NUMBER">Jarvis-Telefonnummer</label>
+          <input id="TWILIO_NUMBER" name="TWILIO_NUMBER" disabled={p.twilioNumber.source === "env"} defaultValue={p.twilioNumber.value ?? ""} placeholder="+49 621 …" className="input" />
+          <p className="mt-1 text-xs text-steel">Die bei Twilio gekaufte Nummer – wird dem Team angezeigt.</p>
+        </div>
+        <SecretField
+          name="TWILIO_AUTH_TOKEN"
+          label="Twilio Auth Token"
+          state={p.twilioToken}
+          placeholder="Auth Token aus der Twilio Console"
+          help={<>In der <a href="https://console.twilio.com" target="_blank" rel="noreferrer" className="font-medium text-brand">Twilio Console</a> unter „Account Info“. Bei der Nummer als Webhook „A call comes in“ eintragen: <code className="break-all">{p.webhookUrl}</code> (POST).</>}
         />
       </fieldset>
 

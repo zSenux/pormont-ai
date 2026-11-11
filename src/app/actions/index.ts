@@ -12,6 +12,7 @@ import { sendPush } from "@/lib/push";
 import { berlinDateTime } from "@/lib/berlin";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { clearSetupCode, saveSettings } from "@/lib/settings";
+import { normalizePhone } from "@/lib/phone";
 
 // ---------- Anmeldung ----------
 
@@ -92,6 +93,8 @@ const connectionInput = z.object({
   MAIL_IMAP_PORT: z.union([z.literal(""), z.string().regex(/^\d{2,5}$/)]).optional(),
   MAIL_SMTP_HOST: z.string().max(200).optional(),
   MAIL_SMTP_PORT: z.union([z.literal(""), z.string().regex(/^\d{2,5}$/)]).optional(),
+  TWILIO_AUTH_TOKEN: optional,
+  TWILIO_NUMBER: z.union([z.literal(""), z.string().trim().regex(/^\+?[\d ()/-]{6,20}$/, "Bitte die Twilio-Nummer im Format +49 … eingeben.")]).optional(),
   clear: z.string().optional(),
 });
 
@@ -105,7 +108,7 @@ export async function saveConnections(_prev: { ok?: string; error?: string } | u
     values.MAIL_PROVIDER = MAIL_PROVIDER;
     if (MAIL_PROVIDER !== "custom") Object.assign(values, { MAIL_IMAP_HOST: null, MAIL_IMAP_PORT: null, MAIL_SMTP_HOST: null, MAIL_SMTP_PORT: null });
   }
-  const removable = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PASSWORD"] as const;
+  const removable = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PASSWORD", "TWILIO_AUTH_TOKEN"] as const;
   for (const k of removable) if (clear === k) values[k] = null;
   if (clear === "MAIL") Object.assign(values, { MAIL_USER: null, MAIL_PASSWORD: null });
   await saveSettings(values);
@@ -134,6 +137,29 @@ export async function changePassword(_prev: { ok?: string; error?: string } | un
   const updated = await db.user.update({ where: { id: u.id }, data: { passwordHash: await hashPassword(p.data.neu), sessionVersion: { increment: 1 } } });
   await startSession(u.id, updated.sessionVersion);
   return { ok: "Passwort geändert. Andere Geräte wurden abgemeldet." };
+}
+
+// ---------- Telefon-Jarvis (eigene Nummer + PIN) ----------
+
+export async function savePhoneAccess(_prev: { ok?: string; error?: string } | undefined, form: FormData): Promise<{ ok?: string; error?: string }> {
+  const u = await requireUser();
+  if (form.get("remove") === "1") {
+    await db.user.update({ where: { id: u.id }, data: { phone: null, phonePinHash: null } });
+    revalidatePath("/einstellungen");
+    return { ok: "Telefonzugang entfernt." };
+  }
+  const p = z.object({ phone: z.string().trim().min(6).max(30), pin: z.union([z.literal(""), z.string().regex(/^\d{6,8}$/, "PIN: 6 bis 8 Ziffern.")]) }).safeParse({ phone: form.get("phone") ?? "", pin: form.get("pin") ?? "" });
+  if (!p.success) return { error: p.error.issues[0]?.message ?? "Eingabe prüfen." };
+  const phone = normalizePhone(p.data.phone);
+  if (!phone) return { error: "Bitte eine gültige Handynummer eingeben, z. B. 0171 1234567." };
+  if (/^(\d)\1+$/.test(p.data.pin) || "0123456789".includes(p.data.pin) || "9876543210".includes(p.data.pin)) if (p.data.pin) return { error: "Bitte keine einfache PIN wie 111111 oder 123456." };
+  const row = await db.user.findUniqueOrThrow({ where: { id: u.id }, select: { phonePinHash: true } });
+  if (!p.data.pin && !row.phonePinHash) return { error: "Bitte eine PIN festlegen." };
+  const other = await db.user.findFirst({ where: { phone, NOT: { id: u.id } }, select: { id: true } });
+  if (other) return { error: "Diese Nummer gehört schon zu einem anderen Benutzer." };
+  await db.user.update({ where: { id: u.id }, data: { phone, ...(p.data.pin ? { phonePinHash: await hashPassword(p.data.pin) } : {}) } });
+  revalidatePath("/einstellungen");
+  return { ok: `Gespeichert. Jarvis erkennt dich an ${phone}.` };
 }
 
 // ---------- Team (nur Administratoren) ----------
