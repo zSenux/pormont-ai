@@ -12,7 +12,7 @@ export type MailFull = MailSummary & { to: string; cc: string; text: string; mes
 
 function cfg(): MailConfig {
   const c = mailConfig();
-  if (!c) throw new MailError("Das Postfach ist noch nicht verbunden (MAIL_USER/MAIL_PASSWORD fehlen).");
+  if (!c) throw new MailError("Das Postfach ist noch nicht verbunden – unter Einstellungen → Verbindungen eintragen.");
   return c;
 }
 
@@ -173,7 +173,7 @@ export async function saveDraft(m: OutgoingMail): Promise<{ folder: string }> {
 /** Verbindungstest für die Einstellungen */
 export async function mailStatus(): Promise<{ ok: boolean; text: string }> {
   const c = mailConfig();
-  if (!c) return { ok: false, text: "Nicht verbunden – MAIL_USER/MAIL_PASSWORD fehlen." };
+  if (!c) return { ok: false, text: "Nicht verbunden – Postfach unter Verbindungen eintragen." };
   try {
     const unread = await withImap(async (imap) => ((await imap.status("INBOX", { unseen: true })) || { unseen: 0 }).unseen ?? 0);
     return { ok: true, text: `${c.user} (${c.provider}) · ${unread} ungelesen` };

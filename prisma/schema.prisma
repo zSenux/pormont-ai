@@ -125,6 +125,13 @@ model JobState {
   updatedAt DateTime @updatedAt
 }
 
+/// Einstellungen aus der Oberfläche (Schlüssel, Postfach). Geheime Werte AES-256-GCM-verschlüsselt (src/lib/settings.ts)
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 /// Kosten der KI-Aufrufe (Hundertstel-Cent in USD)
 model ApiUsage {
   id        String   @id @default(cuid())

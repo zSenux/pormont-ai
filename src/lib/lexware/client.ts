@@ -66,7 +66,7 @@ type Opts = { method?: "GET" | "POST" | "PUT"; query?: Record<string, string | n
 
 async function raw(path: string, opts: Opts = {}): Promise<Response> {
   const key = process.env.LEXWARE_API_KEY;
-  if (!key) throw new LexwareError("Lexware ist noch nicht verbunden (LEXWARE_API_KEY fehlt).");
+  if (!key) throw new LexwareError("Lexware ist noch nicht verbunden – API-Schlüssel unter Einstellungen → Verbindungen eintragen.");
   const url = new URL(path, LEXWARE_API);
   for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
   const doFetch = () =>
@@ -109,7 +109,7 @@ export async function lexFile(path: string) {
 /** Datei hochladen (multipart), z. B. Beleg nach /v1/files mit type=voucher */
 export async function lexUpload<T>(path: string, form: FormData): Promise<T> {
   const key = process.env.LEXWARE_API_KEY;
-  if (!key) throw new LexwareError("Lexware ist noch nicht verbunden (LEXWARE_API_KEY fehlt).");
+  if (!key) throw new LexwareError("Lexware ist noch nicht verbunden – API-Schlüssel unter Einstellungen → Verbindungen eintragen.");
   const url = new URL(path, LEXWARE_API);
   const send = () => throttle(() => fetch(url, { method: "POST", headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, body: form, signal: AbortSignal.timeout(60_000), cache: "no-store" }));
   let res = await send();

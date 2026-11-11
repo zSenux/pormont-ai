@@ -291,7 +291,7 @@ export async function runWorkTool(name: string, i: Record<string, unknown>, ctx:
     }
 
     case "beleg_hochladen": {
-      if (!lexwareConfigured()) return "Lexware ist noch nicht verbunden (LEXWARE_API_KEY fehlt).";
+      if (!lexwareConfigured()) return "Lexware ist noch nicht verbunden – ein Administrator trägt den API-Schlüssel unter Einstellungen → Verbindungen ein.";
       const input = await receiptActionInput(id.parse(i.id));
       const a = await proposeAction(ctx.chatId, ctx.userId, "beleg_hochladen", input);
       ctx.proposed.push(a.id);

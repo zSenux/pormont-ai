@@ -10,6 +10,8 @@ import { endSession, requireAdmin, requireUser, startSession } from "@/lib/auth/
 import { declineAction, executeAction } from "@/lib/jarvis/actions";
 import { sendPush } from "@/lib/push";
 import { berlinDateTime } from "@/lib/berlin";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { clearSetupCode, saveSettings } from "@/lib/settings";
 
 // ---------- Anmeldung ----------
 
@@ -42,6 +44,72 @@ export async function login(_prev: { error?: string } | undefined, form: FormDat
   await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   await startSession(user.id, user.sessionVersion);
   redirect(weiter && /^\/(?!\/)/.test(weiter) ? weiter : "/");
+}
+
+const setupInput = z.object({
+  code: z.string().trim().min(4).max(40),
+  name: z.string().trim().min(2, "Bitte deinen Namen eingeben.").max(80),
+  email: z.email("Bitte eine gültige E-Mail eingeben.").transform((s) => s.toLowerCase()),
+  password: z.string().min(10, "Passwort: mindestens 10 Zeichen.").max(200),
+});
+
+/** Ersteinrichtung: ersten Administrator anlegen – nur solange es noch keinen Benutzer gibt und mit Einrichtungs-Code */
+export async function setupAdmin(_prev: { error?: string } | undefined, form: FormData): Promise<{ error?: string }> {
+  const key = await ipKey();
+  const a = attempts.get(key);
+  if (a && a.n >= 8 && a.until > Date.now()) return { error: "Zu viele Versuche. Bitte in 15 Minuten erneut versuchen." };
+  const p = setupInput.safeParse(Object.fromEntries(form));
+  if (!p.success) return { error: p.error.issues[0]?.message ?? "Bitte alle Felder ausfüllen." };
+  const expected = process.env.SETUP_CODE;
+  const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!expected || !timingSafeEqual(Buffer.from(createHash("sha256").update(norm(p.data.code)).digest()), Buffer.from(createHash("sha256").update(norm(expected)).digest()))) {
+    attempts.set(key, { n: (a && a.until > Date.now() ? a.n : 0) + 1, until: Date.now() + 15 * 60_000 });
+    return { error: "Der Einrichtungs-Code stimmt nicht." };
+  }
+  const user = await db.$transaction(async (tx) => {
+    if ((await tx.user.count()) > 0) return null;
+    return tx.user.create({ data: { email: p.data.email, name: p.data.name, role: "ADMIN", passwordHash: await hashPassword(p.data.password) } });
+  });
+  if (!user) return { error: "Jarvis ist schon eingerichtet. Bitte normal anmelden." };
+  attempts.delete(key);
+  await clearSetupCode();
+  await startSession(user.id, user.sessionVersion);
+  redirect("/einstellungen?willkommen=1#verbindungen");
+}
+
+// ---------- Verbindungen (Schlüssel, Postfach) – nur Administratoren ----------
+
+const optional = z.string().max(2000).optional();
+const connectionInput = z.object({
+  ANTHROPIC_API_KEY: optional,
+  LEXWARE_API_KEY: optional,
+  MAIL_PROVIDER: z.enum(["strato", "gmx", "ionos", "custom"]).optional(),
+  MAIL_USER: z.union([z.literal(""), z.email("Bitte eine gültige E-Mail-Adresse für das Postfach eingeben.")]).optional(),
+  MAIL_PASSWORD: optional,
+  MAIL_FROM_NAME: z.string().max(80).optional(),
+  MAIL_IMAP_HOST: z.string().max(200).optional(),
+  MAIL_IMAP_PORT: z.union([z.literal(""), z.string().regex(/^\d{2,5}$/)]).optional(),
+  MAIL_SMTP_HOST: z.string().max(200).optional(),
+  MAIL_SMTP_PORT: z.union([z.literal(""), z.string().regex(/^\d{2,5}$/)]).optional(),
+  clear: z.string().optional(),
+});
+
+export async function saveConnections(_prev: { ok?: string; error?: string } | undefined, form: FormData): Promise<{ ok?: string; error?: string }> {
+  await requireAdmin();
+  const p = connectionInput.safeParse(Object.fromEntries(form));
+  if (!p.success) return { error: p.error.issues[0]?.message ?? "Eingabe ungültig." };
+  const { clear, MAIL_PROVIDER, ...rest } = p.data;
+  const values: Parameters<typeof saveSettings>[0] = { ...rest };
+  if (MAIL_PROVIDER) {
+    values.MAIL_PROVIDER = MAIL_PROVIDER;
+    if (MAIL_PROVIDER !== "custom") Object.assign(values, { MAIL_IMAP_HOST: null, MAIL_IMAP_PORT: null, MAIL_SMTP_HOST: null, MAIL_SMTP_PORT: null });
+  }
+  const removable = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "MAIL_PASSWORD"] as const;
+  for (const k of removable) if (clear === k) values[k] = null;
+  if (clear === "MAIL") Object.assign(values, { MAIL_USER: null, MAIL_PASSWORD: null });
+  await saveSettings(values);
+  revalidatePath("/", "layout");
+  return { ok: clear ? "Entfernt." : "Gespeichert. Die Verbindungen werden unten neu geprüft." };
 }
 
 export async function logout() {

@@ -18,6 +18,7 @@ Bausteine stammen aus `zSenux/klaic-os` (Agent-Schleife, Push, PWA, Windows-App)
 - `src/app/api/jarvis/route.ts` (SSE: chat/text/tool/action/done/error), `src/components/jarvis/chat.tsx` (Chat, Sprache, Gesprächsmodus)
 - `src/lib/mail/*`: IMAP (imapflow, je Aufruf eine Verbindung) + SMTP (nodemailer), Vorlagen Strato/GMX/IONOS in `config.ts`; gesendete Mails werden in „Gesendet“ abgelegt, Entwürfe per IMAP APPEND. Werkzeuge in `src/lib/jarvis/mail-tools.ts`, Seiten `/mail`, `/mail/[uid]`
 - Kalender `src/lib/calendar.ts` + `ics.ts` (Abo `/kalender-abo/<token>/promont.ics`, im `matcher` ausgenommen), Projekte/Stunden `src/lib/projects.ts` + `hours.ts`, Dateien `src/lib/files.ts` (StoredFile, Text per unpdf, Scans per Claude), Belege `src/lib/receipts.ts` (Auslesen + `POST /v1/files`), Werkzeuge `src/lib/jarvis/work-tools.ts`
+- `src/lib/settings.ts`: Einstellungen aus der Oberfläche (`AppSetting`, Geheimnisse AES-256-GCM, Schlüssel aus `SETTINGS_KEY` bzw. `DATABASE_URL`) werden beim Start (`instrumentation.ts`) und nach dem Speichern in `process.env` gespiegelt; echte Umgebungsvariablen haben Vorrang. Erzeugt `AUTH_SECRET`/VAPID selbst; Ersteinrichtung mit `SETUP_CODE` (Server-Log) auf `/login`
 - `src/lib/jobs.ts` (Erinnerungen, überfällige Rechnungen, Morgen-Briefing; über `instrumentation.ts`, nur Produktion bzw. `JOBS=1`)
 
 ## Regeln

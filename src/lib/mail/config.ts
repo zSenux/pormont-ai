@@ -2,7 +2,7 @@ import "server-only";
 
 // Postfach der ProMont GmbH über IMAP (lesen) + SMTP (senden).
 // Vorlagen für Strato und GMX; eigene Server über MAIL_IMAP_HOST/MAIL_SMTP_HOST.
-// Zugangsdaten NUR in Umgebungsvariablen (nie im Repo, nie in der Datenbank).
+// Zugangsdaten: Einstellungen → Verbindungen (verschlüsselt in der Datenbank) oder Umgebungsvariablen – nie im Repo.
 
 export const PROVIDERS = {
   strato: { label: "Strato", imap: { host: "imap.strato.de", port: 993 }, smtp: { host: "smtp.strato.de", port: 465 } },

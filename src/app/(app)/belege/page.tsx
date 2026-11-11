@@ -58,7 +58,7 @@ export default async function BelegePage({ searchParams }: { searchParams: Promi
   const href = (o: { art?: string; status?: string; seite?: number }) => `/belege?art=${o.art ?? art}&status=${o.status ?? status.key}${o.seite ? `&seite=${o.seite}` : ""}`;
 
   let content: React.ReactNode;
-  if (!lexwareConfigured()) content = <p className="card p-5 text-sm text-steel">Lexware ist noch nicht verbunden (LEXWARE_API_KEY fehlt).</p>;
+  if (!lexwareConfigured()) content = <p className="card p-5 text-sm text-steel">Lexware ist noch nicht verbunden – API-Schlüssel unter Einstellungen → Verbindungen eintragen.</p>;
   else {
     try {
       const r = await voucherList({ type: VOUCHER_TYPES[art], status: status.lex, page, size: 25 });

@@ -4,7 +4,10 @@ import { SESSION_COOKIE, verifySession } from "@/lib/auth/token";
 // Alles außer Login, Manifest, Service Worker und Symbolen braucht eine gültige Sitzung.
 // Die Sitzungs-Version (Abmelden überall) prüft der Server zusätzlich in currentUser().
 export async function proxy(req: NextRequest) {
-  const ok = await verifySession(req.cookies.get(SESSION_COOKIE)?.value);
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  // AUTH_SECRET kann aus der Datenbank kommen (src/lib/settings.ts). Ist er hier (noch) nicht bekannt, reicht ein vorhandenes
+  // Cookie – jede Seite, Aktion und API prüft die Sitzung ohnehin vollständig über currentUser()/requireUser().
+  const ok = process.env.AUTH_SECRET ? await verifySession(token) : Boolean(token && /^[\w-]+\.[\w-]+$/.test(token));
   if (ok) return NextResponse.next();
   if (req.nextUrl.pathname.startsWith("/api/")) return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   const url = req.nextUrl.clone();

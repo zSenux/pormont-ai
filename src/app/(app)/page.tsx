@@ -128,7 +128,7 @@ async function LexwareTiles() {
   if (!lexwareConfigured()) {
     return (
       <div className="card p-5 text-sm text-steel">
-        <strong className="text-ink">Lexware ist noch nicht verbunden.</strong> Sobald der Administrator den API-Schlüssel hinterlegt (LEXWARE_API_KEY), erscheinen hier offene Rechnungen, Angebote und Umsatz.
+        <strong className="text-ink">Lexware ist noch nicht verbunden.</strong> Sobald ein Administrator den API-Schlüssel unter <Link href="/einstellungen#verbindungen" className="font-medium text-brand">Einstellungen → Verbindungen</Link> einträgt, erscheinen hier offene Rechnungen, Angebote und Umsatz.
       </div>
     );
   }

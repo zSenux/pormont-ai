@@ -25,7 +25,7 @@ pnpm db:push
 pnpm dev                  # http://127.0.0.1:3000
 ```
 
-Erster Login mit `ADMIN_EMAIL` / `ADMIN_PASSWORD` legt den Administrator an. Weitere Benutzer unter **Einstellungen → Team**
+**Ersteinrichtung ohne Hosting-Panel:** Beim ersten Start schreibt Jarvis einen Einrichtungs-Code ins Server-Log (`[Jarvis] Ersteinrichtung offen – Einrichtungs-Code: …`). Mit diesem Code legt der Kunde auf der Login-Seite den ersten Administrator an und trägt danach unter **Einstellungen → Verbindungen** Lexware-Schlüssel, Claude-Schlüssel und Postfach selbst ein. Alternativ legt der erste Login mit `ADMIN_EMAIL` / `ADMIN_PASSWORD` den Administrator an. Weitere Benutzer unter **Einstellungen → Team**
 oder per `pnpm user:add <email> "<Name>" <passwort> [ADMIN|MEMBER]` (setzt auch vergessene Passwörter zurück).
 
 ### Schlüssel

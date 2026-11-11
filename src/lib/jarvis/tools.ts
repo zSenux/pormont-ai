@@ -220,7 +220,7 @@ export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promi
   if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
   if (WORK_TOOL_NAMES.has(name)) return runWorkTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   const needsLex = !["firmendaten", "aufgaben", "merken", "vergessen", "tagesueberblick"].includes(name);
-  if (needsLex && !lexwareConfigured()) return "Lexware ist noch nicht verbunden (API-Schlüssel fehlt). Sag dem Team, dass der Administrator LEXWARE_API_KEY hinterlegen muss.";
+  if (needsLex && !lexwareConfigured()) return "Lexware ist noch nicht verbunden (API-Schlüssel fehlt). Ein Administrator trägt ihn unter Einstellungen → Verbindungen ein.";
   try {
     switch (name) {
       case "tagesueberblick":

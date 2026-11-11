@@ -42,7 +42,7 @@ async function threadHeaders(uid: unknown) {
 }
 
 export async function runMailTool(name: string, i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
-  if (!mailConfigured()) return "Das E-Mail-Postfach ist noch nicht verbunden. Der Administrator muss MAIL_USER und MAIL_PASSWORD (und ggf. MAIL_PROVIDER strato/gmx) hinterlegen.";
+  if (!mailConfigured()) return "Das E-Mail-Postfach ist noch nicht verbunden. Ein Administrator trägt es unter Einstellungen → Verbindungen ein (Anbieter, E-Mail-Adresse, Passwort).";
   try {
     switch (name) {
       case "mails": {
