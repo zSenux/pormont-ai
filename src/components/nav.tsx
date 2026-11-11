@@ -35,18 +35,18 @@ export function TopNav({ name }: { name: string }) {
     <header className="sticky top-0 z-30 hidden border-b border-line bg-white/90 backdrop-blur md:block">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-6">
         <Link href="/" className="flex items-center gap-2" aria-label="Startseite">
-          <img src="/logo.png" alt="ProMont GmbH" className="h-9 w-auto" />
+          <img src="/logo.png" alt="ProMont GmbH" className="h-11 w-auto" />
           <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
         </Link>
         <nav className="flex flex-1 items-center gap-1">
           {DESKTOP.map((i) => (
             <Link key={i.href} href={i.href} title={i.label} className={clsx("flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
               <i.icon className="size-4" />
-              <span className={i.href === "/einstellungen" ? "sr-only" : "hidden lg:inline"}>{i.label}</span>
+              <span className={i.href === "/einstellungen" ? "sr-only" : "hidden xl:inline"}>{i.label}</span>
             </Link>
           ))}
         </nav>
-        <span className="hidden text-sm text-steel xl:inline">{name}</span>
+        <span className="hidden text-sm text-steel 2xl:inline">{name}</span>
       </div>
     </header>
   );
@@ -57,7 +57,7 @@ export function MobileHeader() {
     <header className="sticky top-0 z-30 border-b border-line bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
       <div className="flex h-14 items-center justify-between px-4">
         <Link href="/" aria-label="Startseite">
-          <img src="/logo.png" alt="ProMont GmbH" className="h-8 w-auto" />
+          <img src="/logo.png" alt="ProMont GmbH" className="h-10 w-auto" />
         </Link>
         <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
       </div>
