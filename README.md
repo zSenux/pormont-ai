@@ -44,8 +44,11 @@ Läuft wie Klaic OS über **Klaic Deploy** (Nixpacks, `nixpacks.toml`, Node 24):
 Start-Befehl `pnpm start` (`prisma db push && next start`), Domain z. B. `jarvis.promont.gmbh`. Hintergrund-Jobs laufen in Produktion automatisch.
 
 ## Windows-App
-`windows-app/` (Electron). Der Installer wird bei jedem Push auf GitHub gebaut (Actions → „Windows-App“ → Artifacts),
-mit Tag `win-v1.0.0` als Release. Beim ersten Start die Server-Adresse eintragen und anmelden.
+`windows-app/` (Electron). Jeder Push auf `main`, der `windows-app/` ändert, baut Version `1.0.<Laufnummer>` und
+veröffentlicht sie als GitHub-Release (Installer + `latest.yml`). Download: https://github.com/zSenux/pormont-ai/releases/latest.
+**Automatische Updates:** Die installierte App prüft beim Start und alle 6 Std., lädt neue Versionen im Hintergrund
+(Prüfsumme SHA-512) und installiert sie beim Beenden oder sofort per Klick auf die Mitteilung; im Infobereich „Nach Updates suchen“.
+Andere Branches bauen den Installer nur als Artifact. Beim ersten Start die Server-Adresse eintragen und anmelden.
 **Strg + Leertaste** öffnet ein kleines Jarvis-Fenster von überall, das Symbol im Infobereich das Hauptfenster.
 
 ### Jarvis bedient den PC

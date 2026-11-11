@@ -8,8 +8,9 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/setup.js && node --check src/win.js && node --check src/computer.js && node --check src/remote.js && node --check src/banner-preload.js",
-    "dist": "electron-builder --win nsis --x64 --publish never"
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/setup.js && node --check src/win.js && node --check src/computer.js && node --check src/remote.js && node --check src/banner-preload.js && node --check src/updater.js",
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "release": "electron-builder --win nsis --x64 --publish always"
   },
   "devDependencies": {
     "electron": "37.2.0",
@@ -18,15 +19,35 @@
   "build": {
     "appId": "gmbh.promont.jarvis",
     "productName": "Jarvis ProMont",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["src/**/*", "package.json"],
-    "win": { "target": "nsis", "icon": "build/icon.ico" },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
       "createDesktopShortcut": true,
       "shortcutName": "Jarvis ProMont",
       "artifactName": "Jarvis-ProMont-Setup-${version}.exe"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "zSenux",
+        "repo": "pormont-ai",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
   }
 }
