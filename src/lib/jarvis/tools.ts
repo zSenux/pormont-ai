@@ -11,6 +11,7 @@ import { MAIL_TOOLS, MAIL_TOOL_NAMES, runMailTool } from "./mail-tools";
 import { eventLine, todayEvents } from "@/lib/calendar";
 import { createJob, PcError } from "@/lib/pc";
 import { WORK_TOOLS, WORK_TOOL_NAMES, runWorkTool } from "./work-tools";
+import { TEAM_TOOLS, TEAM_TOOL_NAMES, runTeamTool } from "./team-tools";
 
 // Werkzeuge von Jarvis. Lesen läuft sofort; alles, was in Lexware schreibt, wird nur als Freigabe-Karte vorgeschlagen.
 // Interne Aufgaben/Gedächtnis darf Jarvis direkt ändern (harmlos, sichtbar).
@@ -140,6 +141,7 @@ export const TOOLS: Def[] = [
   { name: "vergessen", description: "Einen gemerkten Eintrag löschen.", input_schema: { type: "object", properties: { id: str("ID aus dem Gedächtnis-Block") }, required: ["id"] } },
   ...MAIL_TOOLS,
   ...WORK_TOOLS,
+  ...TEAM_TOOLS,
 ];
 
 const STATUS_MAP: Record<string, string | undefined> = { offen: "open", ueberfaellig: "overdue", bezahlt: "paid,paidoff", entwurf: "draft", angenommen: "accepted", abgelehnt: "rejected", alle: undefined };
@@ -236,6 +238,7 @@ export async function memoryBlock() {
 export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promise<string> {
   const i = (input ?? {}) as Record<string, unknown>;
   if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
+  if (TEAM_TOOL_NAMES.has(name)) return runTeamTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   if (WORK_TOOL_NAMES.has(name)) return runWorkTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   if (name === "am_pc") return amPc(String(i.auftrag ?? ""), ctx);
   const needsLex = !["firmendaten", "aufgaben", "merken", "vergessen", "tagesueberblick"].includes(name);

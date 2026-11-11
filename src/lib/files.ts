@@ -34,7 +34,7 @@ export function guessMime(name: string, given?: string) {
   return ({ pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", txt: "text/plain", csv: "text/csv", md: "text/markdown" } as Record<string, string>)[ext ?? ""] ?? "application/octet-stream";
 }
 
-export async function storeFile(f: { name: string; mime: string; data: Buffer; kind: "dokument" | "foto" | "beleg"; projectId?: string | null; uploadedBy?: string | null }) {
+export async function storeFile(f: { name: string; mime: string; data: Buffer; kind: "dokument" | "foto" | "beleg" | "spesen"; projectId?: string | null; uploadedBy?: string | null }) {
   const mime = guessMime(f.name, f.mime);
   if (!f.data.length) throw new FileError("Die Datei ist leer.");
   if (f.data.length > MAX_FILE_BYTES) throw new FileError("Die Datei ist größer als 15 MB.");

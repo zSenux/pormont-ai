@@ -7,7 +7,7 @@ import { Camera, Loader2, Upload } from "lucide-react";
 // Hochladen von Dokumenten, Baustellenfotos und Belegen. Fotos werden im Browser verkleinert
 // (max. 2000 px, JPEG) – spart Speicher und Lexware nimmt Belege nur bis 5 MB.
 
-async function shrink(file: File, max = 2000): Promise<File> {
+export async function shrink(file: File, max = 2000): Promise<File> {
   if (!file.type.startsWith("image/") || file.type === "image/gif") return file;
   try {
     const bmp = await createImageBitmap(file);

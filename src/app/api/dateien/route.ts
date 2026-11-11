@@ -9,7 +9,7 @@ import { analyzeReceipt, transcribeDocument } from "@/lib/receipts";
 // Route-Handler statt Server-Action wegen der Dateigröße.
 export const maxDuration = 120;
 
-const meta = z.object({ kind: z.enum(["dokument", "foto", "beleg"]), projectId: z.cuid().nullish(), note: z.string().trim().max(4000).nullish() });
+const meta = z.object({ kind: z.enum(["dokument", "foto", "beleg", "spesen"]), projectId: z.cuid().nullish(), note: z.string().trim().max(4000).nullish() });
 
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
     for (const f of files) {
       const stored = await storeFile({ name: f.name, mime: f.type, data: Buffer.from(await f.arrayBuffer()), kind: m.data.kind, projectId: m.data.projectId, uploadedBy: user.name });
       let receipt = null;
-      if (m.data.kind === "beleg") receipt = await analyzeReceipt(stored.id).catch((e) => (console.error("[beleg]", e), null));
+      if (m.data.kind === "beleg" || m.data.kind === "spesen") receipt = await analyzeReceipt(stored.id).catch((e) => (console.error("[beleg]", e), null));
       // Scans ohne Text im Hintergrund abschreiben lassen (Suche)
       if (m.data.kind === "dokument" && !stored.text) after(() => transcribeDocument(stored.id).catch((e) => console.error("[dokument]", e)));
       if (m.data.kind === "foto" && m.data.projectId) await db.projectNote.create({ data: { projectId: m.data.projectId, fileId: stored.id, text: files.length === 1 ? m.data.note : null, authorName: user.name } });

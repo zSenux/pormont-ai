@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, CheckSquare, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Settings, Sparkles } from "lucide-react";
+import { Calendar, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target } from "lucide-react";
 import { clsx } from "clsx";
 
 const DESKTOP = [
@@ -11,6 +11,9 @@ const DESKTOP = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/kalender", label: "Kalender", icon: Calendar },
   { href: "/projekte", label: "Projekte", icon: HardHat },
+  { href: "/stunden", label: "Stunden", icon: Clock },
+  { href: "/spesen", label: "Spesen", icon: Receipt },
+  { href: "/akquise", label: "Akquise", icon: Target },
   { href: "/belege", label: "Belege", icon: FileText },
   { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
   { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
@@ -24,7 +27,7 @@ const MOBILE = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/belege", "/dokumente", "/aufgaben", "/pc"] },
+  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/stunden", "/spesen", "/akquise", "/belege", "/dokumente", "/aufgaben", "/pc"] },
 ];
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
@@ -32,7 +35,7 @@ const active = (path: string, href: string) => (href === "/" ? path === "/" : pa
 export function TopNav({ name }: { name: string }) {
   const path = usePathname();
   return (
-    <header className="sticky top-0 z-30 hidden border-b border-line bg-white/90 backdrop-blur md:block">
+    <header className="sticky top-0 z-30 hidden border-b print:hidden border-line bg-white/90 backdrop-blur md:block">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-6">
         <Link href="/" className="flex items-center gap-2" aria-label="Startseite">
           <img src="/logo.svg" alt="ProMont GmbH" className="h-11 w-auto" />
@@ -42,7 +45,8 @@ export function TopNav({ name }: { name: string }) {
           {DESKTOP.map((i) => (
             <Link key={i.href} href={i.href} title={i.label} className={clsx("flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
               <i.icon className="size-4" />
-              <span className={i.href === "/einstellungen" ? "sr-only" : "hidden xl:inline"}>{i.label}</span>
+              {/* 13 Bereiche: Beschriftung nur am aktiven Punkt (sonst Tooltip), damit die Leiste nicht überläuft */}
+              <span className={i.href !== "/einstellungen" && active(path, i.href) ? "hidden lg:inline" : "sr-only"}>{i.label}</span>
             </Link>
           ))}
         </nav>
@@ -54,7 +58,7 @@ export function TopNav({ name }: { name: string }) {
 
 export function MobileHeader() {
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
+    <header className="sticky top-0 z-30 border-b border-line bg-white/90 print:hidden pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
       <div className="flex h-14 items-center justify-between px-4">
         <Link href="/" aria-label="Startseite">
           <img src="/logo.svg" alt="ProMont GmbH" className="h-10 w-auto" />
@@ -68,7 +72,7 @@ export function MobileHeader() {
 export function MobileNav() {
   const path = usePathname();
   return (
-    <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 backdrop-blur md:hidden" aria-label="Hauptnavigation">
+    <nav className="safe-bottom fixed print:hidden inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 backdrop-blur md:hidden" aria-label="Hauptnavigation">
       <div className="grid h-16 grid-cols-5">
         {MOBILE.map((i) =>
           i.center ? (

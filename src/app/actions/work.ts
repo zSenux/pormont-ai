@@ -98,15 +98,16 @@ export async function addTime(form: FormData) {
   const forUser = user.role === "ADMIN" && t.userId ? t.userId : user.id;
   await db.timeEntry.create({ data: { projectId: t.projectId, userId: forUser, day: berlinDateTime(t.day), minutes, note: t.note ?? null } });
   revalidatePath(`/projekte/${t.projectId}`);
+  revalidatePath("/stunden");
 }
-
 
 export async function deleteTime(id: string) {
   const user = await requireUser();
   const t = await db.timeEntry.findUnique({ where: { id: z.cuid().parse(id) } });
   if (!t || (t.userId !== user.id && user.role !== "ADMIN")) return;
   await db.timeEntry.delete({ where: { id: t.id } });
-  revalidatePath(`/projekte/${t.projectId}`);
+  revalidatePath("/stunden");
+  if (t.projectId) revalidatePath(`/projekte/${t.projectId}`);
 }
 
 // ---------- Dateien ----------

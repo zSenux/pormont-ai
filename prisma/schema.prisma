@@ -27,11 +27,12 @@ model User {
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())
 
-  chats  Chat[]
-  pushes PushSubscription[]
-  tasks  Task[]             @relation("TaskCreator")
-  times  TimeEntry[]
-  pcs    PcDevice[]
+  chats    Chat[]
+  pushes   PushSubscription[]
+  tasks    Task[]             @relation("TaskCreator")
+  times    TimeEntry[]
+  pcs      PcDevice[]
+  expenses Expense[]          @relation("ExpenseUser")
 }
 
 /// Unterhaltung mit Jarvis – Verlauf im Claude-Format (nur anhängen, nie umschreiben)
@@ -189,10 +190,11 @@ model Project {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  notes  ProjectNote[]
-  times  TimeEntry[]
-  events Event[]
-  files  StoredFile[]
+  notes    ProjectNote[]
+  times    TimeEntry[]
+  events   Event[]
+  files    StoredFile[]
+  expenses Expense[]
 
   @@index([status])
 }
@@ -213,19 +215,143 @@ model ProjectNote {
 
 /// Arbeitsstunden je Mitarbeiter und Projekt (Minuten)
 model TimeEntry {
-  id        String   @id @default(cuid())
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
+  /// Ohne Projekt = allgemeine Arbeitszeit (Werkstatt, Büro, Urlaub …)
+  projectId String?
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Arbeitstag (00:00 Berliner Zeit als UTC)
   day       DateTime
+  /// Netto-Minuten (ohne Pause); bei laufender Stempeluhr 0
   minutes   Int
+  /// Stempeluhr: Kommen/Gehen (UTC). startAt gesetzt + endAt leer = läuft gerade
+  startAt   DateTime?
+  endAt     DateTime?
+  pauseMin  Int       @default(0)
+  /// ARBEIT | FAHRT | URLAUB | KRANK | FEIERTAG
+  kind      String    @default("ARBEIT")
   note      String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([projectId, day])
   @@index([userId, day])
+}
+
+// ---------- Spesen ----------
+enum ExpenseStatus {
+  EINGEREICHT
+  GENEHMIGT
+  ABGELEHNT
+  AUSGEZAHLT
+}
+
+model Expense {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation("ExpenseUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// Tag der Reise/Auslage (00:00 Berliner Zeit als UTC)
+  day         DateTime
+  /// VERPFLEGUNG | FAHRT | UEBERNACHTUNG | AUSLAGE
+  kind        String
+  description String
+  projectId   String?
+  project     Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// Fahrt: gefahrene Kilometer
+  km          Int?
+  /// Verpflegung: TAG8 (> 8 Std.) | REISE (An-/Abreisetag) | TAG24 (24 Std.) + gestellte Mahlzeiten
+  mealDay     String?
+  breakfast   Boolean       @default(false)
+  lunch       Boolean       @default(false)
+  dinner      Boolean       @default(false)
+  /// Betrag in Cent (bei Verpflegung/Fahrt berechnet)
+  amountCents Int
+  /// Beleg-Foto (StoredFile kind "spesen")
+  fileId      String?
+  status      ExpenseStatus @default(EINGEREICHT)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNote  String?
+  paidAt      DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([userId, day])
+  @@index([status])
+}
+
+// ---------- Neukunden-Akquise ----------
+enum LeadStage {
+  NEU
+  KONTAKTIERT
+  TERMIN
+  ANGEBOT
+  GEWONNEN
+  VERLOREN
+}
+
+model Lead {
+  id             String    @id @default(cuid())
+  name           String
+  /// Branche, z. B. „Bauunternehmen“, „Architekturbüro“
+  category       String?
+  contactName    String?
+  email          String?
+  phone          String?
+  website        String?
+  street         String?
+  postalCode     String?
+  city           String?
+  /// Google Place-ID (dauerhaft speicherbar), verhindert Doppelte
+  placeId        String?   @unique
+  rating         Float?
+  reviews        Int?
+  mapsUrl        String?
+  /// GOOGLE | MANUELL | EMPFEHLUNG | ANFRAGE
+  source         String    @default("MANUELL")
+  stage          LeadStage @default(NEU)
+  /// geschätzter Auftragswert in Euro
+  value          Int?
+  notes          String?
+  /// Werbe-Mails nur mit Einwilligung (§ 7 UWG) – Zeitpunkt der Einwilligung bzw. eigenen Anfrage
+  emailConsentAt DateTime?
+  nextFollowUpAt DateTime?
+  /// Website-/Impressum-Prüfung
+  checkedAt      DateTime?
+  checkNote      String?
+  /// KI-Gesprächsleitfaden und Werbebrief (Markdown/Text)
+  pitch          String?
+  letter         String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  activities LeadActivity[]
+
+  @@index([stage, nextFollowUpAt])
+}
+
+model LeadActivity {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  /// NOTIZ | ANRUF | BRIEF | MAIL | TERMIN | STUFE
+  kind      String
+  text      String
+  userName  String?
+  createdAt DateTime @default(now())
+
+  @@index([leadId, createdAt])
+}
+
+/// Gespeicherte Google-Suche – Übernehmen liest die Treffer von hier, nie vom Browser
+model LeadSearch {
+  id            String   @id @default(cuid())
+  query         String
+  location      String
+  results       Json
+  nextPageToken String?
+  createdById   String?
+  createdAt     DateTime @default(now())
 }
 
 /// Hochgeladene Datei (Dokumente, Baustellenfotos, Belege). Inhalt in der Datenbank (max. 15 MB).
@@ -236,7 +362,7 @@ model StoredFile {
   size       Int
   sha256     String
   data       Bytes
-  /// "dokument" | "foto" | "beleg"
+  /// "dokument" | "foto" | "beleg" | "spesen" (Beleg zu Mitarbeiter-Spesen)
   kind       String   @default("dokument")
   projectId  String?
   project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
