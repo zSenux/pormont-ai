@@ -8,7 +8,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/setup.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/setup.js && node --check src/win.js && node --check src/computer.js && node --check src/remote.js && node --check src/banner-preload.js",
     "dist": "electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {

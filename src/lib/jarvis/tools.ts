@@ -9,6 +9,7 @@ import { contactName, getContact, getPayment, getVoucher, listArticles, profile,
 import { proposeAction, type ActionKind } from "./actions";
 import { MAIL_TOOLS, MAIL_TOOL_NAMES, runMailTool } from "./mail-tools";
 import { eventLine, todayEvents } from "@/lib/calendar";
+import { createJob, PcError } from "@/lib/pc";
 import { WORK_TOOLS, WORK_TOOL_NAMES, runWorkTool } from "./work-tools";
 
 // Werkzeuge von Jarvis. Lesen läuft sofort; alles, was in Lexware schreibt, wird nur als Freigabe-Karte vorgeschlagen.
@@ -130,6 +131,11 @@ export const TOOLS: Def[] = [
       required: ["aktion"],
     },
   },
+  {
+    name: "am_pc",
+    description: "Auftrag an den Windows-PC mit der Jarvis-App geben: Programme bedienen (auch CAD), Dateien suchen/öffnen/lesen, Zeichnungen auswerten, Dinge am Bildschirm erledigen. Jarvis arbeitet dort selbstständig und fragt vor Maus/Tastatur nach. Für alles, was nur am Computer geht („öffne am PC …“, „such die Zeichnung …“, „exportier aus dem CAD …“).",
+    input_schema: { type: "object", properties: { auftrag: str("Was am PC passieren soll – vollständig und konkret, mit Dateinamen/Kunden/Zielen") }, required: ["auftrag"] },
+  },
   { name: "merken", description: "Dauerhaft merken, z. B. Vorlieben, Abläufe, Preise, Kundenbesonderheiten („Merk dir …“).", input_schema: { type: "object", properties: { text: str("Was gemerkt werden soll, als ganzer Satz") }, required: ["text"] } },
   { name: "vergessen", description: "Einen gemerkten Eintrag löschen.", input_schema: { type: "object", properties: { id: str("ID aus dem Gedächtnis-Block") }, required: ["id"] } },
   ...MAIL_TOOLS,
@@ -209,6 +215,18 @@ async function tasks(input: unknown, userId: string) {
   return r.count ? "Aufgabe erledigt." : "Aufgabe nicht gefunden oder schon erledigt.";
 }
 
+/** Auftrag an den PC (Computer-Steuerung) */
+async function amPc(auftrag: string, ctx: ToolCtx) {
+  if (auftrag.trim().length < 3) return "Was soll am PC passieren?";
+  const chat = await db.chat.findUnique({ where: { id: ctx.chatId }, select: { source: true } });
+  try {
+    const job = await createJob(ctx.userId, auftrag, { origin: chat?.source === "windows" ? "pc" : "remote" });
+    return `Auftrag an den PC gegeben (id ${job.id}). Jarvis arbeitet dort jetzt selbstständig; Fortschritt, Rückfragen und Bildschirm unter [Computer](/pc?auftrag=${job.id}).`;
+  } catch (e) {
+    return e instanceof PcError ? e.message : "Auftrag konnte nicht angelegt werden.";
+  }
+}
+
 /** Gemerkte Fakten für den System-Prompt (neueste 60) */
 export async function memoryBlock() {
   const m = await db.memory.findMany({ orderBy: { createdAt: "desc" }, take: 60 });
@@ -219,6 +237,7 @@ export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promi
   const i = (input ?? {}) as Record<string, unknown>;
   if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
   if (WORK_TOOL_NAMES.has(name)) return runWorkTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
+  if (name === "am_pc") return amPc(String(i.auftrag ?? ""), ctx);
   const needsLex = !["firmendaten", "aufgaben", "merken", "vergessen", "tagesueberblick"].includes(name);
   if (needsLex && !lexwareConfigured()) return "Lexware ist noch nicht verbunden (API-Schlüssel fehlt). Ein Administrator trägt ihn unter Einstellungen → Verbindungen ein.";
   try {

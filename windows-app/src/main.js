@@ -2,12 +2,14 @@
 // - Hauptfenster = komplette Web-App
 // - Strg + Leertaste = kleines Jarvis-Fenster (/fenster) von überall
 // - Symbol im Infobereich (Tray), Start mit Windows
+// - Computer-Steuerung (remote.js): Jarvis bedient den PC – Aufträge aus dem Chat am PC oder vom Handy (Fernsteuerung)
 const { app, BrowserWindow, Tray, Menu, globalShortcut, shell, ipcMain, nativeImage, session } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
 const SETTINGS = path.join(app.getPath("userData"), "einstellungen.json");
-const DEFAULTS = { server: "", shortcut: "Control+Space", autostart: true };
+const DEFAULTS = { server: "", shortcut: "Control+Space", autostart: true, deviceId: "", remoteEnabled: false, remoteAsked: false };
+const remote = require("./remote");
 let settings = load();
 let main = null;
 let mini = null;
@@ -135,6 +137,12 @@ function toggleMini() {
 
 function registerShortcut() {
   globalShortcut.unregisterAll();
+  // Not-Aus der Computer-Steuerung
+  try {
+    globalShortcut.register("Control+Alt+Escape", () => remote.emergencyStop());
+  } catch {
+    /* belegt */
+  }
   try {
     if (!globalShortcut.register(settings.shortcut, toggleMini)) console.warn("Tastenkürzel belegt:", settings.shortcut);
   } catch (e) {
@@ -151,6 +159,9 @@ function buildTray() {
       { label: "Jarvis öffnen", click: showMain },
       { label: `Schnell fragen (${settings.shortcut.replace("Control", "Strg").replace("Space", "Leertaste")})`, click: toggleMini },
       { type: "separator" },
+      { label: "Fernsteuerung vom Handy erlauben", type: "checkbox", checked: settings.remoteEnabled, click: (i) => setRemote(i.checked) },
+      ...(remote.state().busy ? [{ label: "Jarvis am PC stoppen (Strg+Alt+Esc)", click: () => remote.emergencyStop() }] : []),
+      { type: "separator" },
       { label: "Mit Windows starten", type: "checkbox", checked: settings.autostart, click: (i) => setAutostart(i.checked) },
       { label: "Server-Adresse ändern …", click: () => { settings.server = ""; save(); showMain(); loadMain(); } },
       { type: "separator" },
@@ -159,6 +170,43 @@ function buildTray() {
   tray.setContextMenu(menu());
   tray.on("click", showMain);
   tray.on("right-click", () => tray.setContextMenu(menu()));
+}
+
+function setRemote(on) {
+  settings.remoteEnabled = !!on;
+  settings.remoteAsked = true;
+  save();
+  if (tray) tray.setToolTip(on ? "Jarvis ProMont – Fernsteuerung an" : "Jarvis ProMont");
+  remote.poke();
+}
+
+/** Einmal fragen, ob Aufträge vom Handy erlaubt sind (Standard: aus) */
+async function askRemoteOnce() {
+  if (settings.remoteAsked || !settings.server) return;
+  settings.remoteAsked = true;
+  save();
+  const { dialog } = require("electron");
+  const r = await dialog.showMessageBox({
+    type: "question",
+    buttons: ["Ja, erlauben", "Nein"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+    title: "Jarvis ProMont",
+    message: "Darf Jarvis diesen PC auch vom Handy aus bedienen?",
+    detail: "Dann kannst du unterwegs Aufträge an den PC schicken (z. B. „Öffne die Zeichnung Geländer Müller und mach ein Angebot“) und den Bildschirm live sehen. Jeder Auftrag wird vorher am Handy freigegeben. Ändern jederzeit über das Jarvis-Symbol unten rechts.",
+  });
+  setRemote(r.response === 0);
+}
+
+/** Jarvis-Fenster während eines Auftrags aus dem Weg räumen → Rückgabe stellt sie wieder her */
+function hideWindows() {
+  const wasVisible = main && main.isVisible() && !main.isMinimized();
+  if (wasVisible) main.minimize();
+  if (mini && mini.isVisible()) mini.hide();
+  return () => {
+    if (wasVisible && main && !main.isDestroyed()) main.restore();
+  };
 }
 
 function setAutostart(on) {
@@ -180,11 +228,16 @@ ipcMain.handle("jarvis:setServer", async (_e, url) => {
   }
   settings.server = server;
   save();
+  remote.poke();
   if (mini) { mini.destroy(); mini = null; }
   loadMain();
   return { ok: true };
 });
 ipcMain.handle("jarvis:hideMini", () => mini && mini.hide());
+// Web-App meldet einen neuen Auftrag am PC → sofort abholen
+ipcMain.handle("jarvis:pcPoke", () => remote.poke());
+ipcMain.handle("jarvis:remote", () => ({ enabled: settings.remoteEnabled, ...remote.state() }));
+ipcMain.on("banner:stop", () => remote.emergencyStop());
 
 app.whenReady().then(() => {
   app.setAppUserModelId("gmbh.promont.jarvis");
@@ -199,6 +252,17 @@ app.whenReady().then(() => {
   setAutostart(settings.autostart);
   if (!process.argv.includes("--hidden")) showMain();
   else createMain();
+  remote.init({
+    getSettings: () => settings,
+    saveSettings: (p) => {
+      Object.assign(settings, p);
+      save();
+    },
+    session: session.defaultSession,
+    hideWindows,
+  });
+  // Nach dem ersten erfolgreichen Anmelden einmal nach der Fernsteuerung fragen
+  setTimeout(() => askRemoteOnce().catch(() => {}), 20_000);
 });
 
 app.on("window-all-closed", (e) => e.preventDefault());

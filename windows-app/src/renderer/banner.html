@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+<style>
+  html, body { margin: 0; background: transparent; font: 13px/1.2 "Segoe UI", Inter, sans-serif; user-select: none; overflow: hidden; }
+  .bar { margin: 3px; height: 40px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 12px;
+    background: #092f50; color: #fff; border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.35); border: 2px solid #e5484d; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #e5484d; flex: none; animation: p 1.2s infinite; }
+  @keyframes p { 50% { opacity: .35 } }
+  .t { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t b { font-weight: 600 }
+  button { border: 0; border-radius: 999px; background: #e5484d; color: #fff; font: inherit; font-weight: 600; padding: 7px 12px; cursor: pointer; }
+  small { opacity: .7; font-size: 11px }
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="dot"></span>
+  <span class="t"><b>Jarvis steuert den PC</b> · <span id="t">…</span></span>
+  <button id="s" title="Strg+Alt+Esc">Stopp <small>Strg+Alt+Esc</small></button>
+</div>
+<script>
+  window.jarvisBanner.onText((t) => (document.getElementById("t").textContent = t));
+  document.getElementById("s").addEventListener("click", () => window.jarvisBanner.stop());
+</script>
+</body>
+</html>

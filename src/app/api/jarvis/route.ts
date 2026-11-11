@@ -18,6 +18,8 @@ export async function POST(req: Request) {
 
   let chat = parsed.data.chatId ? await db.chat.findFirst({ where: { id: parsed.data.chatId, userId: user.id } }) : null;
   if (chat && Array.isArray(chat.messages) && chat.messages.length >= MAX_MESSAGES) chat = null;
+  // Verläufe von PC-Aufträgen enthalten Bildschirm-Werkzeuge → im Chat eine neue Unterhaltung beginnen
+  if (chat?.source === "pc") chat = null;
   if (!chat) chat = await db.chat.create({ data: { userId: user.id, source, title: text.slice(0, 80) } });
   const chatId = chat.id;
 

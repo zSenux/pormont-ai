@@ -31,6 +31,7 @@ model User {
   pushes PushSubscription[]
   tasks  Task[]             @relation("TaskCreator")
   times  TimeEntry[]
+  pcs    PcDevice[]
 }
 
 /// Unterhaltung mit Jarvis – Verlauf im Claude-Format (nur anhängen, nie umschreiben)
@@ -254,4 +255,69 @@ model StoredFile {
   @@index([kind, createdAt])
   @@index([projectId])
   @@index([sha256])
+}
+
+/// Windows-PC mit der Jarvis-App (meldet sich über die Sitzung des angemeldeten Nutzers)
+model PcDevice {
+  /// Zufalls-ID der Installation (UUID aus der App)
+  id            String    @id
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  /// Aufträge vom Handy/Browser annehmen (am PC ein- und ausschaltbar)
+  remoteEnabled Boolean   @default(false)
+  lastSeenAt    DateTime?
+  /// Bildschirmgröße, App-Version, Programm vorne …
+  status        Json?
+  /// Live-Bildschirm angefordert bis
+  viewUntil     DateTime?
+  /// Letztes Live-Bild (JPEG, Base64) – nur während der Ansicht
+  viewImage     String?
+  viewAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  jobs PcJob[]
+
+  @@index([userId])
+}
+
+enum PcJobStatus {
+  QUEUED
+  RUNNING
+  CONFIRM
+  DONE
+  ERROR
+  CANCELED
+}
+
+/// Auftrag an den PC („Öffne die Zeichnung … und mach ein Angebot“). Verlauf in Chat (source "pc")
+model PcJob {
+  id         String      @id @default(cuid())
+  deviceId   String
+  device     PcDevice    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  userId     String
+  chatId     String
+  prompt     String
+  /// "pc" = am PC selbst gestellt (Rückfragen als Dialog am PC), "remote" = vom Handy/Browser (Rückfragen hier)
+  origin     String      @default("remote")
+  status     PcJobStatus @default(QUEUED)
+  /// Fortschritt [{ at, text }]
+  lines      Json        @default("[]")
+  reply      String?
+  /// Offene Rückfrage { text, detail }
+  confirm    Json?
+  /// "yes" | "no"
+  decision   String?
+  /// Maus und Tastatur für diesen Auftrag freigegeben
+  controlOk  Boolean     @default(false)
+  /// Offene Werkzeug-Aufrufe am PC + schon fertige Server-Ergebnisse derselben Runde
+  pending    Json?
+  /// Letztes Bildschirmfoto (JPEG, Base64)
+  screenshot String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  finishedAt DateTime?
+
+  @@index([deviceId, status])
+  @@index([userId, createdAt])
 }

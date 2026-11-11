@@ -48,5 +48,15 @@ Start-Befehl `pnpm start` (`prisma db push && next start`), Domain z. B. `jarvis
 mit Tag `win-v1.0.0` als Release. Beim ersten Start die Server-Adresse eintragen und anmelden.
 **Strg + Leertaste** öffnet ein kleines Jarvis-Fenster von überall, das Symbol im Infobereich das Hauptfenster.
 
+### Jarvis bedient den PC
+Jarvis kann den Büro-PC wie ein Mensch bedienen – jedes Programm, auch CAD: Bildschirm ansehen, klicken, tippen,
+Tastenkürzel, Programme starten, Dateien suchen/lesen/öffnen und in Jarvis ablegen.
+- Am PC im Chat: „Such die Zeichnung Geländer Müller und mach daraus ein Angebot“ → Jarvis fragt einmal per Dialog, ob er Maus und Tastatur benutzen darf.
+- Vom Handy: Seite **Computer** (`/pc`) → Auftrag schicken, Freigabe per Knopf (Push), Live-Bild an/aus, Stopp.
+  Vorher am PC im Jarvis-Symbol „Fernsteuerung vom Handy erlauben“ anhaken (Standard: aus).
+- Oben am Bildschirm zeigt eine rote Leiste, dass Jarvis arbeitet. **Strg + Alt + Esc** oder „Stopp“ beendet sofort.
+- Grenzen: keine Passwörter/PINs/Bank- oder Kartendaten tippen, nichts endgültig löschen, nichts senden/bezahlen;
+  Lexware-Änderungen und Mails weiterhin nur über Freigabe-Karten im Verlauf.
+
 ## iPhone / iPad
 In Safari öffnen → Teilen → „Zum Home-Bildschirm“. Danach unter Einstellungen „Benachrichtigungen“ einschalten.

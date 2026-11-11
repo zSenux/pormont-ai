@@ -127,6 +127,8 @@ export function JarvisChat(props: {
                 return copy;
               });
             } else if (event === "tool") {
+              // Windows-App: neuen Auftrag am PC sofort abholen
+              if (data.name === "am_pc") (window as unknown as { jarvisDesktop?: { pcPoke?: () => void } }).jarvisDesktop?.pcPoke?.();
               setMessages((m) => {
                 const copy = [...m];
                 const last = copy[copy.length - 1];

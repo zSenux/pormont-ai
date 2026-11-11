@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Calendar, Camera, CheckSquare, Download, FileText, FolderSearch, HardHat, LogOut, MonitorSmartphone } from "lucide-react";
+import { Calendar, Camera, CheckSquare, Download, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -48,6 +48,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           { href: "/belege/foto", label: "Beleg-Foto", icon: Camera },
           { href: "/belege", label: "Belege", icon: FileText },
           { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
+          { href: "/pc", label: "Computer", icon: Monitor },
         ].map((t) => (
           <Link key={t.href} href={t.href} className="card flex flex-col items-center gap-2 p-4 text-center text-sm font-medium">
             <t.icon className="size-6 text-brand" /> {t.label}

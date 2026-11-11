@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, CheckSquare, FileText, FolderSearch, HardHat, Home, Mail, Menu, Settings, Sparkles } from "lucide-react";
+import { Calendar, CheckSquare, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Settings, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 
 const DESKTOP = [
@@ -14,6 +14,7 @@ const DESKTOP = [
   { href: "/belege", label: "Belege", icon: FileText },
   { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
   { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
+  { href: "/pc", label: "Computer", icon: Monitor },
   { href: "/einstellungen", label: "Einstellungen", icon: Settings },
 ];
 
@@ -23,7 +24,7 @@ const MOBILE = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/belege", "/dokumente", "/aufgaben"] },
+  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/belege", "/dokumente", "/aufgaben", "/pc"] },
 ];
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
