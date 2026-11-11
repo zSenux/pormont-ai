@@ -72,8 +72,11 @@ export function JarvisChat(props: {
     } catch {}
   }, []);
 
+  // Beim Öffnen sofort ans Ende, danach weich mitscrollen
+  const scrolled = useRef(false);
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    bottom.current?.scrollIntoView({ behavior: scrolled.current ? "smooth" : "auto", block: "end" });
+    scrolled.current = true;
   }, [messages, actions, interim]);
 
   const send = useCallback(
@@ -318,7 +321,7 @@ export function JarvisChat(props: {
           </div>
         )}
         {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-bad">{error}</p>}
-        <div ref={bottom} />
+        <div ref={bottom} className="h-4 scroll-mb-28" />
       </div>
 
       {/* Eingabe */}

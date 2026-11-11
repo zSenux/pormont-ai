@@ -1,4 +1,6 @@
-import { Download, LogOut, MonitorSmartphone } from "lucide-react";
+import Link from "next/link";
+import { Download, FileText, LogOut, MonitorSmartphone } from "lucide-react";
+import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDateTime } from "@/lib/berlin";
@@ -23,8 +25,9 @@ async function lexwareState() {
 
 export default async function EinstellungenPage() {
   const me = await requireUser();
-  const [lex, users, memories, devices] = await Promise.all([
+  const [lex, mail, users, memories, devices] = await Promise.all([
     lexwareState(),
+    mailStatus(),
     me.role === "ADMIN" ? db.user.findMany({ orderBy: { createdAt: "asc" } }) : Promise.resolve([]),
     db.memory.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
     db.pushSubscription.count({ where: { userId: me.id } }),
@@ -34,10 +37,14 @@ export default async function EinstellungenPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-5 px-4 py-6 md:py-10">
       <h1 className="page-title">Einstellungen</h1>
+      <Link href="/belege" className="card flex items-center gap-3 p-4 text-sm font-medium md:hidden">
+        <FileText className="size-5 text-brand" /> Belege (Rechnungen, Angebote …)
+      </Link>
 
       <section className="card space-y-3 p-5">
         <h2 className="font-semibold">Verbindungen</h2>
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${lex.ok ? "bg-ok" : "bg-bad"}`} /> Lexware Office: {lex.text}</p>
+        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${mail.ok ? "bg-ok" : "bg-bad"}`} /> E-Mail-Postfach: {mail.text}</p>
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${ai ? "bg-ok" : "bg-bad"}`} /> KI (Claude): {ai ? "bereit" : "ANTHROPIC_API_KEY fehlt"}</p>
       </section>
 

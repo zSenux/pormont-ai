@@ -7,6 +7,7 @@ als App auf dem iPhone (Safari → „Zum Home-Bildschirm“) und als Windows-Ap
 - Fragen per Text oder Sprache: „Welche Rechnungen sind überfällig?“, „Wie viel Umsatz hatten wir im Oktober?“, „Was hat Firma Müller noch offen?“
 - Lexware: Kunden suchen, Rechnungen/Angebote/Auftragsbestätigungen/Gutschriften ansehen, PDFs öffnen, Umsatz auswerten, Artikel nachschlagen
 - **Kunden, Rechnungen und Angebote anlegen** – immer erst als Vorschlag mit Karte „Freigeben / Ablehnen“, nie ohne Bestätigung
+- **E-Mail** (Strato, GMX oder IONOS): Posteingang lesen, Mails zusammenfassen, Antworten entwerfen, Anhänge laden, Push bei neuen Mails. Gesendet wird nur nach „Freigeben“
 - Aufgaben und Erinnerungen (Push), Morgen-Briefing werktags 7:30, Hinweis auf neu überfällige Rechnungen
 - Gedächtnis („Merk dir: …“) für feste Regeln des Betriebs
 - Team: mehrere Benutzer (Administrator/Mitarbeiter), Abmelden auf allen Geräten
@@ -27,6 +28,7 @@ oder per `pnpm user:add <email> "<Name>" <passwort> [ADMIN|MEMBER]` (setzt auch 
 | Variable | Woher |
 |---|---|
 | `LEXWARE_API_KEY` | Lexware Office → Erweiterungen → Public API (https://app.lexware.de/addons/public-api) |
+| `MAIL_PROVIDER` / `MAIL_USER` / `MAIL_PASSWORD` | Anbieter (`strato`, `gmx`, `ionos`), E-Mail-Adresse und Passwort des Postfachs. Bei GMX vorher „POP3/IMAP Abruf“ in den GMX-Einstellungen erlauben |
 | `ANTHROPIC_API_KEY` | https://console.anthropic.com → API Keys |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | `npx web-push generate-vapid-keys` (einmal, nie wechseln) |
 | `AUTH_SECRET` | `openssl rand -base64 48` |

@@ -4,6 +4,8 @@ import { berlinParts, formatDate, formatDateTime, formatEuro } from "@/lib/berli
 import { sendPush } from "@/lib/push";
 import { lexwareConfigured } from "@/lib/lexware/client";
 import { voucherListAll } from "@/lib/lexware/api";
+import { mailConfigured } from "@/lib/mail/config";
+import { mailsSince } from "@/lib/mail/client";
 
 // Hintergrund-Jobs im App-Prozess (wie in Klaic OS): Erinnerungen und Lexware-Warnungen per Push.
 // Läuft nur in Produktion bzw. lokal mit JOBS=1.
@@ -60,6 +62,22 @@ async function morningBriefing() {
   await sendPush({ title: "☀️ Guten Morgen – Jarvis", body: `${tasks} Aufgaben für heute${money}. Tippen für den Überblick.`, url: "/jarvis?q=Was%20steht%20heute%20an%3F", tag: "briefing" });
 }
 
+/** Push bei neuen (ungelesenen) Mails im Posteingang – merkt sich die höchste UID */
+async function newMails() {
+  if (!mailConfigured()) return;
+  const state = await db.jobState.findUnique({ where: { key: "mail:last" } });
+  const last = state ? (JSON.parse(state.value) as { uid: number; validity: string }) : null;
+  const r = await mailsSince(last);
+  await db.jobState.upsert({ where: { key: "mail:last" }, create: { key: "mail:last", value: JSON.stringify({ uid: r.maxUid, validity: r.validity }) }, update: { value: JSON.stringify({ uid: r.maxUid, validity: r.validity }) } });
+  const fresh = r.mails.filter((m) => !m.seen);
+  if (fresh.length === 1) {
+    const m = fresh[0];
+    await sendPush({ title: `✉️ ${m.from}`, body: m.subject, url: `/mail/${m.uid}`, tag: "mail" });
+  } else if (fresh.length > 1) {
+    await sendPush({ title: `✉️ ${fresh.length} neue Mails`, body: fresh.slice(0, 3).map((m) => `${m.from}: ${m.subject}`).join(" · "), url: "/mail?filter=ungelesen", tag: "mail" });
+  }
+}
+
 let started = false;
 export function startJobs() {
   if (started) return;
@@ -69,5 +87,7 @@ export function startJobs() {
   setInterval(safe("briefing", morningBriefing), 60_000);
   setInterval(safe("lexware", overdueInvoices), 30 * 60_000);
   setTimeout(safe("lexware", overdueInvoices), 20_000);
+  setInterval(safe("mail", newMails), 2 * 60_000);
+  setTimeout(safe("mail", newMails), 15_000);
   console.log("[jobs] gestartet");
 }

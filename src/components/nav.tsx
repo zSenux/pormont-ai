@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CheckSquare, FileText, Home, Settings, Sparkles } from "lucide-react";
+import { CheckSquare, FileText, Home, Mail, Settings, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 
 const ITEMS = [
   { href: "/", label: "Übersicht", icon: Home },
-  { href: "/belege", label: "Belege", icon: FileText },
+  { href: "/mail", label: "Mail", icon: Mail },
+  { href: "/belege", label: "Belege", icon: FileText, desktopOnly: true },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
   { href: "/einstellungen", label: "Mehr", icon: Settings },
@@ -56,7 +57,7 @@ export function MobileNav() {
   return (
     <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 backdrop-blur md:hidden" aria-label="Hauptnavigation">
       <div className="grid h-16 grid-cols-5">
-        {ITEMS.map((i) =>
+        {ITEMS.filter((i) => !i.desktopOnly).map((i) =>
           i.center ? (
             <Link key={i.href} href={i.href} className="flex flex-col items-center justify-center" aria-label="Jarvis">
               <span className={clsx("-mt-6 grid size-14 place-items-center rounded-full border-4 border-white shadow-lg", active(path, i.href) ? "bg-brand-2" : "bg-brand")}>

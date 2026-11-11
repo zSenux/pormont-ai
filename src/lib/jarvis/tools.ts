@@ -7,6 +7,7 @@ import { companyProfile } from "@/lib/company";
 import { lexwareConfigured, LexwareError, permalink } from "@/lib/lexware/client";
 import { contactName, getContact, getPayment, getVoucher, listArticles, profile, searchContacts, STATUS_DE, VOUCHER_TYPES, voucherLink, voucherList, voucherListAll, type VoucherKind } from "@/lib/lexware/api";
 import { proposeAction, type ActionKind } from "./actions";
+import { MAIL_TOOLS, MAIL_TOOL_NAMES, runMailTool } from "./mail-tools";
 
 // Werkzeuge von Jarvis. Lesen läuft sofort; alles, was in Lexware schreibt, wird nur als Freigabe-Karte vorgeschlagen.
 // Interne Aufgaben/Gedächtnis darf Jarvis direkt ändern (harmlos, sichtbar).
@@ -129,6 +130,7 @@ export const TOOLS: Def[] = [
   },
   { name: "merken", description: "Dauerhaft merken, z. B. Vorlieben, Abläufe, Preise, Kundenbesonderheiten („Merk dir …“).", input_schema: { type: "object", properties: { text: str("Was gemerkt werden soll, als ganzer Satz") }, required: ["text"] } },
   { name: "vergessen", description: "Einen gemerkten Eintrag löschen.", input_schema: { type: "object", properties: { id: str("ID aus dem Gedächtnis-Block") }, required: ["id"] } },
+  ...MAIL_TOOLS,
 ];
 
 const STATUS_MAP: Record<string, string | undefined> = { offen: "open", ueberfaellig: "overdue", bezahlt: "paid,paidoff", entwurf: "draft", angenommen: "accepted", abgelehnt: "rejected", alle: undefined };
@@ -208,6 +210,7 @@ export async function memoryBlock() {
 
 export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promise<string> {
   const i = (input ?? {}) as Record<string, unknown>;
+  if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
   const needsLex = !["firmendaten", "aufgaben", "merken", "vergessen", "tagesueberblick"].includes(name);
   if (needsLex && !lexwareConfigured()) return "Lexware ist noch nicht verbunden (API-Schlüssel fehlt). Sag dem Team, dass der Administrator LEXWARE_API_KEY hinterlegen muss.";
   try {

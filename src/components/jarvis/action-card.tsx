@@ -36,7 +36,7 @@ export function ActionCard({ action, onDone }: { action: ActionView; onDone?: (a
           {a.status === "PENDING" ? "wartet auf dich" : a.status === "DONE" ? "erledigt" : a.status === "DECLINED" ? "abgelehnt" : "Fehler"}
         </span>
       </div>
-      <p className="text-ink/80">{a.summary}</p>
+      <p className="whitespace-pre-line text-ink/80">{a.summary}</p>
       {a.result && a.status !== "PENDING" && <p className={`mt-2 ${a.status === "ERROR" ? "text-bad" : "text-ok"}`}>{a.result}</p>}
       {a.links && a.links.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">

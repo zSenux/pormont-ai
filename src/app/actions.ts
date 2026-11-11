@@ -160,3 +160,11 @@ export async function sendTestPush() {
   const u = await requireUser();
   return { sent: await sendPush({ title: "Jarvis", body: "Benachrichtigungen funktionieren ✓", url: "/", userId: u.id, tag: "test" }) };
 }
+
+export async function markMail(uid: number, seen: boolean) {
+  await requireUser();
+  const u = z.number().int().positive().parse(uid);
+  const { setFlag } = await import("@/lib/mail/client");
+  await setFlag(u, "\\Seen", seen);
+  revalidatePath("/mail");
+}
