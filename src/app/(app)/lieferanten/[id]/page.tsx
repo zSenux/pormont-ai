@@ -9,6 +9,7 @@ import { formatDate, formatDateTime, formatEuro } from "@/lib/berlin";
 import { KIND_LABEL, REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, type SupplierKindKey } from "@/lib/suppliers";
 import { priceText, searchCatalog } from "@/lib/catalog";
 import { clearCatalog, deleteSupplier } from "@/app/actions/lieferanten";
+import { stockFromCatalog } from "@/app/actions/lager";
 import { ActionButton } from "@/components/confirm-button";
 import { CatalogUpload, RequestForm, SupplierForm } from "../forms";
 
@@ -94,6 +95,7 @@ export default async function SupplierPage({ params, searchParams }: { params: P
                   <li key={h.id} className="flex flex-wrap items-baseline gap-x-3 py-2 text-sm">
                     <span className="min-w-0 flex-1 [overflow-wrap:anywhere]"><span className="font-medium">{h.name}</span>{h.description ? <span className="text-steel"> · {h.description}</span> : null}<span className="block text-xs text-steel">Nr. {h.articleNo}{h.group ? ` · ${h.group}` : ""}</span></span>
                     <span className="shrink-0 font-semibold">{priceText(h)}</span>
+                    <ActionButton action={stockFromCatalog.bind(null, h.id)} className="text-xs font-medium text-brand hover:underline" title="Als Lagerartikel übernehmen">Ins Lager</ActionButton>
                   </li>
                 ))}
               </ul>

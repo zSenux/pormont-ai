@@ -190,6 +190,12 @@ model Project {
   startDate    DateTime?
   endDate      DateTime?
   description  String?
+  /// Nachkalkulation: Auftragswert netto (aus Lexware-Angebot übernommen oder von Hand)
+  budgetNet    Float?
+  lexQuotationId String?
+  lexQuotationNo String?
+  /// Kalkulierter Kosten-Stundensatz (€/Std.), sonst Standard aus KALK_STUNDENSATZ
+  hourlyRate   Float?
   createdById  String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -200,6 +206,8 @@ model Project {
   files    StoredFile[]
   expenses Expense[]
   requests SupplierRequest[]
+  stockMoves StockMove[]
+  costs    ProjectCost[]
 
   @@index([status])
 }
@@ -484,6 +492,7 @@ model Supplier {
   requests SupplierRequest[]
   items    CatalogItem[]
   imports  CatalogImport[]
+  stock    StockItem[]
 }
 
 enum SupplierRequestStatus {
@@ -586,4 +595,73 @@ model PhoneCall {
   updatedAt DateTime @updatedAt
 
   @@index([fromNo, createdAt])
+}
+
+// ---------- Materiallager ----------
+
+/// Lagerartikel (Profile, Rohre, Bleche, Schrauben …) mit Bestand und Mindestbestand
+model StockItem {
+  id            String    @id @default(cuid())
+  name          String
+  /// PROFIL | ROHR | BLECH | FLACH_RUND | SCHRAUBEN | BESCHLAG | VERBRAUCH | SONSTIGES
+  category      String    @default("SONSTIGES")
+  /// z. B. S235JR, V2A, verzinkt
+  material      String?
+  unit          String    @default("Stk")
+  quantity      Float     @default(0)
+  /// Unter diesem Bestand → Nachbestell-Warnung
+  minQuantity   Float?
+  /// Vorschlag für die Nachbestellung
+  reorderQty    Float?
+  /// Einkaufspreis netto je Einheit (für Nachkalkulation)
+  price         Float?
+  location      String?
+  supplierId    String?
+  supplier      Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  articleNo     String?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  moves StockMove[]
+
+  @@index([category, name])
+}
+
+/// Lagerbewegung: Eingang (+), Ausgang (−, meist auf ein Projekt), Korrektur/Inventur
+model StockMove {
+  id        String    @id @default(cuid())
+  itemId    String
+  item      StockItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  /// EINGANG | AUSGANG | INVENTUR
+  kind      String
+  /// Menge mit Vorzeichen
+  delta     Float
+  /// Preis je Einheit zum Zeitpunkt der Buchung (netto)
+  price     Float?
+  projectId String?
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  note      String?
+  userName  String?
+  createdAt DateTime  @default(now())
+
+  @@index([itemId, createdAt])
+  @@index([projectId])
+}
+
+/// Sonstige Projektkosten für die Nachkalkulation (Fremdleistung, Verzinkung, Kran, Material direkt auf Baustelle …)
+model ProjectCost {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// MATERIAL | FREMDLEISTUNG | GERAET | SONSTIGES
+  kind      String   @default("SONSTIGES")
+  label     String
+  /// netto in Euro
+  amount    Float
+  day       DateTime @default(now())
+  userName  String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
 }

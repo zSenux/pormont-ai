@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CalendarPlus, Clock, FileText, MapPin, NotebookPen, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Calculator, CalendarPlus, Clock, FileText, MapPin, NotebookPen, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
-import { berlinParts, formatDate, formatDateTime, todayYmd } from "@/lib/berlin";
+import { berlinParts, formatDate, formatDateTime, formatEuro, todayYmd } from "@/lib/berlin";
 import { formatHours } from "@/lib/hours";
 import { fileUrl, IMAGE_TYPES } from "@/lib/files";
 import { timeHm } from "@/lib/calendar";
 import { STATUS_LABEL, STATUS_TONE, type ProjectStatusKey } from "@/lib/projects";
 import { addTime, deleteEvent, deleteFile, deleteNote, deleteTime, saveEvent, setProjectStatus, updateProject } from "@/app/actions/work";
 import { ActionButton } from "@/components/confirm-button";
+import { calcProject } from "@/lib/nachkalkulation";
 import { Uploader } from "@/components/upload";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
     },
   });
   if (!p) notFound();
+  const calc = await calcProject(p.id);
   const users = me.role === "ADMIN" ? await db.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) : [];
   const total = p.times.reduce((s, t) => s + t.minutes, 0);
   const perUser = [...p.times.reduce((m, t) => m.set(t.user.name, (m.get(t.user.name) ?? 0) + t.minutes), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
@@ -72,6 +74,12 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
         <div className="flex flex-wrap gap-2">
           <Link href={ask(`Gib mir einen Stand zum Projekt „${p.name}“: letzte Einträge, Stunden, nächste Termine, offene Punkte.`)} className="btn-secondary">
             <Sparkles className="size-4" /> Stand von Jarvis
+          </Link>
+          <Link href={`/projekte/${p.id}/nachkalkulation`} className="btn-secondary">
+            <Calculator className="size-4" /> Nachkalkulation
+            <span className={clsx("text-xs font-semibold", calc.marginPct === null ? "text-steel" : calc.marginPct < 0 ? "text-bad" : calc.marginPct < 15 ? "text-warn" : "text-ok")}>
+              {calc.marginPct !== null ? `${calc.marginPct.toLocaleString("de-DE", { maximumFractionDigits: 0 })} % Marge` : `Kosten ${formatEuro(calc.total)}`}
+            </span>
           </Link>
           <details className="w-full">
             <summary className="btn-secondary inline-flex cursor-pointer list-none">
