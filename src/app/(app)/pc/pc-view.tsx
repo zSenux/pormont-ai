@@ -160,8 +160,8 @@ export function PcView({ initial, focusJob, downloadUrl }: { initial: State; foc
       )}
 
       {(viewing || active) && device && (
-        <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <div className="card overflow-hidden p-0">
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <div className="card self-start overflow-hidden p-0">
             {viewing ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={`/api/pc/view?pc=${device.id}&t=${tick}`} alt={`Live-Bild von ${device.name}`} className="block w-full bg-brand-2" />
@@ -204,7 +204,7 @@ function JobCard({ job, busy, run }: { job: Job; busy: boolean; run: (fn: () => 
       {job.status === "CONFIRM" && job.confirm && (
         <div className="space-y-2 rounded-2xl border border-amber-300 bg-amber-50 p-3">
           <p className="font-semibold">{job.confirm.text}</p>
-          {job.confirm.detail && <p className="whitespace-pre-line text-steel">{job.confirm.detail}</p>}
+          {job.confirm.detail && <p className="whitespace-pre-line text-steel [overflow-wrap:anywhere]">{job.confirm.detail}</p>}
           <div className="flex gap-2">
             <button className="btn-primary" disabled={busy} onClick={() => run(() => call(`/api/pc/jobs/${job.id}/decide`, { yes: true }))}><Check className="size-4" /> Erlauben</button>
             <button className="btn-secondary" disabled={busy} onClick={() => run(() => call(`/api/pc/jobs/${job.id}/decide`, { yes: false }))}><X className="size-4" /> Ablehnen</button>
@@ -214,7 +214,7 @@ function JobCard({ job, busy, run }: { job: Job; busy: boolean; run: (fn: () => 
 
       <ol className="max-h-72 space-y-1 overflow-y-auto text-steel">
         {job.lines.slice(-30).map((l, i) => (
-          <li key={i} className="flex gap-2"><span className="flex-none tabular-nums">{time(l.at)}</span><span>{l.text}</span></li>
+          <li key={i} className="flex gap-2"><span className="flex-none tabular-nums">{time(l.at)}</span><span className="min-w-0 [overflow-wrap:anywhere]">{l.text}</span></li>
         ))}
         {job.lines.length === 0 && <li>Wartet, bis der PC den Auftrag abholt …</li>}
       </ol>
