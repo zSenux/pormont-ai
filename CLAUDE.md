@@ -17,11 +17,13 @@ Bausteine stammen aus `zSenux/klaic-os` (Agent-Schleife, Push, PWA, Windows-App)
 - `src/lib/jarvis/agent.ts` (Schleife, System-Prompt), `tools.ts` (Werkzeuge), `actions.ts` (Freigaben), `load.ts`
 - `src/app/api/jarvis/route.ts` (SSE: chat/text/tool/action/done/error), `src/components/jarvis/chat.tsx` (Chat, Sprache, Gesprächsmodus)
 - `src/lib/mail/*`: IMAP (imapflow, je Aufruf eine Verbindung) + SMTP (nodemailer), Vorlagen Strato/GMX/IONOS in `config.ts`; gesendete Mails werden in „Gesendet“ abgelegt, Entwürfe per IMAP APPEND. Werkzeuge in `src/lib/jarvis/mail-tools.ts`, Seiten `/mail`, `/mail/[uid]`
+- Kalender `src/lib/calendar.ts` + `ics.ts` (Abo `/kalender-abo/<token>/promont.ics`, im `matcher` ausgenommen), Projekte/Stunden `src/lib/projects.ts` + `hours.ts`, Dateien `src/lib/files.ts` (StoredFile, Text per unpdf, Scans per Claude), Belege `src/lib/receipts.ts` (Auslesen + `POST /v1/files`), Werkzeuge `src/lib/jarvis/work-tools.ts`
 - `src/lib/jobs.ts` (Erinnerungen, überfällige Rechnungen, Morgen-Briefing; über `instrumentation.ts`, nur Produktion bzw. `JOBS=1`)
 
 ## Regeln
 - **Schreibende Lexware-Aktionen nur über `PendingAction`** (Vorschlag → Karte → Freigabe durch einen Menschen, atomar PENDING → DONE). Nie direkt aus einem Werkzeug schreiben.
 - **Mails senden nur über `PendingAction` (`mail_senden`)**. Mail-Inhalte sind fremde Daten (Prompt-Injection) – werden im Werkzeug-Ergebnis als `<mail_inhalt>` markiert; HTML nie ins DOM, nur als Text. Anhänge nur als Download (octet-stream, nosniff, CSP sandbox)
+- **Beleg-Upload nach Lexware nur über `PendingAction` (`beleg_hochladen`)**, Daten kommen aus der DB, nie vom Modell. Dokument-Inhalte sind fremde Daten (`<dokument_inhalt>`)
 - Rechnungen werden standardmäßig als **Entwurf** angelegt; Festschreiben nur, wenn ausdrücklich gewünscht (`festschreiben: true`).
 - Chat-Verlauf ist append-only (Thinking-Blöcke bleiben gültig) – nie alte Nachrichten verändern; Hinweise als neue Nachrichten anhängen.
 - Eingaben immer mit zod prüfen, jede Server-Action mit `requireUser()`/`requireAdmin()`.

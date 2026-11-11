@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckSquare, FileText, Mic, Sparkles, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowRight, Calendar, Camera, CheckSquare, Clock, FileText, FolderSearch, HardHat, Mic, Sparkles, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { firstName, requireUser } from "@/lib/auth/user";
 import { berlinDateTime, berlinParts, formatDate, formatDateTime, formatEuro, todayYmd } from "@/lib/berlin";
 import { lexwareConfigured, LexwareError } from "@/lib/lexware/client";
 import { voucherList, voucherListAll, voucherLink } from "@/lib/lexware/api";
 import { COMPANY } from "@/lib/company";
+import { timeHm, todayEvents } from "@/lib/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function Home() {
   const end = berlinDateTime(todayYmd(), "23:59");
   const tasks = await db.task.findMany({ where: { doneAt: null, dueAt: { lte: end } }, orderBy: { dueAt: "asc" }, take: 6 });
   const pending = await db.pendingAction.count({ where: { status: "PENDING", userId: user.id } });
+  const events = await todayEvents();
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-6 md:py-10">
       <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-brand-2 to-brand p-6 text-white md:p-10">
@@ -29,7 +31,7 @@ export default async function Home() {
           <h1 className="mt-2 text-3xl font-extrabold tracking-[-0.03em] md:text-5xl">
             {greeting()}, {firstName(user.name)}.
           </h1>
-          <p className="mt-2 max-w-xl text-sky-100">Frag Jarvis nach Rechnungen, Angeboten, Kunden und Aufgaben – per Text oder Sprache.</p>
+          <p className="mt-2 max-w-xl text-sky-100">Frag Jarvis nach Rechnungen, Mails, Terminen, Baustellen und Dokumenten – per Text oder Sprache.</p>
           <form action="/jarvis" className="mt-5 flex max-w-xl gap-2">
             <input name="q" placeholder="Was möchtest du wissen?" className="w-full rounded-full border border-white/20 bg-white/10 px-4 py-3 text-[16px] text-white outline-none placeholder:text-sky-200 focus:bg-white/15" aria-label="Frage an Jarvis" />
             <button className="grid size-12 shrink-0 place-items-center rounded-full bg-white text-brand-2" aria-label="Fragen">
@@ -47,6 +49,20 @@ export default async function Home() {
         </div>
       </section>
 
+      <nav className="grid grid-cols-4 gap-3" aria-label="Schnellzugriff">
+        {[
+          { href: "/belege/foto", label: "Beleg fotografieren", icon: Camera },
+          { href: "/projekte", label: "Stunden & Baustellen", icon: HardHat },
+          { href: "/kalender", label: "Termin eintragen", icon: Calendar },
+          { href: "/dokumente", label: "Dokument suchen", icon: FolderSearch },
+        ].map((q) => (
+          <Link key={q.href} href={q.href} className="card flex flex-col items-center gap-2 p-3 text-center text-xs font-medium transition hover:border-brand md:flex-row md:p-4 md:text-left md:text-sm">
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-soft text-brand"><q.icon className="size-5" /></span>
+            {q.label}
+          </Link>
+        ))}
+      </nav>
+
       {pending > 0 && (
         <Link href="/jarvis" className="card flex items-center gap-3 border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-warn">
           <AlertTriangle className="size-5" /> {pending === 1 ? "1 Freigabe wartet" : `${pending} Freigaben warten`} auf dich bei Jarvis.
@@ -59,6 +75,28 @@ export default async function Home() {
       </Suspense>
 
       <div className="grid gap-6 md:grid-cols-2">
+        <section className="card p-5 md:col-span-2">
+          <div className="mb-3 flex items-center gap-2">
+            <Calendar className="size-5 text-brand" />
+            <h2 className="font-bold">Termine heute</h2>
+            <Link href="/kalender" className="ml-auto text-sm font-medium text-brand">Kalender</Link>
+          </div>
+          {events.length === 0 ? (
+            <p className="text-sm text-steel">Heute keine Termine.</p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {events.map((e) => (
+                <li key={e.id} className="flex items-center gap-3 py-2 text-sm">
+                  <span className="flex w-24 shrink-0 items-center gap-1 font-semibold text-brand"><Clock className="size-3.5" />{e.allDay ? "ganztägig" : `${timeHm(e.startAt)}${e.endAt ? `–${timeHm(e.endAt)}` : ""}`}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{e.title}</span>
+                    {(e.location || e.project) && <span className="block truncate text-xs text-steel">{[e.location, e.project?.name].filter(Boolean).join(" · ")}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
         <section className="card p-5">
           <div className="mb-3 flex items-center gap-2">
             <CheckSquare className="size-5 text-brand" />

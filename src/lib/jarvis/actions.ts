@@ -5,15 +5,29 @@ import { LexwareError, permalink } from "@/lib/lexware/client";
 import { createContact, createInvoice, createQuotation } from "@/lib/lexware/api";
 import { sendMail, MailError } from "@/lib/mail/client";
 import { mailInput } from "@/lib/mail/input";
+import { z } from "zod";
+import { receiptSummary, receiptData, uploadReceipt } from "@/lib/receipts";
+import { LEXWARE_APP } from "@/lib/lexware/client";
 import { contactBody, contactInput, invoiceBody, quotationBody, totals, voucherInput } from "@/lib/lexware/payloads";
 
 // Schreibende Schritte in Lexware laufen NIE direkt aus dem Chat: Jarvis legt eine PendingAction an,
 // das Team sieht eine Freigabe-Karte und erst „Freigeben“ führt sie aus (atomar, nur einmal).
 
-export const ACTION_KINDS = ["kunde_anlegen", "rechnung_erstellen", "angebot_erstellen", "mail_senden"] as const;
+export const ACTION_KINDS = ["kunde_anlegen", "rechnung_erstellen", "angebot_erstellen", "mail_senden", "beleg_hochladen"] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
 export type ActionLink = { label: string; url: string };
+
+const belegInput = z.object({ fileId: z.string().min(1).max(40), text: z.string().max(300) });
+
+/** Für die Freigabe-Karte: Belegdaten aus der Datenbank lesen (nie vom Modell übernehmen) */
+export async function receiptActionInput(fileId: string) {
+  const f = await db.storedFile.findUnique({ where: { id: fileId }, select: { id: true, kind: true, name: true, meta: true, lexFileId: true } });
+  if (!f || f.kind !== "beleg") throw new Error("Belegfoto nicht gefunden.");
+  if (f.lexFileId) throw new Error("Dieser Beleg ist schon in Lexware.");
+  const d = receiptData.safeParse(f.meta);
+  return { fileId: f.id, text: (d.success ? receiptSummary(d.data) : null) ?? f.name };
+}
 
 /** Prüft die Eingabe und baut den Text für die Freigabe-Karte */
 export function describe(kind: ActionKind, input: unknown): { summary: string; payload: unknown } {
@@ -26,6 +40,10 @@ export function describe(kind: ActionKind, input: unknown): { summary: string; p
   if (kind === "mail_senden") {
     const m = mailInput.parse(input);
     return { summary: `E-Mail senden an ${m.an}${m.cc ? ` (CC ${m.cc})` : ""}\nBetreff: ${m.betreff}\n\n${m.text}`, payload: m };
+  }
+  if (kind === "beleg_hochladen") {
+    const b = belegInput.parse(input);
+    return { summary: `Belegfoto an Lexware übergeben (unter Belege zum Verbuchen): ${b.text}`, payload: { fileId: b.fileId } };
   }
   const v = voucherInput.parse(input);
   const t = totals(v);
@@ -75,6 +93,11 @@ export async function executeAction(id: string, userId: string) {
       await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, inReplyTo: m.antwortAuf ?? null, references: m.referenzen });
       result = `E-Mail an ${m.an} gesendet.`;
       links = [{ label: "Postfach", url: "/mail" }];
+    } else if (a.kind === "beleg_hochladen") {
+      const { fileId } = z.object({ fileId: z.string() }).parse(a.payload);
+      await uploadReceipt(fileId);
+      result = "Beleg an Lexware übergeben – er liegt dort unter Belege zum Verbuchen.";
+      links = [{ label: "Belege in Lexware", url: `${LEXWARE_APP}/vouchers` }, { label: "Belegfotos", url: "/belege/foto" }];
     } else throw new Error("Unbekannte Aktion.");
     await db.pendingAction.update({ where: { id }, data: { result, links } });
     await appendNote(a.chatId, `✓ Freigegeben und erledigt: ${result} ${links.map((l) => `[${l.label}](${l.url})`).join(" · ")}`);

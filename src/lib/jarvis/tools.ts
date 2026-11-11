@@ -8,6 +8,8 @@ import { lexwareConfigured, LexwareError, permalink } from "@/lib/lexware/client
 import { contactName, getContact, getPayment, getVoucher, listArticles, profile, searchContacts, STATUS_DE, VOUCHER_TYPES, voucherLink, voucherList, voucherListAll, type VoucherKind } from "@/lib/lexware/api";
 import { proposeAction, type ActionKind } from "./actions";
 import { MAIL_TOOLS, MAIL_TOOL_NAMES, runMailTool } from "./mail-tools";
+import { eventLine, todayEvents } from "@/lib/calendar";
+import { WORK_TOOLS, WORK_TOOL_NAMES, runWorkTool } from "./work-tools";
 
 // Werkzeuge von Jarvis. Lesen läuft sofort; alles, was in Lexware schreibt, wird nur als Freigabe-Karte vorgeschlagen.
 // Interne Aufgaben/Gedächtnis darf Jarvis direkt ändern (harmlos, sichtbar).
@@ -131,6 +133,7 @@ export const TOOLS: Def[] = [
   { name: "merken", description: "Dauerhaft merken, z. B. Vorlieben, Abläufe, Preise, Kundenbesonderheiten („Merk dir …“).", input_schema: { type: "object", properties: { text: str("Was gemerkt werden soll, als ganzer Satz") }, required: ["text"] } },
   { name: "vergessen", description: "Einen gemerkten Eintrag löschen.", input_schema: { type: "object", properties: { id: str("ID aus dem Gedächtnis-Block") }, required: ["id"] } },
   ...MAIL_TOOLS,
+  ...WORK_TOOLS,
 ];
 
 const STATUS_MAP: Record<string, string | undefined> = { offen: "open", ueberfaellig: "overdue", bezahlt: "paid,paidoff", entwurf: "draft", angenommen: "accepted", abgelehnt: "rejected", alle: undefined };
@@ -145,6 +148,10 @@ async function overview(userId: string) {
   const tasks = await db.task.findMany({ where: { doneAt: null, dueAt: { lte: end } }, orderBy: { dueAt: "asc" }, take: 15 });
   const parts = [`Heute: ${formatDate(new Date())}`];
   parts.push(tasks.length ? `Fällige Aufgaben (${tasks.length}):\n${tasks.map((t) => `- ${t.title}${t.dueAt ? ` (${t.dueHasTime ? formatDateTime(t.dueAt) : formatDate(t.dueAt)})` : ""} · id ${t.id}`).join("\n")}` : "Keine fälligen Aufgaben.");
+  const events = await todayEvents();
+  parts.push(events.length ? `Termine heute:\n${events.map((e) => `- ${eventLine(e)}`).join("\n")}` : "Keine Termine heute.");
+  const openReceipts = await db.storedFile.count({ where: { kind: "beleg", lexFileId: null } });
+  if (openReceipts) parts.push(`${openReceipts} fotografierte Belege noch nicht in Lexware ([Belegfotos](/belege/foto)).`);
   if (!lexwareConfigured()) parts.push("Lexware ist noch nicht verbunden.");
   else {
     const [overdue, open, quotes] = await Promise.all([
@@ -211,6 +218,7 @@ export async function memoryBlock() {
 export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promise<string> {
   const i = (input ?? {}) as Record<string, unknown>;
   if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
+  if (WORK_TOOL_NAMES.has(name)) return runWorkTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   const needsLex = !["firmendaten", "aufgaben", "merken", "vergessen", "tagesueberblick"].includes(name);
   if (needsLex && !lexwareConfigured()) return "Lexware ist noch nicht verbunden (API-Schlüssel fehlt). Sag dem Team, dass der Administrator LEXWARE_API_KEY hinterlegen muss.";
   try {

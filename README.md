@@ -8,6 +8,10 @@ als App auf dem iPhone (Safari → „Zum Home-Bildschirm“) und als Windows-Ap
 - Lexware: Kunden suchen, Rechnungen/Angebote/Auftragsbestätigungen/Gutschriften ansehen, PDFs öffnen, Umsatz auswerten, Artikel nachschlagen
 - **Kunden, Rechnungen und Angebote anlegen** – immer erst als Vorschlag mit Karte „Freigeben / Ablehnen“, nie ohne Bestätigung
 - **E-Mail** (Strato, GMX oder IONOS): Posteingang lesen, Mails zusammenfassen, Antworten entwerfen, Anhänge laden, Push bei neuen Mails. Gesendet wird nur nach „Freigeben“
+- **Kalender**: Termine anlegen/ändern (auch per Sprache), Erinnerung per Push, Abo-Link für iPhone/Outlook (`/kalender-abo/<token>/promont.ics`)
+- **Belege per Foto**: Kassenzettel/Rechnung fotografieren → Jarvis liest Händler, Datum, Betrag und USt. aus → nach Freigabe als Beleg in Lexware hochladen
+- **Projekte / Baustellen**: Status, Adresse, Notizen, Fotos, Stunden je Mitarbeiter und Auswertung
+- **Dokumente durchsuchen**: PDFs, Fotos und Scans hochladen, Volltextsuche (Scans liest Jarvis per KI ab)
 - Aufgaben und Erinnerungen (Push), Morgen-Briefing werktags 7:30, Hinweis auf neu überfällige Rechnungen
 - Gedächtnis („Merk dir: …“) für feste Regeln des Betriebs
 - Team: mehrere Benutzer (Administrator/Mitarbeiter), Abmelden auf allen Geräten

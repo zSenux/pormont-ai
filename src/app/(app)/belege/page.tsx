@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, FileDown } from "lucide-react";
+import { Camera, ExternalLink, FileDown } from "lucide-react";
 import { clsx } from "clsx";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatEuro } from "@/lib/berlin";
@@ -117,9 +117,12 @@ export default async function BelegePage({ searchParams }: { searchParams: Promi
 
   return (
     <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 md:px-6 md:py-10">
-      <div>
-        <h1 className="page-title">Belege</h1>
-        <p className="mt-1 text-sm text-steel">Live aus Lexware Office. Neue Rechnungen und Angebote erstellst du am schnellsten mit Jarvis.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="page-title">Belege</h1>
+          <p className="mt-1 text-sm text-steel">Live aus Lexware Office. Neue Rechnungen und Angebote erstellst du am schnellsten mit Jarvis.</p>
+        </div>
+        <Link href="/belege/foto" className="btn-primary"><Camera className="size-4" /> Beleg fotografieren</Link>
       </div>
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
         {ARTEN.map((a) => (

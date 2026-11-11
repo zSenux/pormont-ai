@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, FileText, LogOut, MonitorSmartphone } from "lucide-react";
+import { Calendar, Camera, CheckSquare, Download, FileText, FolderSearch, HardHat, LogOut, MonitorSmartphone } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -36,10 +36,22 @@ export default async function EinstellungenPage() {
 
   return (
     <main className="mx-auto max-w-3xl space-y-5 px-4 py-6 md:py-10">
-      <h1 className="page-title">Einstellungen</h1>
-      <Link href="/belege" className="card flex items-center gap-3 p-4 text-sm font-medium md:hidden">
-        <FileText className="size-5 text-brand" /> Belege (Rechnungen, Angebote …)
-      </Link>
+      <h1 className="page-title"><span className="md:hidden">Mehr</span><span className="hidden md:inline">Einstellungen</span></h1>
+      <nav className="grid grid-cols-3 gap-3 md:hidden" aria-label="Bereiche">
+        {[
+          { href: "/projekte", label: "Projekte", icon: HardHat },
+          { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
+          { href: "/kalender", label: "Kalender", icon: Calendar },
+          { href: "/belege/foto", label: "Beleg-Foto", icon: Camera },
+          { href: "/belege", label: "Belege", icon: FileText },
+          { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
+        ].map((t) => (
+          <Link key={t.href} href={t.href} className="card flex flex-col items-center gap-2 p-4 text-center text-sm font-medium">
+            <t.icon className="size-6 text-brand" /> {t.label}
+          </Link>
+        ))}
+      </nav>
+      <h2 className="pt-2 text-lg font-semibold md:hidden">Einstellungen</h2>
 
       <section className="card space-y-3 p-5">
         <h2 className="font-semibold">Verbindungen</h2>

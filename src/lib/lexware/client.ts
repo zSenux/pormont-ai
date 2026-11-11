@@ -106,6 +106,21 @@ export async function lexFile(path: string) {
   return { body: res.body, type: res.headers.get("content-type") ?? "application/pdf", disposition: res.headers.get("content-disposition") };
 }
 
+/** Datei hochladen (multipart), z. B. Beleg nach /v1/files mit type=voucher */
+export async function lexUpload<T>(path: string, form: FormData): Promise<T> {
+  const key = process.env.LEXWARE_API_KEY;
+  if (!key) throw new LexwareError("Lexware ist noch nicht verbunden (LEXWARE_API_KEY fehlt).");
+  const url = new URL(path, LEXWARE_API);
+  const send = () => throttle(() => fetch(url, { method: "POST", headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, body: form, signal: AbortSignal.timeout(60_000), cache: "no-store" }));
+  let res = await send();
+  if (res.status === 429) {
+    await new Promise((r) => setTimeout(r, 1200));
+    res = await send();
+  }
+  if (!res.ok) throw new LexwareError(germanError(res.status, await res.text().catch(() => "")), res.status);
+  return res.json() as Promise<T>;
+}
+
 /** Link in die Lexware-Office-Oberfläche */
 export function permalink(kind: "invoices" | "quotations" | "contacts" | "credit-notes" | "order-confirmations", id: string, mode: "view" | "edit" = "view") {
   return `${LEXWARE_APP}/permalink/${kind}/${mode}/${id}`;

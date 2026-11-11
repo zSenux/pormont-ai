@@ -17,19 +17,20 @@ enum Role {
 
 /// Team-Mitglied von ProMont (Anmeldung per E-Mail + Passwort)
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
+  id             String    @id @default(cuid())
+  email          String    @unique
   name           String
   passwordHash   String
-  role           Role     @default(MEMBER)
+  role           Role      @default(MEMBER)
   /// Erhöhen = alle Sitzungen dieses Nutzers abmelden
-  sessionVersion Int      @default(1)
+  sessionVersion Int       @default(1)
   lastLoginAt    DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
-  chats         Chat[]
-  pushes        PushSubscription[]
-  tasks         Task[]             @relation("TaskCreator")
+  chats  Chat[]
+  pushes PushSubscription[]
+  tasks  Task[]             @relation("TaskCreator")
+  times  TimeEntry[]
 }
 
 /// Unterhaltung mit Jarvis – Verlauf im Claude-Format (nur anhängen, nie umschreiben)
@@ -135,4 +136,115 @@ model ApiUsage {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Termin im Kalender (Baustellen-Termine, Kundentermine, intern)
+model Event {
+  id             String    @id @default(cuid())
+  title          String
+  startAt        DateTime
+  endAt          DateTime?
+  allDay         Boolean   @default(false)
+  location       String?
+  notes          String?
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// Erinnerung X Minuten vorher (null = keine)
+  remindMinutes  Int?      @default(30)
+  reminderSentAt DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+
+  @@index([startAt])
+}
+
+enum ProjectStatus {
+  PLANUNG
+  LAEUFT
+  PAUSIERT
+  FERTIG
+}
+
+/// Projekt bzw. Baustelle (Kunde, Adresse, Notizen, Fotos, Stunden, Dokumente)
+model Project {
+  id           String        @id @default(cuid())
+  name         String
+  customer     String?
+  /// Lexware-Kontakt (optional)
+  lexContactId String?
+  address      String?
+  status       ProjectStatus @default(LAEUFT)
+  startDate    DateTime?
+  endDate      DateTime?
+  description  String?
+  createdById  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  notes  ProjectNote[]
+  times  TimeEntry[]
+  events Event[]
+  files  StoredFile[]
+
+  @@index([status])
+}
+
+/// Notiz oder Foto-Eintrag zu einem Projekt (Baustellentagebuch)
+model ProjectNote {
+  id         String      @id @default(cuid())
+  projectId  String
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  text       String?
+  fileId     String?
+  file       StoredFile? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  authorName String?
+  createdAt  DateTime    @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+/// Arbeitsstunden je Mitarbeiter und Projekt (Minuten)
+model TimeEntry {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Arbeitstag (00:00 Berliner Zeit als UTC)
+  day       DateTime
+  minutes   Int
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, day])
+  @@index([userId, day])
+}
+
+/// Hochgeladene Datei (Dokumente, Baustellenfotos, Belege). Inhalt in der Datenbank (max. 15 MB).
+model StoredFile {
+  id         String   @id @default(cuid())
+  name       String
+  mime       String
+  size       Int
+  sha256     String
+  data       Bytes
+  /// "dokument" | "foto" | "beleg"
+  kind       String   @default("dokument")
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// Ausgelesener Text (PDF/Text) für die Suche
+  text       String?
+  /// Kurzbeschreibung/Erkennung durch Jarvis (z. B. Beleg: Lieferant, Datum, Betrag)
+  summary    String?
+  meta       Json?
+  /// Beleg: in Lexware hochgeladen (Datei-ID von Lexware)
+  lexFileId  String?
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+
+  notes ProjectNote[]
+
+  @@index([kind, createdAt])
+  @@index([projectId])
+  @@index([sha256])
 }
