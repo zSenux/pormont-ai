@@ -1,0 +1,17 @@
+node_modules/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+
+# Geheimnisse – niemals committen
+.env
+.env.*
+!.env.example
+
+src/generated/
+.DS_Store
+*.log
+
+# Windows-App (Installer wird bei GitHub gebaut)
+/windows-app/dist/
+/windows-app/node_modules/
