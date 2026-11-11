@@ -1,17 +1,21 @@
 # Baut die Windows-App „Jarvis ProMont“ (windows-app/) auf einem Windows-Rechner bei GitHub.
-# Ergebnis: Installer „Jarvis-ProMont-Setup-<version>.exe“ – unter Actions → Lauf → Artifacts herunterladen.
-# Mit einem Tag „win-v1.0.1“ entsteht zusätzlich ein GitHub-Release mit dem Installer.
+# - Andere Branches: Installer nur als Artifact (Actions → Lauf → Artifacts).
+# - main: Version 1.0.<Laufnummer>, GitHub-Release „v1.0.<n>“ mit Installer + latest.yml.
+#   Installierte Apps finden das Release von selbst (electron-updater) und aktualisieren sich.
 name: Windows-App
 
 on:
   push:
     branches: ["**"]
     paths: ["windows-app/**", ".github/workflows/windows-app.yml"]
-    tags: ["win-v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: windows-app-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -28,14 +32,19 @@ jobs:
           cache-dependency-path: windows-app/package-lock.json
       - run: npm ci
       - run: npm run check
-      - run: npm run dist
+      - name: Version setzen
+        if: github.ref == 'refs/heads/main'
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+      - name: Bauen (ohne Veröffentlichen)
+        if: github.ref != 'refs/heads/main'
+        run: npm run dist
+      - name: Bauen und als Update veröffentlichen
+        if: github.ref == 'refs/heads/main'
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: Jarvis-ProMont-Windows
           path: windows-app/dist/*.exe
           retention-days: 30
-      - if: startsWith(github.ref, 'refs/tags/win-v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: windows-app/dist/*.exe
-          name: Jarvis ProMont für Windows ${{ github.ref_name }}

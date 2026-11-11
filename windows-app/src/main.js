@@ -10,6 +10,7 @@ const fs = require("node:fs");
 const SETTINGS = path.join(app.getPath("userData"), "einstellungen.json");
 const DEFAULTS = { server: "", shortcut: "Control+Space", autostart: true, deviceId: "", remoteEnabled: false, remoteAsked: false };
 const remote = require("./remote");
+const updater = require("./updater");
 let settings = load();
 let main = null;
 let mini = null;
@@ -165,6 +166,10 @@ function buildTray() {
       { label: "Mit Windows starten", type: "checkbox", checked: settings.autostart, click: (i) => setAutostart(i.checked) },
       { label: "Server-Adresse ändern …", click: () => { settings.server = ""; save(); showMain(); loadMain(); } },
       { type: "separator" },
+      updater.state().ready
+        ? { label: `Update auf ${updater.state().ready} installieren (Neustart)`, click: () => updater.installNow() }
+        : { label: `Nach Updates suchen (Version ${app.getVersion()})`, click: () => updater.checkInteractive() },
+      { type: "separator" },
       { label: "Beenden", click: () => { quitting = true; app.quit(); } },
     ]);
   tray.setContextMenu(menu());
@@ -261,6 +266,8 @@ app.whenReady().then(() => {
     session: session.defaultSession,
     hideWindows,
   });
+  // Automatische Updates (GitHub-Releases)
+  updater.init({ changed: () => tray && tray.setToolTip(`Jarvis ProMont – Update ${updater.state().ready} bereit`) });
   // Nach dem ersten erfolgreichen Anmelden einmal nach der Fernsteuerung fragen
   setTimeout(() => askRemoteOnce().catch(() => {}), 20_000);
 });
