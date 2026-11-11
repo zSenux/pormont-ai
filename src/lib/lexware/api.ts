@@ -110,5 +110,6 @@ export async function listArticles(q: { type?: "PRODUCT" | "SERVICE"; articleNum
 }
 
 export const createContact = (body: unknown) => lexPost<LexCreated>("/v1/contacts", body);
+export const createArticle = (body: unknown) => lexPost<LexCreated>("/v1/articles", body);
 export const createInvoice = (body: unknown, finalize: boolean) => lexPost<LexCreated>("/v1/invoices", body, finalize ? { finalize: true } : undefined);
 export const createQuotation = (body: unknown, finalize: boolean) => lexPost<LexCreated>("/v1/quotations", body, finalize ? { finalize: true } : undefined);

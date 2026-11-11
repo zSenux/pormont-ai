@@ -29,7 +29,7 @@ const MOBILE = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/stunden", "/spesen", "/akquise", "/lieferanten", "/lager", "/belege", "/dokumente", "/aufgaben", "/pc"] },
+  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/stunden", "/spesen", "/akquise", "/lieferanten", "/lager", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
 ];
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
