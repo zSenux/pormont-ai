@@ -1,0 +1,138 @@
+// Datenmodell des ProMont-Assistenten „Jarvis“
+// Schema-Änderungen immer so, dass `prisma db push` ohne --accept-data-loss durchläuft.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+/// Team-Mitglied von ProMont (Anmeldung per E-Mail + Passwort)
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  passwordHash   String
+  role           Role     @default(MEMBER)
+  /// Erhöhen = alle Sitzungen dieses Nutzers abmelden
+  sessionVersion Int      @default(1)
+  lastLoginAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  chats         Chat[]
+  pushes        PushSubscription[]
+  tasks         Task[]             @relation("TaskCreator")
+}
+
+/// Unterhaltung mit Jarvis – Verlauf im Claude-Format (nur anhängen, nie umschreiben)
+model Chat {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @default("Neue Unterhaltung")
+  /// "web" | "windows" | "handy"
+  source    String   @default("web")
+  messages  Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  actions PendingAction[]
+
+  @@index([userId, updatedAt])
+}
+
+enum ActionStatus {
+  PENDING
+  DONE
+  DECLINED
+  ERROR
+}
+
+/// Schreibender Schritt in Lexware, den Jarvis vorschlägt – läuft erst nach „Freigeben“
+model PendingAction {
+  id        String       @id @default(cuid())
+  chatId    String
+  chat      Chat         @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId    String
+  /// z. B. "kunde_anlegen", "rechnung_erstellen", "angebot_erstellen"
+  kind      String
+  /// Kurzfassung für die Freigabe-Karte
+  summary   String
+  payload   Json
+  status    ActionStatus @default(PENDING)
+  result    String?
+  /// Ergebnis-Links (Lexware, PDF)
+  links     Json?
+  decidedBy String?
+  decidedAt DateTime?
+  createdAt DateTime     @default(now())
+
+  @@index([chatId, createdAt])
+  @@index([status])
+}
+
+/// Aufgaben des Teams (Jarvis kann anlegen/erledigen)
+model Task {
+  id             String    @id @default(cuid())
+  title          String
+  notes          String?
+  /// Fälligkeit (UTC); ohne Uhrzeit = 00:00 Berliner Zeit
+  dueAt          DateTime?
+  dueHasTime     Boolean   @default(false)
+  doneAt         DateTime?
+  reminderSentAt DateTime?
+  createdById    String?
+  createdBy      User?     @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime  @default(now())
+
+  @@index([doneAt, dueAt])
+}
+
+/// Gedächtnis von Jarvis („Merk dir …“)
+model Memory {
+  id        String   @id @default(cuid())
+  text      String
+  createdBy String?
+  createdAt DateTime @default(now())
+}
+
+/// Web-Push-Abo eines Geräts (iPhone-App, Browser)
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  device     String?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+/// Merker für Hintergrund-Jobs (z. B. „Rechnung X schon als überfällig gemeldet“)
+model JobState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// Kosten der KI-Aufrufe (Hundertstel-Cent in USD)
+model ApiUsage {
+  id        String   @id @default(cuid())
+  feature   String
+  model     String
+  input     Int
+  output    Int
+  costMicro Int
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

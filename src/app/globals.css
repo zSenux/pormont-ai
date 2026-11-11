@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+/* ProMont-Design: Farben aus promont.gmbh (--blue #0f4d83, --blue2 #092f50, --ink #101820, --steel #64717c, --mist #f2f5f7, --line #d8e0e6) */
+@theme {
+  --color-brand: #0f4d83;
+  --color-brand-2: #092f50;
+  --color-brand-soft: #e6eef6;
+  --color-ink: #101820;
+  --color-steel: #64717c;
+  --color-mist: #f2f5f7;
+  --color-line: #d8e0e6;
+  --color-glow: #38bdf8;
+  --color-ok: #15803d;
+  --color-warn: #b45309;
+  --color-bad: #b91c1c;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --radius-card: 22px;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  background: var(--color-mist);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .card {
+    @apply rounded-[22px] border border-line bg-white shadow-[0_18px_50px_rgba(12,37,56,.08)];
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50 bg-brand text-white hover:bg-brand-2;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50 border border-line bg-white text-ink hover:border-brand hover:text-brand;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50 border border-red-200 bg-white text-bad hover:bg-red-50;
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-white px-3 py-2.5 text-[16px] text-ink outline-none transition placeholder:text-steel/70 focus:border-brand focus:ring-2 focus:ring-brand/20 sm:text-sm;
+  }
+  .label {
+    @apply mb-1 block text-xs font-semibold tracking-wide text-steel uppercase;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium;
+  }
+  .page-title {
+    @apply text-3xl font-extrabold tracking-[-0.03em] text-ink sm:text-4xl;
+  }
+  .prose-jarvis a {
+    @apply font-medium text-brand underline underline-offset-2;
+  }
+  .prose-jarvis ul {
+    @apply my-2 list-disc space-y-1 pl-5;
+  }
+  .prose-jarvis ol {
+    @apply my-2 list-decimal space-y-1 pl-5;
+  }
+  .prose-jarvis p + p {
+    @apply mt-2;
+  }
+}
+
+/* Jarvis-Reaktor */
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes spin-rev {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+@keyframes pulse-core {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+.reactor-ring {
+  animation: spin-slow 18s linear infinite;
+}
+.reactor-ring-rev {
+  animation: spin-rev 11s linear infinite;
+}
+.reactor-core {
+  animation: pulse-core 3s ease-in-out infinite;
+}
+.reactor[data-state="listening"] .reactor-core {
+  animation-duration: 0.9s;
+}
+.reactor[data-state="thinking"] .reactor-ring,
+.reactor[data-state="thinking"] .reactor-ring-rev {
+  animation-duration: 2.5s;
+}
+.reactor[data-state="speaking"] .reactor-core {
+  animation-duration: 0.6s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reactor-ring,
+  .reactor-ring-rev,
+  .reactor-core {
+    animation: none;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

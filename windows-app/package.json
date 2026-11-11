@@ -1,0 +1,32 @@
+{
+  "name": "jarvis-promont",
+  "productName": "Jarvis ProMont",
+  "version": "1.0.0",
+  "description": "Jarvis – der KI-Assistent der ProMont GmbH für Windows",
+  "author": "ProMont GmbH",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/setup.js",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "37.2.0",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "gmbh.promont.jarvis",
+    "productName": "Jarvis ProMont",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["src/**/*", "package.json"],
+    "win": { "target": "nsis", "icon": "build/icon.ico" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Jarvis ProMont",
+      "artifactName": "Jarvis-ProMont-Setup-${version}.exe"
+    }
+  }
+}
