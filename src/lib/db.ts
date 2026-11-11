@@ -11,5 +11,16 @@ function createDb() {
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const db = globalForPrisma.prisma ?? createDb();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+function getDb() {
+  if (!globalForPrisma.prisma) globalForPrisma.prisma = createDb();
+  return globalForPrisma.prisma;
+}
+
+// Erst beim ersten Zugriff verbinden – so läuft der Build (Seiten-Daten sammeln) auch ohne DATABASE_URL
+export const db = new Proxy({} as PrismaClient, {
+  get(_t, prop) {
+    const client = getDb();
+    const value = Reflect.get(client, prop, client);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});
