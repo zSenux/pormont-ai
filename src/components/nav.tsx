@@ -35,7 +35,7 @@ export function TopNav({ name }: { name: string }) {
     <header className="sticky top-0 z-30 hidden border-b border-line bg-white/90 backdrop-blur md:block">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-6">
         <Link href="/" className="flex items-center gap-2" aria-label="Startseite">
-          <img src="/logo.png" alt="ProMont GmbH" className="h-11 w-auto" />
+          <img src="/logo.svg" alt="ProMont GmbH" className="h-11 w-auto" />
           <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
         </Link>
         <nav className="flex flex-1 items-center gap-1">
@@ -57,7 +57,7 @@ export function MobileHeader() {
     <header className="sticky top-0 z-30 border-b border-line bg-white/90 pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
       <div className="flex h-14 items-center justify-between px-4">
         <Link href="/" aria-label="Startseite">
-          <img src="/logo.png" alt="ProMont GmbH" className="h-10 w-auto" />
+          <img src="/logo.svg" alt="ProMont GmbH" className="h-10 w-auto" />
         </Link>
         <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
       </div>
