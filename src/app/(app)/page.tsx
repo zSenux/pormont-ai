@@ -75,7 +75,7 @@ export default async function Home() {
       </Suspense>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <section className="card p-5 md:col-span-2">
+        <section className="card min-w-0 p-5 md:col-span-2">
           <div className="mb-3 flex items-center gap-2">
             <Calendar className="size-5 text-brand" />
             <h2 className="font-bold">Termine heute</h2>
@@ -97,7 +97,7 @@ export default async function Home() {
             </ul>
           )}
         </section>
-        <section className="card p-5">
+        <section className="card min-w-0 p-5">
           <div className="mb-3 flex items-center gap-2">
             <CheckSquare className="size-5 text-brand" />
             <h2 className="font-bold">Aufgaben heute</h2>
@@ -169,7 +169,7 @@ async function OverdueList() {
   if (!lexwareConfigured()) return <section className="card p-5 text-sm text-steel">Überfällige Rechnungen erscheinen hier, sobald Lexware verbunden ist.</section>;
   const list = await voucherList({ type: "invoice", status: "overdue", size: 6 }).catch(() => null);
   return (
-    <section className="card p-5">
+    <section className="card min-w-0 p-5">
       <div className="mb-3 flex items-center gap-2">
         <AlertTriangle className="size-5 text-bad" />
         <h2 className="font-bold">Überfällige Rechnungen</h2>
