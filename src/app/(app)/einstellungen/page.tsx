@@ -4,7 +4,7 @@ import { Calendar, Camera, CheckSquare, Clock, Database, Download, FileText, Fol
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
-import { formatDateTime } from "@/lib/berlin";
+import { formatDate, formatDateTime } from "@/lib/berlin";
 import { lexwareConfigured } from "@/lib/lexware/client";
 import { profile } from "@/lib/lexware/api";
 import { logout, logoutEverywhere, savePhoneAccess } from "@/app/actions";
@@ -13,6 +13,7 @@ import { PushToggle } from "@/components/pwa";
 import { AddUserForm, DeleteButton, PasswordForm } from "./forms";
 import { ConnectionsForm } from "./connections";
 import { settingState } from "@/lib/settings";
+import { license } from "@/lib/license";
 
 export const metadata = { title: "Einstellungen" };
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
     db.memory.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
     db.pushSubscription.count({ where: { userId: me.id } }),
   ]);
+  const lic = await license();
   const myPhone = await db.user.findUniqueOrThrow({ where: { id: me.id }, select: { phone: true, phonePinHash: true } });
   const ai = Boolean(process.env.ANTHROPIC_API_KEY);
   const h = await headers();
@@ -185,6 +187,15 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
             ))}
           </ul>
           <AddUserForm />
+        </section>
+      )}
+
+      {me.role === "ADMIN" && (
+        <section className="card p-5 text-sm">
+          <h2 className="font-semibold">Freischaltung</h2>
+          <p className="mt-1 text-steel">
+            {lic.status === "entwicklung" ? "Entwicklungsmodus – keine Freischaltung nötig." : `Freigeschaltet durch Klaic Media${lic.bis ? ` bis ${formatDate(lic.bis)}` : " (unbefristet)"}.`}
+          </p>
         </section>
       )}
 

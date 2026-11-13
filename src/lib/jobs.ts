@@ -7,6 +7,7 @@ import { voucherListAll } from "@/lib/lexware/api";
 import { mailConfigured } from "@/lib/mail/config";
 import { mailsSince } from "@/lib/mail/client";
 import { timeHm, todayEvents } from "@/lib/calendar";
+import { readLicense } from "@/lib/license";
 
 // Hintergrund-Jobs im App-Prozess (wie in Klaic OS): Erinnerungen und Lexware-Warnungen per Push.
 // Läuft nur in Produktion bzw. lokal mit JOBS=1.
@@ -98,7 +99,11 @@ let started = false;
 export function startJobs() {
   if (started) return;
   started = true;
-  const safe = (name: string, fn: () => Promise<unknown>) => () => fn().catch((e) => console.error(`[job ${name}]`, e));
+  // Ohne Freischaltung durch Klaic Media laufen keine Jobs (keine Push-Nachrichten, keine Lexware-/Mail-Abfragen)
+  const safe = (name: string, fn: () => Promise<unknown>) => () =>
+    readLicense()
+      .then((s) => (s.ok ? fn() : undefined))
+      .catch((e) => console.error(`[job ${name}]`, e));
   setInterval(safe("aufgaben", taskReminders), 60_000);
   setInterval(safe("termine", eventReminders), 60_000);
   setInterval(safe("briefing", morningBriefing), 60_000);
