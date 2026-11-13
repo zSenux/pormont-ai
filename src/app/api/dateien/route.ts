@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { currentUser } from "@/lib/auth/user";
+import { currentUser, lockedResponse } from "@/lib/auth/user";
 import { FileError, storeFile } from "@/lib/files";
 import { after } from "next/server";
 import { analyzeReceipt, transcribeDocument } from "@/lib/receipts";
@@ -13,6 +13,9 @@ const meta = z.object({ kind: z.enum(["dokument", "foto", "beleg", "spesen"]), p
 
 export async function POST(req: Request) {
   const user = await currentUser();
+  // Ansehen geht ohne Freischaltung, benutzen nicht
+  const locked = user ? await lockedResponse() : null;
+  if (locked) return locked;
   if (!user) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
   let form: FormData;
   try {

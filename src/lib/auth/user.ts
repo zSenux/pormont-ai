@@ -1,15 +1,15 @@
 import "server-only";
 import { cache } from "react";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { license } from "@/lib/license";
+import { license, lockReason } from "@/lib/license";
 import { SESSION_COOKIE, SESSION_DAYS, signSession, verifySession } from "./token";
 
 export type CurrentUser = { id: string; name: string; email: string; role: "ADMIN" | "MEMBER" };
 
-/** Angemeldeter Nutzer oder null (prüft auch die Sitzungs-Version → „überall abmelden“) – ohne Freischaltungs-Prüfung */
-export const sessionUser = cache(async (): Promise<CurrentUser | null> => {
+/** Angemeldeter Nutzer oder null (prüft auch die Sitzungs-Version → „überall abmelden“). Ansehen geht auch ohne Freischaltung. */
+export const currentUser = cache(async (): Promise<CurrentUser | null> => {
   const p = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
   if (!p) return null;
   const u = await db.user.findUnique({ where: { id: p.u }, select: { id: true, name: true, email: true, role: true, sessionVersion: true } });
@@ -17,18 +17,26 @@ export const sessionUser = cache(async (): Promise<CurrentUser | null> => {
   return { id: u.id, name: u.name, email: u.email, role: u.role };
 });
 
-/** Angemeldeter Nutzer – aber nur, solange Klaic Media Jarvis freigeschaltet hat (sonst null → APIs antworten 401) */
-export const currentUser = cache(async (): Promise<CurrentUser | null> => {
-  const u = await sessionUser();
-  if (!u || !(await license()).ok) return null;
-  return u;
-});
+/** Für APIs, die etwas tun (Jarvis fragen, hochladen, PC steuern): Antwort 403, solange Klaic Media Jarvis nicht freigeschaltet hat */
+export async function lockedResponse() {
+  const s = await license();
+  return s.ok ? null : Response.json({ error: lockReason(s), gesperrt: true }, { status: 403 });
+}
 
-/** Für Seiten und Server-Actions: ohne Anmeldung → /login, ohne Freischaltung → /freischaltung */
+/** Für Seiten und Server-Actions: ohne Anmeldung → /login. Ohne Freischaltung darf man alles ansehen,
+ *  aber keine Server-Action ausführen (POST mit Next-Action-Kopf) → zurück zur Seite mit dem Freischaltungs-Hinweis. */
 export async function requireUser() {
-  const u = await sessionUser();
+  const u = await currentUser();
   if (!u) redirect("/login");
-  if (!(await license()).ok) redirect("/freischaltung");
+  const h = await headers();
+  if (h.get("next-action") && !(await license()).ok) {
+    let back = "/";
+    try {
+      const ref = new URL(h.get("referer") ?? "");
+      if (ref.host === h.get("host")) back = ref.pathname;
+    } catch {}
+    redirect(`${back}?gesperrt=1`);
+  }
   return u;
 }
 

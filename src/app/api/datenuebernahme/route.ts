@@ -1,4 +1,4 @@
-import { currentUser } from "@/lib/auth/user";
+import { currentUser, lockedResponse } from "@/lib/auth/user";
 import { ErpImportError, importExport, MAX_ERP_BYTES } from "@/lib/erp-import";
 
 // Exportdatei aus dem alten Programm hochladen (multipart: file) – nur Admin
@@ -6,6 +6,9 @@ export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const user = await currentUser();
+  // Ansehen geht ohne Freischaltung, benutzen nicht
+  const locked = user ? await lockedResponse() : null;
+  if (locked) return locked;
   if (!user) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
   if (user.role !== "ADMIN") return Response.json({ error: "Nur für Admins." }, { status: 403 });
   if (Number(req.headers.get("content-length") ?? 0) > MAX_ERP_BYTES + 100_000) return Response.json({ error: "Die Datei ist größer als 25 MB." }, { status: 413 });

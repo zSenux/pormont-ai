@@ -86,9 +86,9 @@ export async function setLicense(input: z.infer<typeof licenseInput>) {
   return readLicense();
 }
 
-/** Text für die Sperrseite und das Telefon */
+/** Text für Banner, APIs und Telefon */
 export function lockReason(s: LicenseState) {
-  if (s.status === "gesperrt") return "Jarvis ist derzeit von Klaic Media gesperrt.";
-  if (s.status === "abgelaufen") return "Die Freischaltung von Jarvis ist abgelaufen.";
-  return "Jarvis wartet noch auf die Freischaltung durch Klaic Media.";
+  if (s.status === "gesperrt") return `Jarvis ist gesperrt. ${s.hinweis || "Bitte offene Rechnungen bei Klaic Media begleichen, dann wird Jarvis wieder freigeschaltet."}`;
+  if (s.status === "abgelaufen") return `Die Freischaltung von Jarvis ist abgelaufen. ${s.hinweis || "Bitte bei Klaic Media verlängern."}`;
+  return `Jarvis ist noch nicht freigeschaltet. Du kannst dich schon umsehen – benutzen kannst du Jarvis, sobald Klaic Media freigeschaltet hat.${s.hinweis ? ` ${s.hinweis}` : ""}`;
 }
