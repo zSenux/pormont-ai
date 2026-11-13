@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { currentUser } from "@/lib/auth/user";
+import { currentUser, lockedResponse } from "@/lib/auth/user";
 import { jarvisError, MAX_MESSAGES, runJarvis, type JarvisEvent } from "@/lib/jarvis/agent";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,9 @@ const input = z.object({ chatId: z.cuid().nullish(), text: z.string().trim().min
 /** Ein Durchgang mit Jarvis als Server-Sent Events: chat → text/tool/action … → done | error */
 export async function POST(req: Request) {
   const user = await currentUser();
+  // Ansehen geht ohne Freischaltung, benutzen nicht
+  const locked = user ? await lockedResponse() : null;
+  if (locked) return locked;
   if (!user) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
   const parsed = input.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Ungültige Eingabe." }, { status: 400 });

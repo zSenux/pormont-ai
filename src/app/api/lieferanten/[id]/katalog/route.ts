@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { currentUser } from "@/lib/auth/user";
+import { currentUser, lockedResponse } from "@/lib/auth/user";
 import { CatalogError, importCatalog, MAX_CATALOG_BYTES } from "@/lib/catalog";
 
 // Katalog/Preisliste eines Lieferanten hochladen (multipart: file). CSV/DATANORM sofort, PDF im Hintergrund.
@@ -9,6 +9,9 @@ export const maxDuration = 300;
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await currentUser();
+  // Ansehen geht ohne Freischaltung, benutzen nicht
+  const locked = user ? await lockedResponse() : null;
+  if (locked) return locked;
   if (!user) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
   const id = z.cuid().safeParse((await params).id);
   if (!id.success || !(await db.supplier.findUnique({ where: { id: id.data }, select: { id: true } }))) return Response.json({ error: "Lieferant nicht gefunden." }, { status: 404 });

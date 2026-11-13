@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { sessionUser } from "@/lib/auth/user";
+import { currentUser } from "@/lib/auth/user";
 import { LoginForm } from "./form";
 import { SetupForm } from "./setup-form";
 import { db } from "@/lib/db";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Anmelden" };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ weiter?: string }> }) {
-  if (await sessionUser()) redirect("/");
+  if (await currentUser()) redirect("/");
   const { weiter } = await searchParams;
   // Noch kein Benutzer → Ersteinrichtung (außer der Administrator kommt per ADMIN_EMAIL/ADMIN_PASSWORD aus dem Hosting-Panel)
   const setup = (await db.user.count()) === 0 && !process.env.ADMIN_EMAIL;

@@ -13,7 +13,7 @@ import { PushToggle } from "@/components/pwa";
 import { AddUserForm, DeleteButton, PasswordForm } from "./forms";
 import { ConnectionsForm } from "./connections";
 import { settingState } from "@/lib/settings";
-import { license } from "@/lib/license";
+import { license, lockReason } from "@/lib/license";
 
 export const metadata = { title: "Einstellungen" };
 export const dynamic = "force-dynamic";
@@ -194,7 +194,11 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
         <section className="card p-5 text-sm">
           <h2 className="font-semibold">Freischaltung</h2>
           <p className="mt-1 text-steel">
-            {lic.status === "entwicklung" ? "Entwicklungsmodus – keine Freischaltung nötig." : `Freigeschaltet durch Klaic Media${lic.bis ? ` bis ${formatDate(lic.bis)}` : " (unbefristet)"}.`}
+            {lic.status === "entwicklung"
+              ? "Entwicklungsmodus – keine Freischaltung nötig."
+              : lic.ok
+                ? `Freigeschaltet durch Klaic Media${lic.bis ? ` bis ${formatDate(lic.bis)}` : " (unbefristet)"}.`
+                : lockReason(lic)}
           </p>
         </section>
       )}
