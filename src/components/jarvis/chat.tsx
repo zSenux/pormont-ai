@@ -213,7 +213,7 @@ export function JarvisChat(props: {
   const empty = messages.length === 0;
 
   return (
-    <div className={clsx("flex flex-col", props.compact ? "h-dvh" : "min-h-[calc(100dvh-8rem)] md:min-h-[calc(100dvh-4rem)]")}>
+    <div className={clsx("flex flex-col", props.compact ? "min-h-0 flex-1" : "min-h-[calc(100dvh-8rem)] md:min-h-[calc(100dvh-4rem)]")}>
       {/* Jarvis-Bühne */}
       <section className={clsx("relative overflow-hidden bg-gradient-to-b from-brand-2 to-brand text-white", props.compact ? "px-4 pt-3 pb-4" : "px-4 pt-6 pb-6 md:rounded-b-[28px]")}>
         <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(125,211,252,.25)_1px,transparent_1px),linear-gradient(90deg,rgba(125,211,252,.25)_1px,transparent_1px)] [background-size:32px_32px]" />
