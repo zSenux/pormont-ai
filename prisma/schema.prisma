@@ -34,9 +34,13 @@ model User {
   pcs      PcDevice[]
   expenses Expense[]          @relation("ExpenseUser")
 
-  /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt)
-  phone        String?   @unique
+  /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt).
+  /// Eindeutigkeit prüft die App beim Speichern – kein @unique, sonst bricht `prisma db push`
+  /// beim Deploy auf bestehenden Datenbanken ab (verlangt --accept-data-loss).
+  phone        String?
   phonePinHash String?
+
+  @@index([phone])
 }
 
 /// Unterhaltung mit Jarvis – Verlauf im Claude-Format (nur anhängen, nie umschreiben)
