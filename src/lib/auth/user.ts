@@ -3,12 +3,13 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { license } from "@/lib/license";
 import { SESSION_COOKIE, SESSION_DAYS, signSession, verifySession } from "./token";
 
 export type CurrentUser = { id: string; name: string; email: string; role: "ADMIN" | "MEMBER" };
 
-/** Angemeldeter Nutzer oder null (prüft auch die Sitzungs-Version → „überall abmelden“) */
-export const currentUser = cache(async (): Promise<CurrentUser | null> => {
+/** Angemeldeter Nutzer oder null (prüft auch die Sitzungs-Version → „überall abmelden“) – ohne Freischaltungs-Prüfung */
+export const sessionUser = cache(async (): Promise<CurrentUser | null> => {
   const p = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
   if (!p) return null;
   const u = await db.user.findUnique({ where: { id: p.u }, select: { id: true, name: true, email: true, role: true, sessionVersion: true } });
@@ -16,10 +17,18 @@ export const currentUser = cache(async (): Promise<CurrentUser | null> => {
   return { id: u.id, name: u.name, email: u.email, role: u.role };
 });
 
-/** Für Seiten und Server-Actions: ohne Anmeldung → /login */
+/** Angemeldeter Nutzer – aber nur, solange Klaic Media Jarvis freigeschaltet hat (sonst null → APIs antworten 401) */
+export const currentUser = cache(async (): Promise<CurrentUser | null> => {
+  const u = await sessionUser();
+  if (!u || !(await license()).ok) return null;
+  return u;
+});
+
+/** Für Seiten und Server-Actions: ohne Anmeldung → /login, ohne Freischaltung → /freischaltung */
 export async function requireUser() {
-  const u = await currentUser();
+  const u = await sessionUser();
   if (!u) redirect("/login");
+  if (!(await license()).ok) redirect("/freischaltung");
   return u;
 }
 

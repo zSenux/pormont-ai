@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { readLicense } from "@/lib/license";
 import { firstName } from "@/lib/auth/user";
 import { verifyPassword } from "@/lib/auth/password";
 import { forbidden, gatherPin, gatherSpeech, hangup, PIN_MAX_TRIES_PER_CALL, say, twilioRequest, twiml } from "@/lib/phone";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const p = await twilioRequest(req);
   if (!p) return forbidden();
+  if (!(await readLicense()).ok) return twiml(say("Jarvis ist gerade nicht freigeschaltet. Auf Wiederhören."), hangup());
   const call = p.CallSid ? await db.phoneCall.findUnique({ where: { callSid: p.CallSid } }) : null;
   const user = call?.userId ? await db.user.findUnique({ where: { id: call.userId }, select: { id: true, name: true, phonePinHash: true } }) : null;
   if (!call || !user?.phonePinHash) return twiml(hangup());

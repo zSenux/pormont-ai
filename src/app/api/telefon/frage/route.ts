@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { db } from "@/lib/db";
+import { readLicense } from "@/lib/license";
 import { answerOnPhone } from "@/lib/phone-turn";
 import { forbidden, gatherSpeech, hangup, isGoodbye, redirect, say, twilioRequest, twiml, verifiedCall } from "@/lib/phone";
 
@@ -11,6 +12,7 @@ const MAX_TURNS = 40;
 export async function POST(req: Request) {
   const p = await twilioRequest(req);
   if (!p) return forbidden();
+  if (!(await readLicense()).ok) return twiml(say("Jarvis ist gerade nicht freigeschaltet. Auf Wiederhören."), hangup());
   const call = await verifiedCall(p.CallSid);
   if (!call) return twiml(hangup());
   const text = (p.SpeechResult ?? "").trim().slice(0, 2000);
