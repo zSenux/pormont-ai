@@ -12,6 +12,7 @@ import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, type OrderStatus } from "@/lib/o
 import { setOrderStatus, updateOrder } from "@/app/actions/auftraege";
 import { ActionButton } from "@/components/confirm-button";
 import { ProjectProduction } from "@/components/project-production";
+import { ProjectAssemblies } from "@/components/project-assemblies";
 import { ProjectPlan } from "../../projekte/[id]/plan";
 
 export const dynamic = "force-dynamic";
@@ -122,6 +123,7 @@ export default async function AuftragDetail({ params }: { params: Promise<{ id: 
       </div>
 
       <ProjectProduction projectId={o.projectId} />
+      <ProjectAssemblies projectId={o.projectId} />
 
       <ProjectPlan projectId={o.projectId} leaderId={o.project.leaderId} />
     </main>

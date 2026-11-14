@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { Factory, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
+import { Factory, Wrench, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -60,6 +60,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           { href: "/auftraege", label: "Aufträge", icon: ClipboardList },
           { href: "/projekte", label: "Projekte", icon: HardHat },
           { href: "/fertigung", label: "Fertigung", icon: Factory },
+          { href: "/montage", label: "Montage", icon: Wrench },
           { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
           { href: "/kalender", label: "Kalender", icon: Calendar },
           { href: "/belege/foto", label: "Beleg-Foto", icon: Camera },

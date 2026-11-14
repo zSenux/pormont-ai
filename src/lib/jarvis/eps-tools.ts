@@ -12,6 +12,8 @@ import { addNote, CrmError, customerFileText, dueFollowUps, newInquiry, NOTE_KIN
 import { capacity, createJob, jobLine, ProductionError, setJobStatus } from "@/lib/production";
 import { PROD_LABEL, PROD_STATUSES } from "@/lib/production-shared";
 import { addDaysYmd, todayYmd } from "@/lib/berlin";
+import { addDefect, AssemblyError, assemblyLine, createAssembly, setAssemblyStatus, toggleCheck } from "@/lib/assembly";
+import { ASM_STATUS_LABEL, readChecklist, readDefects } from "@/lib/assembly-shared";
 import type { ToolCtx } from "./tools";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
@@ -117,6 +119,35 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
       required: ["aktion"],
     },
   },
+  {
+    name: "montage",
+    description:
+      "Montageplanung auf der Baustelle: liste (anstehende Montagen, optional je Projekt/Mitarbeiter/Zeitraum), details (Checkliste, Mängel, Bericht, Abnahme), anlegen (Montagetermin zu einem Projekt mit Datum, Uhrzeit, Tagen, Adresse, Fahrzeug, Montageleiter, Team – trägt auch in den Kalender ein), status (GEPLANT, LAEUFT, ERLEDIGT, ABGESAGT), bericht (Montagebericht speichern), mangel (Mangel festhalten), checkliste (Punkt abhaken per Nummer ab 1). Abgenommen wird nur mit der Unterschrift des Kunden im Abnahmeprotokoll (Link geben).",
+    input_schema: {
+      type: "object",
+      properties: {
+        aktion: { type: "string", enum: ["liste", "details", "anlegen", "status", "bericht", "mangel", "checkliste"] },
+        id: str("ID oder Nummer MO-…"),
+        projekt_id: str("liste/anlegen: Projekt-ID"),
+        titel: str("anlegen: z. B. „Geländer montieren 1.–3. OG“"),
+        datum: str("anlegen: JJJJ-MM-TT"),
+        von: str("anlegen: HH:MM, Standard 07:00"),
+        bis: str("anlegen: HH:MM"),
+        tage: { type: "number", description: "anlegen: Anzahl Tage (mehrtägig)" },
+        adresse: str("anlegen: Montageort (Standard: Projektadresse)"),
+        fahrzeug: str("anlegen: z. B. „Sprinter MA-PM 210“"),
+        leiter: str("anlegen: Name des Montageleiters"),
+        team: { type: "array", items: { type: "string" }, description: "anlegen: Namen der Monteure" },
+        plan: str("anlegen: Montageplan, Material, Hinweise"),
+        status: { type: "string", enum: ["GEPLANT", "LAEUFT", "ERLEDIGT", "ABGESAGT"] },
+        text: str("bericht/mangel: Text"),
+        nummer: { type: "number", description: "checkliste: Punkt-Nummer ab 1" },
+        mitarbeiter: str("liste: Name"),
+        tage_voraus: { type: "number", description: "liste: Zeitraum in Tagen, Standard 14" },
+      },
+      required: ["aktion"],
+    },
+  },
 ];
 
 export const EPS_TOOL_NAMES = new Set(EPS_TOOLS.map((t) => t.name));
@@ -125,6 +156,7 @@ export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: 
   if (name === "auftraege") return runOrders(i, ctx);
   if (name === "kundenakte") return runCrm(i, ctx);
   if (name === "fertigung") return runProduction(i, ctx);
+  if (name === "montage") return runAssembly(i, ctx);
   try {
     const q = z
       .object({
@@ -421,6 +453,120 @@ async function runProduction(i: Record<string, unknown>, ctx: ToolCtx): Promise<
   } catch (e) {
     if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
     if (e instanceof ProductionError || e instanceof PhaseError) return e.message;
+    throw e;
+  }
+  return "Unbekannte Aktion.";
+}
+
+async function findAssembly(ref: string) {
+  const r = ref.trim();
+  return db.assembly.findFirst({
+    where: { OR: [{ id: r }, { number: { equals: r, mode: "insensitive" } }] },
+    include: { project: { select: { name: true } }, leader: { select: { name: true } }, crew: { include: { user: { select: { name: true } } } } },
+  });
+}
+
+async function runAssembly(i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+  try {
+    const q = z
+      .object({
+        aktion: z.enum(["liste", "details", "anlegen", "status", "bericht", "mangel", "checkliste"]),
+        id: z.string().trim().max(40).optional(),
+        projekt_id: z.cuid().optional(),
+        titel: z.string().trim().min(2).max(200).optional(),
+        datum: ymd.optional(),
+        von: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+        bis: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+        tage: z.number().int().min(1).max(30).optional(),
+        adresse: z.string().trim().max(300).optional(),
+        fahrzeug: z.string().trim().max(80).optional(),
+        leiter: z.string().trim().max(80).optional(),
+        team: z.array(z.string().trim().max(80)).max(20).optional(),
+        plan: z.string().trim().max(4000).optional(),
+        status: z.enum(["GEPLANT", "LAEUFT", "ERLEDIGT", "ABGESAGT"]).optional(),
+        text: z.string().trim().min(2).max(4000).optional(),
+        nummer: z.number().int().min(1).max(100).optional(),
+        mitarbeiter: z.string().trim().max(80).optional(),
+        tage_voraus: z.number().int().min(1).max(365).optional(),
+      })
+      .parse(i);
+    const me = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true } });
+    const actor = { id: me.id, name: `${me.name} (über Jarvis)` };
+    const need = async () => {
+      const a = q.id ? await findAssembly(q.id) : null;
+      if (!a) throw new AssemblyError("Montage nicht gefunden – id oder Nummer MO-… angeben (montage liste).");
+      return a;
+    };
+    switch (q.aktion) {
+      case "liste": {
+        const u = q.mitarbeiter ? await findUserByName(q.mitarbeiter) : null;
+        const until = new Date(Date.now() + (q.tage_voraus ?? 14) * 86400_000);
+        const list = await db.assembly.findMany({
+          where: {
+            ...(q.projekt_id ? { projectId: q.projekt_id } : { status: { in: ["GEPLANT", "LAEUFT"] }, startAt: { lte: until } }),
+            ...(u ? { OR: [{ leaderId: u.id }, { crew: { some: { userId: u.id } } }] } : {}),
+          },
+          orderBy: { startAt: "asc" },
+          take: 50,
+          include: { project: { select: { name: true } }, leader: { select: { name: true } }, crew: { include: { user: { select: { name: true } } } } },
+        });
+        return list.length ? `${list.length} Montagen:\n${list.map(assemblyLine).join("\n")}\n[Montage](/montage)` : "Keine passenden Montagen. [Montage](/montage)";
+      }
+      case "details": {
+        const a = await need();
+        const cl = readChecklist(a.checklist);
+        const df = readDefects(a.defects);
+        return [
+          assemblyLine(a),
+          a.plan ? `Plan: ${a.plan}` : null,
+          `Checkliste (${cl.filter((c) => c.done).length}/${cl.length}): ${cl.map((c, n) => `${n + 1}. ${c.done ? "✓" : "○"} ${c.text}`).join("; ")}`,
+          df.length ? `Mängel: ${df.map((d) => `${d.text} (${d.fixed ? "behoben" : "offen"})`).join("; ")}` : "Keine Mängel.",
+          a.report ? `Bericht: ${a.report}` : null,
+          a.signedAt ? `Abgenommen von ${a.signerName} am ${formatDate(a.signedAt)}.` : `Noch nicht abgenommen – [Abnahmeprotokoll](/montage/${a.id}/protokoll).`,
+          `[Montage öffnen](/montage/${a.id})`,
+        ].filter(Boolean).join("\n");
+      }
+      case "anlegen": {
+        if (!q.projekt_id || !q.titel || !q.datum) return "projekt_id, titel und datum angeben.";
+        const leader = q.leiter ? await findUserByName(q.leiter) : null;
+        if (q.leiter && !leader) return `Mitarbeiter „${q.leiter}“ nicht gefunden.`;
+        const crew = [];
+        for (const n of q.team ?? []) {
+          const u = await findUserByName(n);
+          if (!u) return `Mitarbeiter „${n}“ nicht gefunden.`;
+          crew.push(u.id);
+        }
+        const a = await createAssembly({ projectId: q.projekt_id, title: q.titel, date: q.datum, from: q.von, to: q.bis, days: q.tage, address: q.adresse, vehicle: q.fahrzeug, leaderId: leader?.id, crewIds: leader ? [leader.id, ...crew] : crew, plan: q.plan }, actor);
+        return `Montage ${a.number} „${a.title}“ am ${formatDate(a.startAt)} angelegt und in den Kalender eingetragen. [Montage öffnen](/montage/${a.id})`;
+      }
+      case "status": {
+        const a = await need();
+        if (!q.status) return "status angeben.";
+        await setAssemblyStatus(a.id, q.status, actor);
+        return `${a.number} steht jetzt auf „${ASM_STATUS_LABEL[q.status]}“.${q.status === "ERLEDIGT" ? ` Abnahmeprotokoll ist bereit: [Abnahmeprotokoll](/montage/${a.id}/protokoll)` : ""}`;
+      }
+      case "bericht": {
+        const a = await need();
+        if (!q.text) return "text angeben.";
+        await db.assembly.update({ where: { id: a.id }, data: { report: q.text } });
+        return `Montagebericht für ${a.number} gespeichert. [Montage öffnen](/montage/${a.id})`;
+      }
+      case "mangel": {
+        const a = await need();
+        if (!q.text) return "text angeben.";
+        await addDefect(a.id, q.text, actor);
+        return `Mangel bei ${a.number} festgehalten. [Montage öffnen](/montage/${a.id})`;
+      }
+      case "checkliste": {
+        const a = await need();
+        if (!q.nummer) return "nummer angeben (ab 1).";
+        const c = await toggleCheck(a.id, q.nummer - 1, actor);
+        return `Punkt ${q.nummer} „${c.text}“ ist jetzt ${c.done ? "abgehakt" : "wieder offen"}.`;
+      }
+    }
+  } catch (e) {
+    if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
+    if (e instanceof AssemblyError || e instanceof PhaseError) return e.message;
     throw e;
   }
   return "Unbekannte Aktion.";

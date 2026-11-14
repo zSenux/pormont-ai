@@ -158,6 +158,21 @@ for (const [part, title, quantity, machine, who, status, s0, e0, h, instr] of jo
   await db.productionJob.create({ data: { number: `FA-DEMO-${String(faNo++).padStart(3, "0")}`, projectId: await proj(part), title, quantity, machine, assigneeId: who ? users[who] : null, status, plannedStart: day(s0), plannedEnd: day(e0), plannedHours: h, actualHours: done ? h + 1 : null, materialOk: status !== "MATERIAL_FEHLT" && status !== "OFFEN", instructions: instr, doneAt: done ? day(e0) : null, doneBy: done ? who : null, qcAt: done ? day(e0) : null, qcBy: done ? "Josip Cabraja" : null, qcNote: done ? "Maße und Nähte geprüft, i. O." : null, priority: part === "Edelstahl-Geländer" ? "HOCH" : "NORMAL", createdBy: "Demo" } });
 }
 
+// Montagen (Baustelle) – ohne Kalender/Push, nur Demo
+const at = (offset: number, h: number) => new Date(day(offset).setUTCHours(h - 1, 0, 0, 0));
+const check = (n: number) => ["Material und Werkzeug vollständig", "Baustelle abgesichert", "Untergrund/Anschlüsse geprüft", "Befestigung nach Statik", "Lot und Maße kontrolliert", "Schweißnähte/Verschraubung geprüft", "Oberfläche ausgebessert", "Baustelle sauber übergeben", "Kunde eingewiesen"].map((text, i) => ({ text, done: i < n, by: i < n ? "Mehmet Yılmaz" : null, at: null }));
+const asmDemo: [string, string, number, number, number, string, string, string[], string, number, string | null][] = [
+  ["Brandschutztüren", "Türen T30 einbauen, Erdgeschoss + 1. OG", -3, -2, 7, "ERLEDIGT", "Mehmet Yılmaz", ["Sven Müller"], "Sprinter MA-PM 210", 9, "6 Türen eingebaut, Panikschlösser eingestellt, Schließzylinder bauseits."],
+  ["Stahltreppe", "Treppe und Podest montieren", 6, 7, 7, "GEPLANT", "Mehmet Yılmaz", ["Sven Müller", "Tobias Kern"], "Pritsche MA-PM 330 + Kran", 0, null],
+  ["Edelstahl-Geländer", "Aufmaß-Kontrolle und Bodenplatten setzen", 0, 0, 7, "LAEUFT", "Mehmet Yılmaz", ["Tobias Kern"], "Caddy MA-PM 105", 3, null],
+];
+let moNo = 1;
+for (const [part, title, d0, d1, h, status, leader, crew, vehicle, n, report] of asmDemo) {
+  const projectId = await proj(part);
+  const p = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { address: true } });
+  await db.assembly.create({ data: { number: `MO-DEMO-${String(moNo++).padStart(3, "0")}`, projectId, title, status, startAt: at(d0, h), endAt: at(d1, 16), address: p.address, vehicle, leaderId: users[leader], plan: "Anfahrt 6:30 ab Werkstatt. Dübel, Anker und Schweißgerät mitnehmen.", checklist: check(n), report, defects: part === "Brandschutztüren" ? [{ text: "Tür 1.04 schleift unten leicht – nachjustieren", fixed: false, by: leader, at: null }] : [], doneAt: status === "ERLEDIGT" ? at(d1, 16) : null, createdBy: "Demo", crew: { create: [leader, ...crew].map((n) => ({ userId: users[n] })) } } });
+}
+
 // Umsatz der letzten Monate (Abschlags- und Schlussrechnungen)
 const firstCustomer = await db.customer.findFirstOrThrow();
 for (const [off, net, paid] of [[-160, 18400, true], [-130, 26100, true], [-100, 9800, true], [-75, 31200, true], [-45, 22650, true], [-20, 14900, false], [-6, 11800, false]] as const) {
