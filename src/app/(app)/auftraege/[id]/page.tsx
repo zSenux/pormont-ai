@@ -13,6 +13,7 @@ import { setOrderStatus, updateOrder } from "@/app/actions/auftraege";
 import { ActionButton } from "@/components/confirm-button";
 import { ProjectProduction } from "@/components/project-production";
 import { ProjectAssemblies } from "@/components/project-assemblies";
+import { ProjectDrawings } from "@/components/project-drawings";
 import { ProjectPlan } from "../../projekte/[id]/plan";
 
 export const dynamic = "force-dynamic";
@@ -122,6 +123,7 @@ export default async function AuftragDetail({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
+      <ProjectDrawings projectId={o.projectId} />
       <ProjectProduction projectId={o.projectId} />
       <ProjectAssemblies projectId={o.projectId} />
 

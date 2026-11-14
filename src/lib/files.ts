@@ -8,6 +8,9 @@ import { db } from "@/lib/db";
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const DOC_TYPES = ["application/pdf", "text/plain", "text/csv", "text/markdown", ...IMAGE_TYPES];
+/** CAD-Formate nur für Zeichnungen – werden immer als Download ausgeliefert */
+export const CAD_TYPES = ["image/vnd.dxf", "image/vnd.dwg", "model/step", "model/ifc"];
+const CAD_EXT: Record<string, string> = { dxf: "image/vnd.dxf", dwg: "image/vnd.dwg", step: "model/step", stp: "model/step", ifc: "model/ifc" };
 
 export class FileError extends Error {}
 
@@ -34,11 +37,12 @@ export function guessMime(name: string, given?: string) {
   return ({ pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", txt: "text/plain", csv: "text/csv", md: "text/markdown" } as Record<string, string>)[ext ?? ""] ?? "application/octet-stream";
 }
 
-export async function storeFile(f: { name: string; mime: string; data: Buffer; kind: "dokument" | "foto" | "beleg" | "spesen"; projectId?: string | null; uploadedBy?: string | null }) {
-  const mime = guessMime(f.name, f.mime);
+export async function storeFile(f: { name: string; mime: string; data: Buffer; kind: "dokument" | "foto" | "beleg" | "spesen" | "zeichnung"; projectId?: string | null; uploadedBy?: string | null }) {
+  const cad = f.kind === "zeichnung" ? CAD_EXT[f.name.toLowerCase().split(".").pop() ?? ""] : undefined;
+  const mime = cad ?? guessMime(f.name, f.mime);
   if (!f.data.length) throw new FileError("Die Datei ist leer.");
   if (f.data.length > MAX_FILE_BYTES) throw new FileError("Die Datei ist größer als 15 MB.");
-  if (!DOC_TYPES.includes(mime)) throw new FileError("Nur PDF, Bilder (JPG/PNG/WebP) und Textdateien.");
+  if (!DOC_TYPES.includes(mime) && !cad) throw new FileError(f.kind === "zeichnung" ? "Nur PDF, Bilder oder CAD-Dateien (DXF, DWG, STEP, IFC)." : "Nur PDF, Bilder (JPG/PNG/WebP) und Textdateien.");
   if ((f.kind === "foto" || f.kind === "beleg") && !IMAGE_TYPES.includes(mime) && mime !== "application/pdf") throw new FileError("Bitte ein Foto oder PDF.");
   const sha256 = createHash("sha256").update(f.data).digest("hex");
   const text = await extractText(mime, f.data);

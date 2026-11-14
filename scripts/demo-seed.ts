@@ -173,6 +173,41 @@ for (const [part, title, d0, d1, h, status, leader, crew, vehicle, n, report] of
   await db.assembly.create({ data: { number: `MO-DEMO-${String(moNo++).padStart(3, "0")}`, projectId, title, status, startAt: at(d0, h), endAt: at(d1, 16), address: p.address, vehicle, leaderId: users[leader], plan: "Anfahrt 6:30 ab Werkstatt. Dübel, Anker und Schweißgerät mitnehmen.", checklist: check(n), report, defects: part === "Brandschutztüren" ? [{ text: "Tür 1.04 schleift unten leicht – nachjustieren", fixed: false, by: leader, at: null }] : [], doneAt: status === "ERLEDIGT" ? at(d1, 16) : null, createdBy: "Demo", crew: { create: [leader, ...crew].map((n) => ({ userId: users[n] })) } } });
 }
 
+// Zeichnungen mit Index (einfache Demo-PDFs)
+const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+const demoPdf = async (title: string, idx: string) => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([842, 595]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawRectangle({ x: 20, y: 20, width: 802, height: 555, borderColor: rgb(0.06, 0.3, 0.51), borderWidth: 2 });
+  page.drawRectangle({ x: 120, y: 160, width: 420, height: 260, borderColor: rgb(0.2, 0.2, 0.2), borderWidth: 1.5 });
+  page.drawLine({ start: { x: 120, y: 160 }, end: { x: 540, y: 420 }, thickness: 1, color: rgb(0.4, 0.4, 0.4) });
+  page.drawText(`DEMO – ${title}`, { x: 40, y: 540, size: 18, font });
+  page.drawText(`Index ${idx} · ProMont GmbH`, { x: 620, y: 40, size: 12, font });
+  return Buffer.from(await doc.save());
+};
+const drawDemo: [string, string, string, string[], boolean][] = [
+  ["Stahltreppe", "Treppe mit Podest – Werkplan Blatt 1", "WERKPLAN", ["Erstausgabe", "Podesthöhe +20 mm nach Aufmaß"], true],
+  ["Stahltreppe", "Geländer Treppe – Detail Handlauf", "DETAIL", ["Erstausgabe"], true],
+  ["Edelstahl-Geländer", "Balkongeländer Typ A – Werkplan", "WERKPLAN", ["Erstausgabe", "Glashalter geändert (Typ Q-railing)"], false],
+  ["Hallenvordach", "Vordach Statik Pos. 1–4", "STATIK", ["Statik Büro Hartmann"], false],
+];
+let zgNo = 1;
+for (const [part, title, kind, notes, release] of drawDemo) {
+  const projectId = await proj(part);
+  const versions = [];
+  for (const [n, note] of notes.entries()) {
+    const idx = String.fromCharCode(65 + n);
+    const data = await demoPdf(title, idx);
+    const f = await db.storedFile.create({ data: { name: `${title} Index ${idx}.pdf`, mime: "application/pdf", size: data.length, sha256: "demo", data: new Uint8Array(data), kind: "zeichnung", projectId, uploadedBy: "Josip Cabraja" } });
+    versions.push({ version: n + 1, fileId: f.id, note, uploadedBy: "Josip Cabraja" });
+  }
+  const last = versions.length;
+  // Geländer: Index A freigegeben, Index B in Prüfung
+  const rel = release ? last : last > 1 ? last - 1 : null;
+  await db.drawing.create({ data: { number: `ZG-DEMO-${String(zgNo++).padStart(3, "0")}`, projectId, title, kind, status: release ? "FREIGEGEBEN" : "PRUEFUNG", currentVersion: last, releasedVersion: rel, releasedAt: rel ? day(-5) : null, releasedBy: rel ? "Dirk Linke" : null, createdBy: "Josip Cabraja", versions: { create: versions } } });
+}
+
 // Umsatz der letzten Monate (Abschlags- und Schlussrechnungen)
 const firstCustomer = await db.customer.findFirstOrThrow();
 for (const [off, net, paid] of [[-160, 18400, true], [-130, 26100, true], [-100, 9800, true], [-75, 31200, true], [-45, 22650, true], [-20, 14900, false], [-6, 11800, false]] as const) {

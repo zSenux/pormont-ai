@@ -15,6 +15,7 @@ import { calcProject } from "@/lib/nachkalkulation";
 import { Uploader } from "@/components/upload";
 import { ProjectProduction } from "@/components/project-production";
 import { ProjectAssemblies } from "@/components/project-assemblies";
+import { ProjectDrawings } from "@/components/project-drawings";
 import { ProjectPlan } from "./plan";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +109,7 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
 
       <ProjectPlan projectId={p.id} leaderId={p.leaderId} />
 
+      <ProjectDrawings projectId={p.id} />
       <ProjectProduction projectId={p.id} />
       <ProjectAssemblies projectId={p.id} />
 

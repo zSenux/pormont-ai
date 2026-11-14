@@ -2,7 +2,7 @@ import Link from "next/link";
 import { areasOf, AREA_LABEL, canPath, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
 import { setUserFunktion } from "@/app/actions";
 import { headers } from "next/headers";
-import { Factory, Wrench, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
+import { Factory, Wrench, PenTool, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -61,6 +61,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           { href: "/lager", label: "Lager", icon: Warehouse },
           { href: "/auftraege", label: "Aufträge", icon: ClipboardList },
           { href: "/projekte", label: "Projekte", icon: HardHat },
+          { href: "/zeichnungen", label: "Zeichnungen", icon: PenTool },
           { href: "/fertigung", label: "Fertigung", icon: Factory },
           { href: "/montage", label: "Montage", icon: Wrench },
           { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
