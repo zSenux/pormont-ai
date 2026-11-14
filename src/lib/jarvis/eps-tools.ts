@@ -20,6 +20,8 @@ import { canRelease, DRAWING_STATUS_LABEL, DRAWING_STATUSES, indexLetter } from 
 import { createSupplierOrder, orderFromRequest, orderLine, OrderError as SupplierOrderError, receiveGoods } from "@/lib/bestellungen";
 import { BE_LABEL, BE_STATUSES, fmtNum, openQty, readLines, type BeStatus } from "@/lib/bestellungen-shared";
 import { canArea } from "@/lib/rights-shared";
+import { absenceCovers, absenceLine, absencesBetween, AbsenceError, cancelAbsence, decideAbsence, requestAbsence, vacationBalance } from "@/lib/abwesenheit";
+import { ABS_KIND_SHORT, ABS_KINDS, fmtDays, type AbsKind } from "@/lib/abwesenheit-shared";
 import type { ToolCtx } from "./tools";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
@@ -192,6 +194,26 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "abwesenheit",
+    description:
+      "Urlaub & Krank: wer_fehlt (heute oder Zeitraum von/bis), meine (eigenes Urlaubskonto + Einträge), beantragen (art URLAUB/KRANK/SONSTIGES, von, bis, halber_tag, notiz – Krankmeldung gilt sofort, Urlaub muss ein Admin genehmigen; Admins können mit mitarbeiter für andere eintragen), offen (offene Anträge, nur Admin), entscheiden (id, genehmigen true/false, notiz – nur Admin), stornieren (id). Genehmigte Tage gehen automatisch in die Stundenliste.",
+    input_schema: {
+      type: "object",
+      properties: {
+        aktion: { type: "string", enum: ["wer_fehlt", "meine", "beantragen", "offen", "entscheiden", "stornieren"] },
+        art: { type: "string", enum: ABS_KINDS },
+        von: str("JJJJ-MM-TT"),
+        bis: str("JJJJ-MM-TT (leer = ein Tag)"),
+        halber_tag: { type: "boolean" },
+        notiz: str("Bemerkung bzw. Grund bei Ablehnung"),
+        mitarbeiter: str("Name (nur Admin, für andere eintragen)"),
+        id: str("Abwesenheit-ID"),
+        genehmigen: { type: "boolean" },
+      },
+      required: ["aktion"],
+    },
+  },
+  {
     name: "fristen",
     description: "Was ist überfällig? Listet alle überschrittenen Termine im Betrieb: Aufgaben, Meilensteine, Projektphasen, Fertigungsaufträge, Auftrags-Fertigstellung, nicht gestartete Montagen und überfällige Lieferungen – jeweils mit Link. Die Verantwortlichen bekommen dazu automatisch eine Push-Nachricht.",
     input_schema: { type: "object", properties: {} },
@@ -207,6 +229,7 @@ export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: 
   if (name === "montage") return runAssembly(i, ctx);
   if (name === "zeichnungen") return runDrawings(i, ctx);
   if (name === "bestellungen") return runSupplierOrders(i, ctx);
+  if (name === "abwesenheit") return runAbsence(i, ctx);
   if (name === "fristen") {
     const late = await lateItems();
     return late.length ? `${late.length} Termine überschritten:\n${late.slice(0, 40).map((l) => `- ${l.text} → [öffnen](${l.url})`).join("\n")}` : "Nichts überfällig – alle Termine im Plan.";
@@ -711,6 +734,71 @@ async function runSupplierOrders(i: Record<string, unknown>, ctx: ToolCtx): Prom
   } catch (e) {
     if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
     if (e instanceof SupplierOrderError) return e.message;
+    throw e;
+  }
+}
+
+async function runAbsence(i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+  try {
+    const q = z
+      .object({
+        aktion: z.enum(["wer_fehlt", "meine", "beantragen", "offen", "entscheiden", "stornieren"]),
+        art: z.enum(ABS_KINDS).optional(),
+        von: ymd.optional(),
+        bis: ymd.optional(),
+        halber_tag: z.boolean().optional(),
+        notiz: z.string().trim().max(500).optional(),
+        mitarbeiter: z.string().trim().max(80).optional(),
+        id: z.cuid().optional(),
+        genehmigen: z.boolean().optional(),
+      })
+      .parse(i);
+    const me = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true, role: true } });
+    const admin = me.role === "ADMIN";
+    const actor = { id: me.id, name: `${me.name} (über Jarvis)`, role: me.role };
+    if (q.aktion === "wer_fehlt") {
+      const from = q.von ?? todayYmd(), to = q.bis ?? from;
+      const list = await absencesBetween(from, to);
+      // Krankheit ist Gesundheitsdatum: nur Admin und Betroffene sehen „Krank“
+      const shown = list.map((a) => ({ ...a, kind: a.kind === "KRANK" && !admin && a.userId !== me.id ? "SONSTIGES" : a.kind, note: admin || a.userId === me.id ? a.note : null }));
+      if (!shown.length) return from === to ? `Am ${formatDate(berlinDateTime(from))} sind alle da.` : "Im Zeitraum fehlt niemand.";
+      const today = from === to ? shown.filter((a) => absenceCovers(a, from)) : shown;
+      return `${today.length} Abwesenheiten:\n${today.map(absenceLine).join("\n")}\n[Urlaub & Krank](/abwesenheiten)`;
+    }
+    if (q.aktion === "meine") {
+      const b = await vacationBalance(me.id);
+      const mine = await db.absence.findMany({ where: { userId: me.id, status: { in: ["BEANTRAGT", "GENEHMIGT"] }, to: { gte: berlinDateTime(`${b.year}-01-01`) } }, orderBy: { from: "asc" }, take: 30 });
+      return [`Urlaub ${b.year}: Anspruch ${fmtDays(b.entitlement)}, genehmigt ${fmtDays(b.approved)}, beantragt ${fmtDays(b.requested)} → noch ${fmtDays(b.rest)} übrig (nach Anträgen ${fmtDays(b.restAfter)}).`, ...mine.map(absenceLine), "[Urlaub & Krank](/abwesenheiten)"].join("\n");
+    }
+    if (q.aktion === "beantragen") {
+      if (!q.art || !q.von) return "art und von angeben.";
+      let userId = me.id;
+      if (q.mitarbeiter) {
+        if (!admin) return "Für andere eintragen dürfen nur Administratoren.";
+        const u = await findUserByName(q.mitarbeiter);
+        if (!u) return `Mitarbeiter „${q.mitarbeiter}“ nicht gefunden.`;
+        userId = u.id;
+      }
+      const a = await requestAbsence({ userId, kind: q.art, from: q.von, to: q.bis ?? q.von, halfDay: q.halber_tag, note: q.notiz }, actor);
+      const b = q.art === "URLAUB" ? await vacationBalance(userId) : null;
+      return `${ABS_KIND_SHORT[q.art as AbsKind]} eingetragen (${a.halfDay ? "halber Tag" : fmtDays(a.days)}) – ${a.status === "GENEHMIGT" ? (q.art === "KRANK" ? "gilt sofort, die Geschäftsführung ist informiert. Gute Besserung!" : "direkt genehmigt.") : "Antrag ist an die Geschäftsführung raus."}${b ? ` Resturlaub danach: ${fmtDays(b.restAfter)}.` : ""} [Urlaub & Krank](/abwesenheiten)`;
+    }
+    if (q.aktion === "offen") {
+      if (!admin) return "Offene Anträge sieht nur ein Administrator.";
+      const list = await db.absence.findMany({ where: { status: "BEANTRAGT" }, orderBy: { from: "asc" }, include: { user: { select: { name: true } } } });
+      return list.length ? `${list.length} offene Anträge:\n${list.map(absenceLine).join("\n")}` : "Keine offenen Anträge.";
+    }
+    if (!q.id) return "id angeben.";
+    if (q.aktion === "entscheiden") {
+      if (q.genehmigen === undefined) return "genehmigen true/false angeben.";
+      const a = await decideAbsence(q.id, q.genehmigen, q.notiz ?? null, actor);
+      return `Antrag ${q.genehmigen ? "genehmigt" : "abgelehnt"}; der Mitarbeiter bekommt eine Push-Nachricht. ${absenceLine(a)}`;
+    }
+    await cancelAbsence(q.id, actor);
+    return "Storniert – die gebuchten Tage sind wieder aus der Stundenliste raus.";
+  } catch (e) {
+    if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
+    if (e instanceof AbsenceError) return e.message;
     throw e;
   }
 }

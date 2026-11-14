@@ -43,6 +43,9 @@ model User {
   productionJobs ProductionJob[]
   assemblyLeads  Assembly[]       @relation("AssemblyLeader")
   assemblyCrew   AssemblyMember[]
+  /// Urlaub & Krank: Abwesenheiten und Urlaubsanspruch je Jahr (leer = URLAUB_TAGE bzw. 30)
+  absences       Absence[]
+  vacationDays   Int?
 
   /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt).
   /// Eindeutigkeit prüft die App beim Speichern – kein @unique, sonst bricht `prisma db push`
@@ -288,6 +291,9 @@ model TimeEntry {
   /// ARBEIT | FAHRT | URLAUB | KRANK | FEIERTAG
   kind      String    @default("ARBEIT")
   note      String?
+  /// Aus einer genehmigten Abwesenheit gebucht (wird beim Storno wieder entfernt)
+  absenceId String?
+  absence   Absence?  @relation(fields: [absenceId], references: [id], onDelete: Cascade)
   createdAt DateTime  @default(now())
 
   @@index([projectId, day])
@@ -1347,4 +1353,35 @@ model BankTx {
   @@index([day])
   @@index([docId])
   @@index([purchaseId])
+}
+
+/// Urlaub, Krankmeldung oder sonstige Abwesenheit. Urlaub/Sonstiges wird beantragt und vom Admin genehmigt,
+/// Krankmeldungen gelten sofort. Genehmigt → je Arbeitstag ein TimeEntry (URLAUB/KRANK) für Stundenliste und Lohn-CSV.
+model Absence {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// URLAUB | KRANK | SONSTIGES
+  kind         String
+  /// erster und letzter Tag (00:00 Berliner Zeit als UTC, inklusive)
+  from         DateTime
+  to           DateTime
+  halfDay      Boolean     @default(false)
+  /// Arbeitstage ohne Wochenende und Feiertage (Baden-Württemberg)
+  days         Float
+  /// BEANTRAGT | GENEHMIGT | ABGELEHNT | STORNIERT
+  status       String      @default("BEANTRAGT")
+  note         String?
+  /// Krank: AU-Bescheinigung liegt vor
+  certificate  Boolean     @default(false)
+  createdBy    String?
+  decidedBy    String?
+  decidedAt    DateTime?
+  decisionNote String?
+  times        TimeEntry[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([userId, from])
+  @@index([status, from])
 }

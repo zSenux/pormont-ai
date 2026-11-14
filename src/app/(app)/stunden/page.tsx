@@ -48,6 +48,7 @@ export default async function StundenPage({ searchParams }: { searchParams: Prom
           <h1 className="page-title">Arbeitszeit</h1>
           <p className="mt-1 text-sm text-steel">Kommen/Gehen stempeln oder nachtragen. Diesen Monat: <b className="text-ink">{formatHours(monthSum._sum.minutes ?? 0)}</b></p>
         </div>
+        <Link href="/abwesenheiten" className="btn-secondary">Urlaub & Krank</Link>
         {admin && <Link href="/stunden?ansicht=team" className="btn-secondary"><Users className="size-4" /> Team & Monat</Link>}
       </div>
 

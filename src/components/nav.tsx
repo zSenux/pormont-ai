@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, ClipboardList, Factory, Wrench, PenTool, ShoppingCart, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck, Warehouse } from "lucide-react";
+import { Calendar, ClipboardList, Factory, Wrench, PenTool, ShoppingCart, Palmtree, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck, Warehouse } from "lucide-react";
 import { clsx } from "clsx";
 import { PATH_AREA, type Area } from "@/lib/rights-shared";
 
@@ -23,6 +23,7 @@ const DESKTOP = [
   { href: "/fertigung", label: "Fertigung", icon: Factory },
   { href: "/montage", label: "Montage", icon: Wrench },
   { href: "/stunden", label: "Stunden", icon: Clock },
+  { href: "/abwesenheiten", label: "Urlaub", icon: Palmtree },
   { href: "/spesen", label: "Spesen", icon: Receipt },
   { href: "/akquise", label: "Akquise", icon: Target },
   { href: "/lieferanten", label: "Lieferanten", icon: Truck },
@@ -41,7 +42,7 @@ const MOBILE = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/auftraege", "/zeichnungen", "/fertigung", "/montage", "/projekte", "/stunden", "/spesen", "/akquise", "/lieferanten", "/bestellungen", "/lager", "/buchhaltung", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
+  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/auftraege", "/zeichnungen", "/fertigung", "/montage", "/projekte", "/stunden", "/abwesenheiten", "/spesen", "/akquise", "/lieferanten", "/bestellungen", "/lager", "/buchhaltung", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
 ];
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
