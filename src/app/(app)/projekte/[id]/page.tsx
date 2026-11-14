@@ -31,6 +31,8 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
     where: { id },
     include: {
       leader: { select: { name: true } },
+      order: { select: { id: true, number: true } },
+      customerRef: { select: { id: true, name: true } },
       notes: { orderBy: { createdAt: "desc" }, take: 100, include: { file: { select: { id: true, name: true, mime: true } } } },
       times: { orderBy: [{ day: "desc" }, { createdAt: "desc" }], take: 200, include: { user: { select: { id: true, name: true } } } },
       events: { where: { startAt: { gte: new Date(Date.now() - 86400_000) } }, orderBy: { startAt: "asc" }, take: 20 },
@@ -54,10 +56,12 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
       <header className="card space-y-3 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
+            {p.order && <Link href={`/auftraege/${p.order.id}`} className="text-sm font-semibold text-brand">Auftrag {p.order.number}</Link>}
             <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
             <p className="text-sm text-steel">
-              {[p.customer, p.leader && `Projektleiter ${p.leader.name}`, p.startDate && `ab ${formatDate(p.startDate)}`, p.endDate && `bis ${formatDate(p.endDate)}`].filter(Boolean).join(" · ") || "Noch keine Eckdaten"}
+              {[p.customerRef ? undefined : p.customer, p.leader && `Projektleiter ${p.leader.name}`, p.startDate && `ab ${formatDate(p.startDate)}`, p.endDate && `bis ${formatDate(p.endDate)}`].filter(Boolean).join(" · ") || "Noch keine Eckdaten"}
             </p>
+            {p.customerRef && <Link href={`/buchhaltung/kunden/${p.customerRef.id}`} className="block text-sm text-brand">{p.customerRef.name}</Link>}
             {p.address && (
               <a href={`https://maps.google.com/?q=${encodeURIComponent(p.address)}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-sm text-brand">
                 <MapPin className="size-4" /> {p.address}

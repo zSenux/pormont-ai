@@ -5,6 +5,9 @@ import { db } from "@/lib/db";
 import { berlinDateTime, formatDate } from "@/lib/berlin";
 import { findUserByName, PhaseError, phaseTitle, planText, setPhase } from "@/lib/phases";
 import { PHASE_KEYS, PHASE_STATUSES, PRIORITIES } from "@/lib/phases-shared";
+import { createOrder, createOrderFromQuote, OrderError, orderText } from "@/lib/orders";
+import { ORDER_STATUS_LABEL, ORDER_STATUSES, type OrderStatus } from "@/lib/orders-shared";
+import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import type { ToolCtx } from "./tools";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
@@ -38,11 +41,37 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
       required: ["aktion", "projekt_id"],
     },
   },
+  {
+    name: "auftraege",
+    description:
+      "Aufträge (mit Auftragsnummer AU-JJJJ-NNNN und Projektakte): liste (aktive, Suche nach Nummer/Kunde/Titel), details, aus_angebot (Auftrag aus einem angenommenen Angebot anlegen – passiert beim Annehmen auch automatisch), anlegen (ohne Angebot), status, aendern (Termine, Wert, Materialbedarf, Fertigungsinfos, Notiz).",
+    input_schema: {
+      type: "object",
+      properties: {
+        aktion: { type: "string", enum: ["liste", "details", "aus_angebot", "anlegen", "status", "aendern"] },
+        id: str("details/status/aendern: Auftrags-ID oder Auftragsnummer"),
+        suche: str("liste: Nummer, Kunde oder Titel"),
+        alle: { type: "boolean", description: "liste: auch abgeschlossene/stornierte" },
+        angebot: str("aus_angebot: Angebots-ID oder Angebotsnummer (AN-…)"),
+        titel: str("anlegen/aendern: Bezeichnung"),
+        kunde_id: str("anlegen: Kunden-ID aus der Buchhaltung (optional)"),
+        wert_netto: { type: "number", description: "anlegen/aendern: Auftragswert netto in Euro" },
+        beginn: str("anlegen/aendern: JJJJ-MM-TT"),
+        fertig_bis: str("anlegen/aendern: Fertigstellungstermin JJJJ-MM-TT"),
+        status: { type: "string", enum: ORDER_STATUSES },
+        material: str("aendern: Materialbedarf (ersetzt den bisherigen Text)"),
+        fertigung: str("aendern: Fertigungsinformationen (ersetzt den bisherigen Text)"),
+        notiz: str("aendern: interne Notiz (ersetzt den bisherigen Text)"),
+      },
+      required: ["aktion"],
+    },
+  },
 ];
 
 export const EPS_TOOL_NAMES = new Set(EPS_TOOLS.map((t) => t.name));
 
 export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+  if (name === "auftraege") return runOrders(i, ctx);
   try {
     const q = z
       .object({
@@ -106,6 +135,100 @@ export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: 
   } catch (e) {
     if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
     if (e instanceof PhaseError) return e.message;
+    throw e;
+  }
+  return "Unbekannte Aktion.";
+}
+
+async function findOrder(ref: string) {
+  const r = ref.trim();
+  return db.order.findFirst({ where: { OR: [{ id: r }, { number: { equals: r, mode: "insensitive" } }] } });
+}
+
+async function runOrders(i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+  try {
+    const q = z
+      .object({
+        aktion: z.enum(["liste", "details", "aus_angebot", "anlegen", "status", "aendern"]),
+        id: z.string().trim().max(40).optional(),
+        suche: z.string().trim().max(80).optional(),
+        alle: z.boolean().optional(),
+        angebot: z.string().trim().max(40).optional(),
+        titel: z.string().trim().min(2).max(200).optional(),
+        kunde_id: z.cuid().optional(),
+        wert_netto: z.number().min(0).max(100_000_000).optional(),
+        beginn: ymd.optional(),
+        fertig_bis: ymd.optional(),
+        status: z.enum(ORDER_STATUSES).optional(),
+        material: z.string().trim().max(8000).optional(),
+        fertigung: z.string().trim().max(8000).optional(),
+        notiz: z.string().trim().max(8000).optional(),
+      })
+      .parse(i);
+    const user = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true } });
+    const actor = { id: user.id, name: `${user.name} (über Jarvis)` };
+    switch (q.aktion) {
+      case "liste": {
+        const s = q.suche;
+        const list = await db.order.findMany({
+          where: {
+            ...(q.alle ? {} : { status: { notIn: ["ABGESCHLOSSEN", "STORNIERT"] } }),
+            ...(s ? { OR: [{ number: { contains: s, mode: "insensitive" as const } }, { title: { contains: s, mode: "insensitive" as const } }, { customer: { name: { contains: s, mode: "insensitive" as const } } }] } : {}),
+          },
+          orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }],
+          take: 40,
+          include: { customer: { select: { name: true } } },
+        });
+        if (!list.length) return "Keine passenden Aufträge. [Aufträge](/auftraege)";
+        const sum = list.reduce((a, o) => a + o.valueCents, 0);
+        return `${list.length} Aufträge, Volumen netto ${fmtEuroCents(sum)}:\n${list.map((o) => `- ${o.number} · ${o.title} · ${o.customer?.name ?? "–"} · ${fmtEuroCents(o.valueCents)} · ${ORDER_STATUS_LABEL[o.status as OrderStatus] ?? o.status}${o.dueDate ? ` · fertig bis ${formatDate(o.dueDate)}${o.dueDate < new Date() ? " ⚠" : ""}` : ""} · id ${o.id}`).join("\n")}`;
+      }
+      case "details": {
+        const o = q.id ? await findOrder(q.id) : null;
+        return o ? orderText(o.id) : "Auftrag nicht gefunden (ID oder Nummer AU-… angeben).";
+      }
+      case "aus_angebot": {
+        if (!q.angebot) return "Welches Angebot? (ID oder Nummer)";
+        const doc = await db.salesDoc.findFirst({ where: { kind: "ANGEBOT", OR: [{ id: q.angebot }, { number: { equals: q.angebot, mode: "insensitive" } }] }, select: { id: true } });
+        if (!doc) return "Angebot nicht gefunden.";
+        const r = await createOrderFromQuote(doc.id, actor);
+        return `${r.created ? "Auftrag angelegt" : "Zu diesem Angebot gibt es schon einen Auftrag"}: ${r.order.number}. Das Angebot steht auf „angenommen“.\n${await orderText(r.order.id)}`;
+      }
+      case "anlegen": {
+        if (!q.titel) return "Bezeichnung (titel) fehlt.";
+        const o = await createOrder({ title: q.titel, customerId: q.kunde_id, valueCents: q.wert_netto !== undefined ? Math.round(q.wert_netto * 100) : 0, start: q.beginn, due: q.fertig_bis }, actor);
+        return `Auftrag ${o.number} angelegt (mit Projektakte).\n${await orderText(o.id)}`;
+      }
+      case "status": {
+        const o = q.id ? await findOrder(q.id) : null;
+        if (!o || !q.status) return "Auftrag (id) und status angeben.";
+        await db.order.update({ where: { id: o.id }, data: { status: q.status } });
+        const ps = q.status === "ABGESCHLOSSEN" ? "FERTIG" : q.status === "PAUSIERT" || q.status === "STORNIERT" ? "PAUSIERT" : "LAEUFT";
+        await db.project.update({ where: { id: o.projectId }, data: { status: ps } });
+        return `Auftrag ${o.number} steht jetzt auf „${ORDER_STATUS_LABEL[q.status]}“. [Auftrag öffnen](/auftraege/${o.id})`;
+      }
+      case "aendern": {
+        const o = q.id ? await findOrder(q.id) : null;
+        if (!o) return "Auftrag nicht gefunden.";
+        const u = await db.order.update({
+          where: { id: o.id },
+          data: {
+            ...(q.titel ? { title: q.titel } : {}),
+            ...(q.wert_netto !== undefined ? { valueCents: Math.round(q.wert_netto * 100) } : {}),
+            ...(q.beginn ? { startDate: berlinDateTime(q.beginn) } : {}),
+            ...(q.fertig_bis ? { dueDate: berlinDateTime(q.fertig_bis) } : {}),
+            ...(q.material !== undefined ? { material: q.material || null } : {}),
+            ...(q.fertigung !== undefined ? { production: q.fertigung || null } : {}),
+            ...(q.notiz !== undefined ? { notes: q.notiz || null } : {}),
+          },
+        });
+        if (q.fertig_bis || q.beginn) await db.project.update({ where: { id: u.projectId }, data: { ...(q.fertig_bis ? { endDate: u.dueDate } : {}), ...(q.beginn ? { startDate: u.startDate } : {}) } });
+        return `Auftrag ${u.number} geändert.\n${await orderText(u.id)}`;
+      }
+    }
+  } catch (e) {
+    if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
+    if (e instanceof OrderError || e instanceof PhaseError) return e.message;
     throw e;
   }
   return "Unbekannte Aktion.";
