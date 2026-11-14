@@ -10,6 +10,7 @@ import { COMPANY } from "@/lib/company";
 import { timeHm, todayEvents } from "@/lib/calendar";
 import { WindowsAppBanner } from "@/components/windows-app";
 import { latestWindowsRelease } from "@/lib/windows-app";
+import { BetriebOverview } from "@/components/betrieb";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,10 @@ export default async function Home() {
 
       <Suspense fallback={<div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>}>
         <BookTiles />
+      </Suspense>
+
+      <Suspense fallback={<div className="card h-48 animate-pulse" />}>
+        <BetriebOverview />
       </Suspense>
 
       <div className="grid gap-6 md:grid-cols-2">
