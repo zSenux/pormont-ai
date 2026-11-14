@@ -7,6 +7,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/lib/auth/password";
 import { PHASES } from "../src/lib/phases-shared";
+import { createOrderFromQuote } from "../src/lib/orders";
 
 if (process.env.NODE_ENV === "production") {
   console.error("Abbruch: Demo-Daten nie in Produktion.");
@@ -108,6 +109,7 @@ await db.event.create({ data: { title: "Aufmaß Carport Viernheim", startAt: new
 
 // Kunden, Angebote und Rechnungen (Buchhaltung) – Demo-Nummern mit Präfix DEMO-, damit echte Nummernkreise unberührt bleiben
 const allProjects = await db.project.findMany();
+const d0 = (id: string | null) => Object.keys(users).find((n) => users[n] === id) ?? "";
 let custNo = 90001;
 let docNo = 1;
 const line = (name: string, net: number) => [{ name, qty: 1, unit: "psch", price: net, discount: 0, taxRate: 19 }];
@@ -116,7 +118,13 @@ for (const p of allProjects) {
   const c = await db.customer.create({ data: { number: custNo++, name: p.customer ?? "Kunde", kind: p.customer?.startsWith("Herr") || p.customer?.startsWith("Familie") ? "PERSON" : "FIRMA", street: p.address?.split(",")[0], zip: p.address?.split(", ")[1]?.slice(0, 5), city: p.address?.split(", ")[1]?.slice(6), email: "kunde@example.com", phone: "0621 000000" } });
   const net = p.budgetNet ?? 7400;
   const accepted = (p.budgetNet ?? 0) > 0;
-  await db.salesDoc.create({ data: { kind: "ANGEBOT", status: accepted ? "ANGENOMMEN" : "OFFEN", number: `DEMO-AN-${docNo++}`, customerId: c.id, projectId: p.id, title: p.name, date: day(accepted ? -40 : -2), dueDate: day(accepted ? -10 : 28), lines: line(p.name, net), ...money(net), sentAt: day(accepted ? -40 : -2) } });
+  await db.project.update({ where: { id: p.id }, data: { customerId: c.id } });
+  const quote = await db.salesDoc.create({ data: { kind: "ANGEBOT", status: accepted ? "ANGENOMMEN" : "OFFEN", number: `DEMO-AN-${docNo++}`, customerId: c.id, projectId: p.id, title: p.name, date: day(accepted ? -40 : -2), dueDate: day(accepted ? -10 : 28), lines: line(p.name, net), ...money(net), sentAt: day(accepted ? -40 : -2) } });
+  // Automatik wie im Betrieb: angenommenes Angebot → Auftrag mit Projektakte
+  if (accepted) {
+    const { order } = await createOrderFromQuote(quote.id, { id: users[d0(p.leaderId)] ?? Object.values(users)[0], name: "Demo" });
+    await db.order.update({ where: { id: order.id }, data: { status: "IN_ARBEIT", startDate: p.startDate, dueDate: p.endDate, material: "Siehe Angebot – Stücklisten folgen", production: "feuerverzinkt, Oberfläche nach Kundenwunsch" } });
+  }
 }
 await db.salesDoc.create({ data: { kind: "ANGEBOT", status: "ABGELEHNT", number: `DEMO-AN-${docNo++}`, title: "Wendeltreppe Edelstahl", date: day(-60), lines: line("Wendeltreppe Edelstahl", 23800), ...money(23800) } });
 // Umsatz der letzten Monate (Abschlags- und Schlussrechnungen)

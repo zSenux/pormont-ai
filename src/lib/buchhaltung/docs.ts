@@ -360,6 +360,7 @@ export async function copyDoc(id: string, kind: DocKind, user: Actor) {
     if (src.status === "OFFEN") await db.salesDoc.updateMany({ where: { id: src.id, status: "OFFEN" }, data: { status: "ANGENOMMEN" } });
     await log(db, src.id, `In Rechnung übernommen (Entwurf)`, user);
     await log(db, doc.id, `Aus Angebot ${src.number ?? "(Entwurf)"} übernommen`, user);
+    if (src.status !== "ENTWURF") await (await import("@/lib/orders")).onQuoteAccepted(src.id, user);
   } else await log(db, doc.id, `Kopie von ${KIND_LABEL[src.kind]} ${src.number ?? "(Entwurf)"}`, user);
   return doc;
 }
@@ -368,6 +369,8 @@ export async function setQuoteStatus(id: string, status: "OFFEN" | "ANGENOMMEN" 
   const r = await db.salesDoc.updateMany({ where: { id, kind: "ANGEBOT", status: { in: ["OFFEN", "ANGENOMMEN", "ABGELEHNT"] } }, data: { status } });
   if (!r.count) throw new BookError("Nur festgeschriebene Angebote können angenommen oder abgelehnt werden.");
   await log(db, id, `Angebot als „${STATUS_LABEL[status]}“ markiert`, user);
+  // EPS-Automatik: Angebot angenommen → Auftrag mit Projektakte (src/lib/orders.ts, Fehler blockieren nie)
+  if (status === "ANGENOMMEN") await (await import("@/lib/orders")).onQuoteAccepted(id, user);
 }
 
 // ---------- Zahlungen ----------

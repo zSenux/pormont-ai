@@ -213,6 +213,9 @@ model Project {
   lexQuotationNo String?
   /// Kalkulierter Kosten-Stundensatz (€/Std.), sonst Standard aus KALK_STUNDENSATZ
   hourlyRate   Float?
+  /// Kunde aus dem Kundenstamm (Buchhaltung); `customer` bleibt als Anzeigename
+  customerId   String?
+  customerRef  Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
   /// Projektleiter (verantwortlich)
   leaderId     String?
   leader       User?         @relation("ProjectLeader", fields: [leaderId], references: [id], onDelete: SetNull)
@@ -233,8 +236,10 @@ model Project {
   members    ProjectMember[]
   tasks      Task[]
   docs       SalesDoc[]
+  order      Order?
 
   @@index([status])
+  @@index([customerId])
 }
 
 /// Notiz oder Foto-Eintrag zu einem Projekt (Baustellentagebuch)
@@ -834,6 +839,9 @@ model Customer {
   updatedAt      DateTime @updatedAt
 
   docs SalesDoc[]
+  /// EPS: Projekte und Aufträge des Kunden
+  projects Project[]
+  orders   Order[]
 
   @@index([name])
   @@index([lexId])
@@ -926,6 +934,8 @@ model SalesDoc {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
+  /// EPS: Auftrag aus diesem Angebot
+  orders   Order[]
   payments Payment[]
   dunnings Dunning[]
   events   SalesDocEvent[]
@@ -991,4 +1001,41 @@ model SalesDocEvent {
 model NumberSeq {
   key   String @id
   value Int
+}
+
+/// Auftrag (EPS): entsteht aus einem angenommenen Angebot oder von Hand; jeder Auftrag hat genau eine Projektakte (Project)
+model Order {
+  id            String    @id @default(cuid())
+  /// AU-2026-0001 (Nummernkreis „AUFTRAG-<Jahr>“ in NumberSeq)
+  number        String    @unique
+  title         String
+  /// NEU | IN_ARBEIT | PAUSIERT | ABGESCHLOSSEN | STORNIERT
+  status        String    @default("NEU")
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  /// Angebot, aus dem der Auftrag entstand
+  quoteId       String?
+  quote         SalesDoc? @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  projectId     String    @unique
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Auftragswert netto in Cent
+  valueCents    Int       @default(0)
+  /// Auftragsbeginn und Fertigstellungstermin (Tag, 00:00 Berliner Zeit)
+  startDate     DateTime?
+  dueDate       DateTime?
+  /// Bestellnummer/Zeichen des Kunden
+  customerRef   String?
+  /// Materialbedarf (Freitext, bis die Stücklisten kommen)
+  material      String?
+  /// Fertigungsinformationen (Oberfläche, RAL, Toleranzen …)
+  production    String?
+  notes         String?
+  createdById   String?
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, dueDate])
+  @@index([customerId])
+  @@index([quoteId])
 }
