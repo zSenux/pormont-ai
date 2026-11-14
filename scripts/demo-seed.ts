@@ -106,5 +106,24 @@ await db.supplierRequest.create({ data: { supplierId: schrauben.id, subject: "Na
 await db.event.create({ data: { title: "Montage Treppe Käfertal", startAt: day(13), allDay: true, location: "Mannheimer Str. 112, Mannheim", projectId: treppe.id } });
 await db.event.create({ data: { title: "Aufmaß Carport Viernheim", startAt: new Date(day(2).getTime() + 9 * 3600_000), projectId: (await db.project.findFirstOrThrow({ where: { name: { contains: "Carport" } } })).id } });
 
+// Kunden, Angebote und Rechnungen (Buchhaltung) – Demo-Nummern mit Präfix DEMO-, damit echte Nummernkreise unberührt bleiben
+const allProjects = await db.project.findMany();
+let custNo = 90001;
+let docNo = 1;
+const line = (name: string, net: number) => [{ name, qty: 1, unit: "psch", price: net, discount: 0, taxRate: 19 }];
+const money = (net: number) => ({ netCents: Math.round(net * 100), taxCents: Math.round(net * 19), grossCents: Math.round(net * 119) });
+for (const p of allProjects) {
+  const c = await db.customer.create({ data: { number: custNo++, name: p.customer ?? "Kunde", kind: p.customer?.startsWith("Herr") || p.customer?.startsWith("Familie") ? "PERSON" : "FIRMA", street: p.address?.split(",")[0], zip: p.address?.split(", ")[1]?.slice(0, 5), city: p.address?.split(", ")[1]?.slice(6), email: "kunde@example.com", phone: "0621 000000" } });
+  const net = p.budgetNet ?? 7400;
+  const accepted = (p.budgetNet ?? 0) > 0;
+  await db.salesDoc.create({ data: { kind: "ANGEBOT", status: accepted ? "ANGENOMMEN" : "OFFEN", number: `DEMO-AN-${docNo++}`, customerId: c.id, projectId: p.id, title: p.name, date: day(accepted ? -40 : -2), dueDate: day(accepted ? -10 : 28), lines: line(p.name, net), ...money(net), sentAt: day(accepted ? -40 : -2) } });
+}
+await db.salesDoc.create({ data: { kind: "ANGEBOT", status: "ABGELEHNT", number: `DEMO-AN-${docNo++}`, title: "Wendeltreppe Edelstahl", date: day(-60), lines: line("Wendeltreppe Edelstahl", 23800), ...money(23800) } });
+// Umsatz der letzten Monate (Abschlags- und Schlussrechnungen)
+const firstCustomer = await db.customer.findFirstOrThrow();
+for (const [off, net, paid] of [[-160, 18400, true], [-130, 26100, true], [-100, 9800, true], [-75, 31200, true], [-45, 22650, true], [-20, 14900, false], [-6, 11800, false]] as const) {
+  await db.salesDoc.create({ data: { kind: "RECHNUNG", status: paid ? "BEZAHLT" : "OFFEN", number: `DEMO-RE-${docNo++}`, customerId: firstCustomer.id, title: "Abschlagsrechnung", date: day(off), dueDate: day(off + 14), lines: line("Abschlag Stahlbauarbeiten", net), ...money(net), paidCents: paid ? Math.round(net * 119) : 0, finalizedAt: day(off) } });
+}
+
 console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten.`);
 await db.$disconnect();

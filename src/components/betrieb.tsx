@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, CalendarClock, ClipboardList, Flag, HardHat, PackageX, ShoppingCart, Users } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, FileText, ClipboardList, Flag, HardHat, PackageX, ShoppingCart, Users } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/berlin";
@@ -7,6 +7,9 @@ import { lowStock, fmtQty } from "@/lib/stock";
 import { currentPhase, progressOf } from "@/lib/phases";
 import { PHASES } from "@/lib/phases-shared";
 import { ProgressBar } from "@/components/progress-bar";
+import { revenue } from "@/lib/buchhaltung/docs";
+import { fmtEuroCents } from "@/lib/buchhaltung/money";
+import { todayYmd } from "@/lib/berlin";
 
 // Betriebs-Übersicht (EPS-Dashboard): laufende Projekte mit Fortschritt, Projekte je Phase, Fristen,
 // überfällige Aufgaben, Lager unter Mindestbestand, offene Bestellungen/Anfragen, wer heute eingestempelt ist.
@@ -60,6 +63,8 @@ export async function BetriebOverview() {
           </Link>
         ))}
       </div>
+
+      <SalesRow />
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <section className="card min-w-0 p-5">
@@ -186,5 +191,59 @@ export async function BetriebOverview() {
         </section>
       </div>
     </section>
+  );
+}
+
+/** Vertrieb: Umsatz der letzten 6 Monate (netto) und Angebots-Pipeline aus der eigenen Buchhaltung */
+async function SalesRow() {
+  const today = todayYmd();
+  const [y, m] = today.split("-").map(Number);
+  const months = Array.from({ length: 6 }, (_, k) => {
+    const d = new Date(Date.UTC(y, m - 1 - (5 - k), 1));
+    const ym = d.toISOString().slice(0, 7);
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    return { ym, from: `${ym}-01`, to: last < today ? last : today, label: d.toLocaleDateString("de-DE", { month: "short", timeZone: "UTC" }) };
+  });
+  const [rev, quotes] = await Promise.all([
+    Promise.all(months.map((x) => revenue(x.from, x.to))),
+    db.salesDoc.groupBy({ by: ["status"], where: { kind: "ANGEBOT", status: { in: ["OFFEN", "ANGENOMMEN", "ABGELEHNT"] } }, _sum: { netCents: true }, _count: true }),
+  ]);
+  const max = Math.max(1, ...rev.map((r) => r.netCents));
+  const q = (s: string) => quotes.find((x) => x.status === s);
+  const won = q("ANGENOMMEN")?._count ?? 0;
+  const lost = q("ABGELEHNT")?._count ?? 0;
+  const rate = won + lost ? Math.round((won / (won + lost)) * 100) : null;
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+      <section className="card min-w-0 p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <BarChart3 className="size-5 text-brand" />
+          <h3 className="font-bold">Umsatz netto, letzte 6 Monate</h3>
+          <Link href="/buchhaltung" className="ml-auto text-sm font-medium text-brand">Buchhaltung</Link>
+        </div>
+        {/* Eine Reihe → eine Farbe; Wert steht über jedem Balken, Tooltip per title */}
+        <div className="grid h-44 grid-cols-6 items-end gap-3" role="img" aria-label={`Umsatz netto: ${months.map((x, i) => `${x.label} ${fmtEuroCents(rev[i].netCents)}`).join(", ")}`}>
+          {months.map((x, i) => (
+            <div key={x.ym} className="flex h-full flex-col items-center justify-end gap-1" title={`${x.label}: ${fmtEuroCents(rev[i].netCents)} (${rev[i].count} Rechnungen)`}>
+              <span className="text-[11px] font-semibold text-ink">{rev[i].netCents ? `${Math.round(rev[i].netCents / 100000).toLocaleString("de-DE")} T€` : ""}</span>
+              <span className={clsx("w-full max-w-12 rounded-t", i === 5 ? "bg-brand" : "bg-brand/60")} style={{ height: `${Math.max(rev[i].netCents ? 2 : 0, (rev[i].netCents / max) * 100)}%` }} />
+              <span className="text-xs text-steel">{x.label}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="card min-w-0 p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <FileText className="size-5 text-brand" />
+          <h3 className="font-bold">Angebote</h3>
+          <Link href="/buchhaltung/belege?art=angebote" className="ml-auto text-sm font-medium text-brand">Alle</Link>
+        </div>
+        <dl className="grid grid-cols-2 gap-3 text-sm">
+          <div><dt className="text-xs text-steel">Offen</dt><dd className="text-xl font-extrabold">{fmtEuroCents(q("OFFEN")?._sum.netCents ?? 0)}</dd><dd className="text-xs text-steel">{q("OFFEN")?._count ?? 0} {(q("OFFEN")?._count ?? 0) === 1 ? "Angebot" : "Angebote"}</dd></div>
+          <div><dt className="text-xs text-steel">Angenommen (Auftragsvolumen)</dt><dd className="text-xl font-extrabold text-brand">{fmtEuroCents(q("ANGENOMMEN")?._sum.netCents ?? 0)}</dd><dd className="text-xs text-steel">{won} {won === 1 ? "Angebot" : "Angebote"}</dd></div>
+          <div className="col-span-2"><dt className="text-xs text-steel">Annahmequote</dt><dd className="font-semibold">{rate === null ? "noch keine Entscheidungen" : `${rate} % (${won} angenommen, ${lost} abgelehnt)`}</dd></div>
+        </dl>
+      </section>
+    </div>
   );
 }
