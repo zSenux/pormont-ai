@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { berlinDateTime, formatDate } from "@/lib/berlin";
 import { findUserByName, PhaseError, phaseTitle, planText, setPhase } from "@/lib/phases";
 import { PHASE_KEYS, PHASE_STATUSES, PRIORITIES } from "@/lib/phases-shared";
-import { createOrder, createOrderFromQuote, OrderError, orderText } from "@/lib/orders";
+import { changeOrderStatus, createOrder, createOrderFromQuote, OrderError, orderText } from "@/lib/orders";
 import { ORDER_STATUS_LABEL, ORDER_STATUSES, type OrderStatus } from "@/lib/orders-shared";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { addNote, CrmError, customerFileText, dueFollowUps, newInquiry, NOTE_KINDS } from "@/lib/crm";
@@ -14,6 +14,7 @@ import { PROD_LABEL, PROD_STATUSES } from "@/lib/production-shared";
 import { addDaysYmd, todayYmd } from "@/lib/berlin";
 import { addDefect, AssemblyError, assemblyLine, createAssembly, setAssemblyStatus, toggleCheck } from "@/lib/assembly";
 import { ASM_STATUS_LABEL, readChecklist, readDefects } from "@/lib/assembly-shared";
+import { lateItems } from "@/lib/automation";
 import type { ToolCtx } from "./tools";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
@@ -148,6 +149,11 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
       required: ["aktion"],
     },
   },
+  {
+    name: "fristen",
+    description: "Was ist überfällig? Listet alle überschrittenen Termine im Betrieb: Aufgaben, Meilensteine, Projektphasen, Fertigungsaufträge, Auftrags-Fertigstellung und nicht gestartete Montagen – jeweils mit Link. Die Verantwortlichen bekommen dazu automatisch eine Push-Nachricht.",
+    input_schema: { type: "object", properties: {} },
+  },
 ];
 
 export const EPS_TOOL_NAMES = new Set(EPS_TOOLS.map((t) => t.name));
@@ -157,6 +163,10 @@ export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: 
   if (name === "kundenakte") return runCrm(i, ctx);
   if (name === "fertigung") return runProduction(i, ctx);
   if (name === "montage") return runAssembly(i, ctx);
+  if (name === "fristen") {
+    const late = await lateItems();
+    return late.length ? `${late.length} Termine überschritten:\n${late.slice(0, 40).map((l) => `- ${l.text} → [öffnen](${l.url})`).join("\n")}` : "Nichts überfällig – alle Termine im Plan.";
+  }
   try {
     const q = z
       .object({
@@ -287,10 +297,8 @@ async function runOrders(i: Record<string, unknown>, ctx: ToolCtx): Promise<stri
       case "status": {
         const o = q.id ? await findOrder(q.id) : null;
         if (!o || !q.status) return "Auftrag (id) und status angeben.";
-        await db.order.update({ where: { id: o.id }, data: { status: q.status } });
-        const ps = q.status === "ABGESCHLOSSEN" ? "FERTIG" : q.status === "PAUSIERT" || q.status === "STORNIERT" ? "PAUSIERT" : "LAEUFT";
-        await db.project.update({ where: { id: o.projectId }, data: { status: ps } });
-        return `Auftrag ${o.number} steht jetzt auf „${ORDER_STATUS_LABEL[q.status]}“. [Auftrag öffnen](/auftraege/${o.id})`;
+        await changeOrderStatus(o.id, q.status, actor.name);
+        return `Auftrag ${o.number} steht jetzt auf „${ORDER_STATUS_LABEL[q.status]}“.${q.status === "ABGESCHLOSSEN" ? ` Projekt abgeschlossen, Nachkalkulation erstellt: [Nachkalkulation](/projekte/${o.projectId}/nachkalkulation)` : ""} [Auftrag öffnen](/auftraege/${o.id})`;
       }
       case "aendern": {
         const o = q.id ? await findOrder(q.id) : null;

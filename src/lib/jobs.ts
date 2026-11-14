@@ -8,6 +8,7 @@ import { mailConfigured } from "@/lib/mail/config";
 import { mailsSince } from "@/lib/mail/client";
 import { timeHm, todayEvents } from "@/lib/calendar";
 import { readLicense } from "@/lib/license";
+import { followUpReminders, lateDeadlines } from "@/lib/automation";
 
 // Hintergrund-Jobs im App-Prozess (wie in Klaic OS): Erinnerungen und Warnungen aus der Buchhaltung per Push.
 // Läuft nur in Produktion bzw. lokal mit JOBS=1.
@@ -109,6 +110,10 @@ export function startJobs() {
   setInterval(safe("rechnungen", overdueInvoices), 30 * 60_000);
   setTimeout(safe("rechnungen", overdueInvoices), 20_000);
   setInterval(safe("mail", newMails), 2 * 60_000);
+  // EPS: Termin überschritten → benachrichtigen, Wiedervorlagen der Kundenakte
+  setInterval(safe("fristen", lateDeadlines), 30 * 60_000);
+  setTimeout(safe("fristen", lateDeadlines), 40_000);
+  setInterval(safe("wiedervorlagen", followUpReminders), 10 * 60_000);
   setTimeout(safe("mail", newMails), 15_000);
   console.log("[jobs] gestartet");
 }
