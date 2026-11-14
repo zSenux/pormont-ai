@@ -10,6 +10,7 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "user:add": "tsx --conditions=react-server scripts/add-user.ts",
+    "demo:seed": "tsx --conditions=react-server scripts/demo-seed.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },

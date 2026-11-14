@@ -8,7 +8,7 @@ import { formatHours } from "@/lib/hours";
 import { STATUS_LABEL, STATUS_TONE, type ProjectStatusKey } from "@/lib/projects";
 import { createProject } from "@/app/actions/work";
 import { currentPhase, phaseTitle, progressOf } from "@/lib/phases";
-import { ProgressBar } from "./[id]/plan";
+import { ProgressBar } from "@/components/progress-bar";
 
 export const metadata = { title: "Projekte" };
 export const dynamic = "force-dynamic";

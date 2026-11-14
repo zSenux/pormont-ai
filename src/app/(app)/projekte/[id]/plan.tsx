@@ -7,21 +7,13 @@ import { PHASES, PHASE_STATUS_LABEL, PRIORITY_LABEL, PRIORITY_TONE, type PhaseSt
 import { addMember, addMilestone, addProjectTask, deleteMilestone, removeMember, savePhase, setLeader, setPhaseStatus, toggleMilestone } from "@/app/actions/planung";
 import { toggleTask } from "@/app/actions";
 import { ActionButton } from "@/components/confirm-button";
+import { ProgressBar } from "@/components/progress-bar";
 
 const ymdOf = (d: Date | null) => (d ? berlinParts(d).ymd : "");
 const title = (key: string) => PHASES.find((p) => p.key === key)?.title ?? key;
 
 const ICON: Record<PhaseStatus, typeof Circle> = { OFFEN: Circle, LAEUFT: CircleDot, ERLEDIGT: CheckCircle2, ENTFAELLT: CircleDashed };
 const TONE: Record<PhaseStatus, string> = { OFFEN: "text-steel/60", LAEUFT: "text-brand", ERLEDIGT: "text-ok", ENTFAELLT: "text-steel/40" };
-
-/** Fortschrittsbalken (auch für Listen) */
-export function ProgressBar({ pct, className }: { pct: number; className?: string }) {
-  return (
-    <div className={clsx("h-2 overflow-hidden rounded-full bg-mist", className)} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-      <div className={clsx("h-full rounded-full", pct >= 100 ? "bg-ok" : "bg-brand")} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
-    </div>
-  );
-}
 
 /** Projektplanung: Phasen-Ablauf, Meilensteine, Projektleiter + Team, Projektaufgaben */
 export async function ProjectPlan({ projectId, leaderId }: { projectId: string; leaderId: string | null }) {
