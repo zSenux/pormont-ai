@@ -4,6 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Calendar, ClipboardList, Factory, Wrench, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck, Warehouse } from "lucide-react";
 import { clsx } from "clsx";
+import { PATH_AREA, type Area } from "@/lib/rights-shared";
+
+/** Rollen & Rechte: Menüpunkt nur, wenn der Bereich freigegeben ist */
+const allowed = (areas: readonly Area[], href: string) => {
+  const a = Object.entries(PATH_AREA).find(([p]) => href === p || href.startsWith(`${p}/`))?.[1];
+  return !a || areas.includes(a);
+};
 
 const DESKTOP = [
   { href: "/", label: "Übersicht", icon: Home },
@@ -37,7 +44,7 @@ const MOBILE = [
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
-export function TopNav({ name }: { name: string }) {
+export function TopNav({ name, areas }: { name: string; areas: readonly Area[] }) {
   const path = usePathname();
   return (
     <header className="sticky top-0 z-30 hidden border-b print:hidden border-line bg-white/90 backdrop-blur md:block">
@@ -47,7 +54,7 @@ export function TopNav({ name }: { name: string }) {
           <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
         </Link>
         <nav className="flex flex-1 items-center gap-1">
-          {DESKTOP.map((i) => (
+          {DESKTOP.filter((i) => allowed(areas, i.href)).map((i) => (
             <Link key={i.href} href={i.href} title={i.label} className={clsx("flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
               <i.icon className="size-4" />
               {/* 15 Bereiche: Beschriftung nur am aktiven Punkt (sonst Tooltip), damit die Leiste nicht überläuft */}
@@ -74,12 +81,14 @@ export function MobileHeader() {
   );
 }
 
-export function MobileNav() {
+export function MobileNav({ areas }: { areas: readonly Area[] }) {
   const path = usePathname();
+  // Ohne Postfach-Recht: Aufgaben statt Mail
+  const items = MOBILE.map((i) => (i.href === "/mail" && !areas.includes("mail") ? { ...i, href: "/aufgaben", label: "Aufgaben", icon: CheckSquare } : i));
   return (
     <nav className="safe-bottom fixed print:hidden inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 backdrop-blur md:hidden" aria-label="Hauptnavigation">
       <div className="grid h-16 grid-cols-5">
-        {MOBILE.map((i) =>
+        {items.map((i) =>
           i.center ? (
             <Link key={i.href} href={i.href} className="flex flex-col items-center justify-center" aria-label="Jarvis">
               <span className={clsx("-mt-6 grid size-14 place-items-center rounded-full border-4 border-white shadow-lg", active(path, i.href) ? "bg-brand-2" : "bg-brand")}>

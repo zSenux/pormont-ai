@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { canArea } from "@/lib/rights-shared";
 import { currentUser, lockedResponse } from "@/lib/auth/user";
 import { CatalogError, importCatalog, MAX_CATALOG_BYTES } from "@/lib/catalog";
 
@@ -13,6 +14,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const locked = user ? await lockedResponse() : null;
   if (locked) return locked;
   if (!user) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
+  if (!canArea(user, "einkauf")) return Response.json({ error: "Keine Berechtigung." }, { status: 403 });
   const id = z.cuid().safeParse((await params).id);
   if (!id.success || !(await db.supplier.findUnique({ where: { id: id.data }, select: { id: true } }))) return Response.json({ error: "Lieferant nicht gefunden." }, { status: 404 });
   if (Number(req.headers.get("content-length") ?? 0) > MAX_CATALOG_BYTES + 100_000) return Response.json({ error: "Die Datei ist größer als 40 MB." }, { status: 413 });

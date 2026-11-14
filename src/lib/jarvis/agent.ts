@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { nowLine } from "@/lib/berlin";
 import { companyProfile } from "@/lib/company";
 import { trackClaude } from "@/lib/costs";
-import { memoryBlock, runTool, TOOLS, type ToolCtx } from "./tools";
+import { memoryBlock, runTool, toolsFor, type ToolCtx } from "./tools";
 
 // Jarvis – der KI-Assistent von ProMont. Aufbau übernommen aus Klaic OS (Ana): Claude + eigene Werkzeuge,
 // Verlauf nur anhängen (nie umschreiben), Festschreiben/Senden/Mahnen/Storno nur über Freigabe-Karten.
@@ -71,7 +71,9 @@ export async function runJarvis(opts: { chatId: string; userId: string; userName
   const ctx: ToolCtx = { userId: opts.userId, chatId: opts.chatId, proposed: [] };
   const client = new Anthropic();
   const memory = await memoryBlock().catch(() => "");
-  const tools = TOOLS.map((t, i) => (i === TOOLS.length - 1 ? { ...t, cache_control: { type: "ephemeral" as const } } : t));
+  // Rollen & Rechte: nur Werkzeuge der freigegebenen Bereiche
+  const allowed = await toolsFor(opts.userId);
+  const tools = allowed.map((t, i) => (i === allowed.length - 1 ? { ...t, cache_control: { type: "ephemeral" as const } } : t));
   let reply = "";
 
   const save = () => db.chat.update({ where: { id: opts.chatId }, data: { messages: messages as unknown as object[] } });

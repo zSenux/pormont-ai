@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { areasOf, AREA_LABEL, canPath, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
+import { setUserFunktion } from "@/app/actions";
 import { headers } from "next/headers";
 import { Factory, Wrench, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
@@ -68,7 +70,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
           { href: "/pc", label: "Computer", icon: Monitor },
           { href: "/datenuebernahme", label: "Daten­übernahme", icon: Database },
-        ].map((t) => (
+        ].filter((t) => canPath(me, t.href) && (t.href !== "/datenuebernahme" || me.role === "ADMIN")).map((t) => (
           <Link key={t.href} href={t.href} className="card flex flex-col items-center gap-2 p-4 text-center text-sm font-medium">
             <t.icon className="size-6 text-brand" /> {t.label}
           </Link>
@@ -185,6 +187,16 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
                 <span className="flex-1">
                   <b>{u.name}</b> · {u.email}
                   <span className="block text-xs text-steel">{u.role === "ADMIN" ? "Administrator" : "Mitarbeiter"}{u.lastLoginAt ? ` · zuletzt ${formatDateTime(u.lastLoginAt)}` : " · noch nie angemeldet"}</span>
+                  {u.role !== "ADMIN" && (
+                    <form action={setUserFunktion.bind(null, u.id)} className="mt-1 flex items-center gap-2">
+                      <select name="funktion" defaultValue={u.funktion ?? ""} className="input py-1 text-xs" aria-label={`Funktion von ${u.name}`}>
+                        <option value="">alle Bereiche</option>
+                        {FUNKTIONEN.map((f) => <option key={f} value={f}>{FUNKTION_LABEL[f]}</option>)}
+                      </select>
+                      <button className="btn-secondary px-3 py-1 text-xs">Setzen</button>
+                    </form>
+                  )}
+                  <span className="mt-0.5 block text-[11px] text-steel">Sieht: {u.role === "ADMIN" || !u.funktion ? "alles" : areasOf(u).map((a) => AREA_LABEL[a].split(" (")[0]).join(", ")}</span>
                 </span>
                 {u.id !== me.id && <DeleteButton kind="user" id={u.id} label={u.name} />}
               </li>

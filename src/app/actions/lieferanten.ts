@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth/user";
+import { requireArea } from "@/lib/rights";
 import { berlinDateTime } from "@/lib/berlin";
 import { createRequest, parsePositions, sendRequest, SupplierError, SUPPLIER_KINDS, SUPPLIER_SUGGESTIONS } from "@/lib/suppliers";
 
@@ -33,7 +33,7 @@ function readSupplier(form: FormData) {
 }
 
 export async function createSupplier(_prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("einkauf");
   const p = readSupplier(form);
   if (!p.success) return { error: p.error.issues[0]?.message };
   const s = await db.supplier.create({ data: p.data });
@@ -41,7 +41,7 @@ export async function createSupplier(_prev: Result, form: FormData): Promise<Res
 }
 
 export async function updateSupplier(id: string, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("einkauf");
   const p = readSupplier(form);
   if (!p.success) return { error: p.error.issues[0]?.message };
   const d = p.data;
@@ -54,7 +54,7 @@ export async function updateSupplier(id: string, _prev: Result, form: FormData):
 }
 
 export async function deleteSupplier(id: string) {
-  await requireUser();
+  await requireArea("einkauf");
   await db.supplier.delete({ where: { id: z.cuid().parse(id) } });
   revalidatePath("/lieferanten");
   redirect("/lieferanten");
@@ -62,7 +62,7 @@ export async function deleteSupplier(id: string) {
 
 /** Die vier besprochenen Lieferanten anlegen (nur fehlende) */
 export async function addSuggestedSuppliers() {
-  await requireUser();
+  await requireArea("einkauf");
   for (const s of SUPPLIER_SUGGESTIONS) {
     const exists = await db.supplier.findFirst({ where: { name: { equals: s.name, mode: "insensitive" } }, select: { id: true } });
     if (!exists) await db.supplier.create({ data: s });
@@ -73,7 +73,7 @@ export async function addSuggestedSuppliers() {
 // ---------- Preisanfragen ----------
 
 export async function createSupplierRequest(_prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("einkauf");
   const p = z
     .object({
       supplierId: z.cuid(),
@@ -98,7 +98,7 @@ export async function createSupplierRequest(_prev: Result, form: FormData): Prom
 }
 
 export async function updateRequestText(id: string, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("einkauf");
   const p = z.object({ subject: z.string().trim().min(3).max(200), text: z.string().trim().min(10).max(20000) }).safeParse({ subject: form.get("subject"), text: form.get("text") });
   if (!p.success) return { error: "Betreff und Text prüfen." };
   const r = await db.supplierRequest.updateMany({ where: { id: z.cuid().parse(id), status: "ENTWURF" }, data: p.data });
@@ -109,7 +109,7 @@ export async function updateRequestText(id: string, _prev: Result, form: FormDat
 
 /** Senden = menschliche Freigabe (Knopf mit Rückfrage auf der Seite) */
 export async function sendSupplierRequest(id: string): Promise<Result> {
-  await requireUser();
+  await requireArea("einkauf");
   try {
     const r = await sendRequest(z.cuid().parse(id));
     revalidatePath(`/lieferanten/anfrage/${id}`);
@@ -122,7 +122,7 @@ export async function sendSupplierRequest(id: string): Promise<Result> {
 }
 
 export async function setRequestStatus(id: string, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("einkauf");
   const p = z
     .object({ status: z.enum(["GESENDET", "ANGEBOT", "BESTELLT", "ABGESAGT"]), offerAmount: z.coerce.number().min(0).max(100_000_000).optional(), offerNote: z.string().trim().max(2000).optional() })
     .safeParse({ status: form.get("status"), offerAmount: opt(form.get("offerAmount"))?.replace(/\./g, "").replace(",", "."), offerNote: opt(form.get("offerNote")) });
@@ -135,7 +135,7 @@ export async function setRequestStatus(id: string, _prev: Result, form: FormData
 }
 
 export async function deleteRequest(id: string) {
-  await requireUser();
+  await requireArea("einkauf");
   const r = await db.supplierRequest.findUniqueOrThrow({ where: { id: z.cuid().parse(id) }, select: { supplierId: true } });
   await db.supplierRequest.delete({ where: { id } });
   revalidatePath("/lieferanten");
@@ -143,7 +143,7 @@ export async function deleteRequest(id: string) {
 }
 
 export async function clearCatalog(supplierId: string) {
-  await requireUser();
+  await requireArea("einkauf");
   await db.catalogItem.deleteMany({ where: { supplierId: z.cuid().parse(supplierId) } });
   revalidatePath(`/lieferanten/${supplierId}`);
 }

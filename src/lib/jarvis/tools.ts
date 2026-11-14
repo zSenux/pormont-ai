@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { addDaysYmd, berlinDateTime, berlinParts, formatDate, formatDateTime, todayYmd } from "@/lib/berlin";
 import { companyProfile } from "@/lib/company";
+import { AREA_LABEL, areasOf, TOOL_AREA } from "@/lib/rights-shared";
 import { BOOK_TOOLS, BOOK_TOOL_NAMES, bookOverview, runBookTool } from "./book-tools";
 import { MAIL_TOOLS, MAIL_TOOL_NAMES, runMailTool } from "./mail-tools";
 import { eventLine, todayEvents } from "@/lib/calendar";
@@ -73,8 +74,7 @@ async function overview(userId: string) {
   if (low.length) parts.push(`Lager unter Mindestbestand (${low.length}): ${low.map((i) => `${i.name} (noch ${fmtQty(i.quantity, i.unit)})`).join(", ")} – [Lager](/lager).`);
   const openReceipts = await db.storedFile.count({ where: { kind: "beleg", lexFileId: null } });
   if (openReceipts) parts.push(`${openReceipts} fotografierte Belege noch nicht in Lexware ([Belegfotos](/belege/foto)).`);
-  parts.push(await bookOverview());
-  void userId;
+  if ((await userAreas(userId)).includes("buchhaltung")) parts.push(await bookOverview());
   return parts.join("\n\n");
 }
 
@@ -115,8 +115,22 @@ export async function memoryBlock() {
   return m.length ? `\n\nGedächtnis (vom Team gemerkt):\n${m.map((x) => `- ${x.text} (id ${x.id})`).join("\n")}` : "";
 }
 
+/** Rollen & Rechte: darf dieser Nutzer das Werkzeug benutzen? */
+export async function userAreas(userId: string) {
+  const u = await db.user.findUnique({ where: { id: userId }, select: { role: true, funktion: true } });
+  return u ? areasOf(u) : [];
+}
+
+/** Werkzeuge, die dieser Nutzer sehen darf (Reihenfolge bleibt gleich) */
+export async function toolsFor(userId: string) {
+  const areas = await userAreas(userId);
+  return TOOLS.filter((t) => !TOOL_AREA[t.name] || areas.includes(TOOL_AREA[t.name]));
+}
+
 export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promise<string> {
   const i = (input ?? {}) as Record<string, unknown>;
+  const need = TOOL_AREA[name];
+  if (need && !(await userAreas(ctx.userId)).includes(need)) return `Keine Berechtigung: ${AREA_LABEL[need]} ist für deine Funktion nicht freigegeben. Bitte einen Administrator fragen.`;
   if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
   if (SUPPLIER_TOOL_NAMES.has(name)) return runSupplierTool(name, i, ctx);
   if (STOCK_TOOL_NAMES.has(name)) return runStockTool(name, i, ctx);

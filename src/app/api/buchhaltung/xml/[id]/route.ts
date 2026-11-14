@@ -1,3 +1,4 @@
+import { canArea } from "@/lib/rights-shared";
 import { currentUser } from "@/lib/auth/user";
 import { db } from "@/lib/db";
 import { docData } from "@/lib/buchhaltung/docs";
@@ -7,7 +8,9 @@ export const dynamic = "force-dynamic";
 
 /** E-Rechnung als XRechnung-XML (CII) – nur für festgeschriebene Rechnungen/Gutschriften aus Jarvis */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await currentUser())) return new Response("Nicht angemeldet.", { status: 401 });
+  const me = await currentUser();
+  if (!me) return new Response("Nicht angemeldet.", { status: 401 });
+  if (!canArea(me, "buchhaltung")) return new Response("Keine Berechtigung.", { status: 403 });
   const { id } = await params;
   if (!/^[a-z0-9]{10,40}$/.test(id)) return new Response("Ungültig.", { status: 400 });
   const d = await db.salesDoc.findUnique({ where: { id } });

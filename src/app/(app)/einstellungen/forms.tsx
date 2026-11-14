@@ -1,5 +1,6 @@
 "use client";
 
+import { FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
 import { useActionState, useTransition } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import { addUser, changePassword, deleteMemory, removeUser } from "@/app/actions";
@@ -32,6 +33,10 @@ export function AddUserForm() {
       <select name="role" className="input" aria-label="Rolle" defaultValue="MEMBER">
         <option value="MEMBER">Mitarbeiter</option>
         <option value="ADMIN">Administrator</option>
+      </select>
+      <select name="funktion" className="input sm:col-span-2" aria-label="Funktion im Betrieb" defaultValue="">
+        <option value="">Funktion: alle Bereiche</option>
+        {FUNKTIONEN.map((f) => <option key={f} value={f}>{FUNKTION_LABEL[f]}</option>)}
       </select>
       <div className="sm:col-span-2 space-y-2">
         <Msg s={state} />

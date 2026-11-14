@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight, Calendar, Camera, CheckSquare, Clock, FileText, FolderSearch, HardHat, Mic, Sparkles, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { firstName, requireUser } from "@/lib/auth/user";
+import { AREA_LABEL, canArea, type Area } from "@/lib/rights-shared";
 import { berlinDateTime, berlinParts, formatDate, formatDateTime, formatEuro, todayYmd } from "@/lib/berlin";
 import { customerName, isOverdue, openInvoices, revenue, openCentsOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
@@ -19,8 +20,10 @@ function greeting() {
   return h < 11 ? "Guten Morgen" : h < 18 ? "Hallo" : "Guten Abend";
 }
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ keinrecht?: string }> }) {
   const user = await requireUser();
+  const money = canArea(user, "buchhaltung");
+  const denied = (await searchParams).keinrecht;
   const end = berlinDateTime(todayYmd(), "23:59");
   const tasks = await db.task.findMany({ where: { doneAt: null, dueAt: { lte: end } }, orderBy: { dueAt: "asc" }, take: 6 });
   const pending = await db.pendingAction.count({ where: { status: "PENDING", userId: user.id } });
@@ -55,7 +58,7 @@ export default async function Home() {
 
       <nav className="grid grid-cols-4 gap-3" aria-label="Schnellzugriff">
         {[
-          { href: "/belege/foto", label: "Beleg fotografieren", icon: Camera },
+          { href: money ? "/belege/foto" : "/spesen", label: money ? "Beleg fotografieren" : "Spesen erfassen", icon: Camera },
           { href: "/projekte", label: "Stunden & Baustellen", icon: HardHat },
           { href: "/kalender", label: "Termin eintragen", icon: Calendar },
           { href: "/dokumente", label: "Dokument suchen", icon: FolderSearch },
@@ -76,12 +79,20 @@ export default async function Home() {
         </Link>
       )}
 
-      <Suspense fallback={<div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>}>
-        <BookTiles />
-      </Suspense>
+      {denied && (
+        <p className="card border-amber-200 bg-amber-50 px-5 py-4 text-sm text-warn" role="alert">
+          Der Bereich {AREA_LABEL[denied as Area]?.split(" (")[0] ?? denied} ist für deine Funktion nicht freigegeben. Bitte einen Administrator fragen.
+        </p>
+      )}
+
+      {money && (
+        <Suspense fallback={<div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>}>
+          <BookTiles />
+        </Suspense>
+      )}
 
       <Suspense fallback={<div className="card h-48 animate-pulse" />}>
-        <BetriebOverview />
+        <BetriebOverview money={money} />
       </Suspense>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -126,9 +137,11 @@ export default async function Home() {
             </ul>
           )}
         </section>
-        <Suspense fallback={<div className="card h-48 animate-pulse" />}>
-          <OverdueList />
-        </Suspense>
+        {money && (
+          <Suspense fallback={<div className="card h-48 animate-pulse" />}>
+            <OverdueList />
+          </Suspense>
+        )}
       </div>
     </main>
   );

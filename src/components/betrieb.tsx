@@ -18,7 +18,7 @@ import { lateItems } from "@/lib/automation";
 
 const DAY = 86400_000;
 
-export async function BetriebOverview() {
+export async function BetriebOverview({ money = true }: { money?: boolean }) {
   const now = new Date();
   const in14 = new Date(now.getTime() + 14 * DAY);
   const [projects, low, requests, milestones, phaseEnds, clockedIn, users] = await Promise.all([
@@ -77,7 +77,7 @@ export async function BetriebOverview() {
         ))}
       </div>
 
-      <SalesRow />
+      {money && <SalesRow />}
 
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <section className="card min-w-0 p-5">

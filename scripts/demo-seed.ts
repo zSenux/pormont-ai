@@ -29,16 +29,16 @@ const day = (offset: number) => {
 // Team (Passwort für alle Demo-Konten: demo-passwort)
 const pw = await hashPassword("demo-passwort");
 const people = [
-  ["dirk.linke@demo.promont", "Dirk Linke", "ADMIN"],
-  ["josip.cabraja@demo.promont", "Josip Cabraja", "ADMIN"],
-  ["sven.mueller@demo.promont", "Sven Müller", "MEMBER"],
-  ["anna.weber@demo.promont", "Anna Weber", "MEMBER"],
-  ["mehmet.yilmaz@demo.promont", "Mehmet Yılmaz", "MEMBER"],
-  ["tobias.kern@demo.promont", "Tobias Kern", "MEMBER"],
+  ["dirk.linke@demo.promont", "Dirk Linke", "ADMIN", "GF"],
+  ["josip.cabraja@demo.promont", "Josip Cabraja", "ADMIN", "PROJEKTLEITUNG"],
+  ["sven.mueller@demo.promont", "Sven Müller", "MEMBER", "FERTIGUNG"],
+  ["anna.weber@demo.promont", "Anna Weber", "MEMBER", "VERTRIEB"],
+  ["mehmet.yilmaz@demo.promont", "Mehmet Yılmaz", "MEMBER", "MONTAGE"],
+  ["tobias.kern@demo.promont", "Tobias Kern", "MEMBER", "FERTIGUNG"],
 ] as const;
 const users: Record<string, string> = {};
-for (const [email, name, role] of people) {
-  const u = await db.user.upsert({ where: { email }, create: { email, name, role, passwordHash: pw }, update: {} });
+for (const [email, name, role, funktion] of people) {
+  const u = await db.user.upsert({ where: { email }, create: { email, name, role, funktion, passwordHash: pw }, update: {} });
   users[name] = u.id;
 }
 

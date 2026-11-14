@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
+import { ACTION_AREA, AREA_LABEL, canArea, FUNKTIONEN } from "@/lib/rights-shared";
 import { endSession, requireAdmin, requireUser, startSession } from "@/lib/auth/user";
 import { declineAction, executeAction } from "@/lib/jarvis/actions";
 import { sendPush } from "@/lib/push";
@@ -182,13 +183,21 @@ export async function savePhoneAccess(_prev: { ok?: string; error?: string } | u
 export async function addUser(_prev: { ok?: string; error?: string } | undefined, form: FormData): Promise<{ ok?: string; error?: string }> {
   await requireAdmin();
   const p = z
-    .object({ name: z.string().trim().min(2).max(80), email: z.email().transform((s) => s.toLowerCase()), password: z.string().min(10, "Passwort: mindestens 10 Zeichen.").max(200), role: z.enum(["ADMIN", "MEMBER"]) })
-    .safeParse(Object.fromEntries(form));
+    .object({ name: z.string().trim().min(2).max(80), email: z.email().transform((s) => s.toLowerCase()), password: z.string().min(10, "Passwort: mindestens 10 Zeichen.").max(200), role: z.enum(["ADMIN", "MEMBER"]), funktion: z.enum(FUNKTIONEN).optional() })
+    .safeParse({ ...Object.fromEntries(form), funktion: form.get("funktion") || undefined });
   if (!p.success) return { error: p.error.issues[0]?.message ?? "Ungültig." };
   if (await db.user.findUnique({ where: { email: p.data.email } })) return { error: "Diese E-Mail gibt es schon." };
-  await db.user.create({ data: { name: p.data.name, email: p.data.email, role: p.data.role, passwordHash: await hashPassword(p.data.password) } });
+  await db.user.create({ data: { name: p.data.name, email: p.data.email, role: p.data.role, funktion: p.data.funktion ?? null, passwordHash: await hashPassword(p.data.password) } });
   revalidatePath("/einstellungen");
   return { ok: `${p.data.name} angelegt. Bitte das Passwort sicher weitergeben.` };
+}
+
+/** Rollen & Rechte: Funktion im Betrieb setzen (leer = alles sehen) */
+export async function setUserFunktion(id: string, form: FormData) {
+  await requireAdmin();
+  const f = z.enum(FUNKTIONEN).nullable().parse(form.get("funktion") || null);
+  await db.user.update({ where: { id: z.cuid().parse(id) }, data: { funktion: f } });
+  revalidatePath("/einstellungen");
 }
 
 export async function removeUser(id: string) {
@@ -202,6 +211,10 @@ export async function removeUser(id: string) {
 
 export async function approveAction(id: string) {
   const u = await requireUser();
+  // Rollen & Rechte: Freigabe nur mit Recht auf den Bereich (z. B. Buchhaltung für Festschreiben)
+  const pa = await db.pendingAction.findUnique({ where: { id: z.cuid().parse(id) }, select: { kind: true } });
+  const need = pa ? ACTION_AREA[pa.kind] : undefined;
+  if (need && !canArea(u, need)) return { ok: false as const, error: `Keine Berechtigung: ${AREA_LABEL[need]} ist für deine Funktion nicht freigegeben.` };
   const r = await executeAction(z.cuid().parse(id), u.id);
   revalidatePath("/belege");
   return r;
