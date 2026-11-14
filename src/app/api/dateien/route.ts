@@ -9,7 +9,7 @@ import { analyzeReceipt, transcribeDocument } from "@/lib/receipts";
 // Route-Handler statt Server-Action wegen der Dateigröße.
 export const maxDuration = 120;
 
-const meta = z.object({ kind: z.enum(["dokument", "foto", "beleg", "spesen"]), projectId: z.cuid().nullish(), note: z.string().trim().max(4000).nullish() });
+const meta = z.object({ kind: z.enum(["dokument", "foto", "beleg", "spesen"]), projectId: z.cuid().nullish(), note: z.string().trim().max(4000).nullish(), assemblyId: z.cuid().nullish(), phase: z.enum(["vorher", "nachher"]).nullish() });
 
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -23,8 +23,14 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: "Ungültiger Upload." }, { status: 400 });
   }
-  const m = meta.safeParse({ kind: form.get("kind"), projectId: form.get("projectId") || null, note: form.get("note") || null });
+  const m = meta.safeParse({ kind: form.get("kind"), projectId: form.get("projectId") || null, note: form.get("note") || null, assemblyId: form.get("assemblyId") || null, phase: form.get("phase") || null });
   if (!m.success) return Response.json({ error: "Ungültige Angaben." }, { status: 400 });
+  // Montage-Fotos: Projekt kommt aus der Montage
+  if (m.data.assemblyId) {
+    const asm = await db.assembly.findUnique({ where: { id: m.data.assemblyId }, select: { projectId: true } });
+    if (!asm) return Response.json({ error: "Montage nicht gefunden." }, { status: 404 });
+    m.data.projectId = asm.projectId;
+  }
   if (m.data.projectId && !(await db.project.findUnique({ where: { id: m.data.projectId }, select: { id: true } }))) return Response.json({ error: "Projekt nicht gefunden." }, { status: 404 });
   const files = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 10);
   if (!files.length && !(m.data.kind === "foto" && m.data.note)) return Response.json({ error: "Keine Datei." }, { status: 400 });
@@ -34,6 +40,7 @@ export async function POST(req: Request) {
     for (const f of files) {
       const stored = await storeFile({ name: f.name, mime: f.type, data: Buffer.from(await f.arrayBuffer()), kind: m.data.kind, projectId: m.data.projectId, uploadedBy: user.name });
       let receipt = null;
+      if (m.data.assemblyId) await db.storedFile.update({ where: { id: stored.id }, data: { assemblyId: m.data.assemblyId, meta: { phase: m.data.phase ?? "nachher" } } });
       if (m.data.kind === "beleg" || m.data.kind === "spesen") receipt = await analyzeReceipt(stored.id).catch((e) => (console.error("[beleg]", e), null));
       // Scans ohne Text im Hintergrund abschreiben lassen (Suche)
       if (m.data.kind === "dokument" && !stored.text) after(() => transcribeDocument(stored.id).catch((e) => console.error("[dokument]", e)));

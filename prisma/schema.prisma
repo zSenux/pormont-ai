@@ -39,6 +39,8 @@ model User {
   assignedTasks  Task[]          @relation("TaskAssignee")
   crmFollowUps   CustomerNote[]  @relation("CrmAssignee")
   productionJobs ProductionJob[]
+  assemblyLeads  Assembly[]       @relation("AssemblyLeader")
+  assemblyCrew   AssemblyMember[]
 
   /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt).
   /// Eindeutigkeit prüft die App beim Speichern – kein @unique, sonst bricht `prisma db push`
@@ -240,6 +242,7 @@ model Project {
   docs       SalesDoc[]
   order      Order?
   production ProductionJob[]
+  assemblies Assembly[]
 
   @@index([status])
   @@index([customerId])
@@ -421,12 +424,16 @@ model StoredFile {
   lexFileId  String?
   uploadedBy String?
   createdAt  DateTime @default(now())
+  /// Montage-Foto (vorher/nachher steht in meta.phase)
+  assemblyId String?
+  assembly   Assembly? @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
 
   notes ProjectNote[]
 
   @@index([kind, createdAt])
   @@index([projectId])
   @@index([sha256])
+  @@index([assemblyId])
 }
 
 /// Windows-PC mit der Jarvis-App (meldet sich über die Sitzung des angemeldeten Nutzers)
@@ -1115,4 +1122,58 @@ model ProductionJob {
   @@index([status, plannedEnd])
   @@index([projectId])
   @@index([assigneeId])
+}
+
+/// Montage (Baustelle): Termin, Team, Fahrzeug, Montageplan, Checkliste, Fotos, Bericht, Mängel, Abnahme mit Unterschrift
+model Assembly {
+  id            String           @id @default(cuid())
+  /// MO-2026-0001 (Nummernkreis „MONTAGE-<Jahr>“)
+  number        String           @unique
+  projectId     String
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title         String
+  /// GEPLANT | LAEUFT | ERLEDIGT | ABGENOMMEN | ABGESAGT
+  status        String           @default("GEPLANT")
+  startAt       DateTime
+  endAt         DateTime?
+  address       String?
+  vehicle       String?
+  leaderId      String?
+  leader        User?            @relation("AssemblyLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  /// Montageplan / Hinweise für das Team
+  plan          String?
+  /// [{ text, done, by?, at? }]
+  checklist     Json             @default("[]")
+  /// Montagebericht
+  report        String?
+  /// Mängel [{ text, fixed, at, by }]
+  defects       Json             @default("[]")
+  /// Abnahme
+  signerName    String?
+  signatureData String?
+  signedAt      DateTime?
+  acceptanceNote String?
+  /// Kalendereintrag (Event.id)
+  eventId       String?
+  doneAt        DateTime?
+  createdBy     String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  crew  AssemblyMember[]
+  files StoredFile[]
+
+  @@index([status, startAt])
+  @@index([projectId])
+}
+
+model AssemblyMember {
+  id         String   @id @default(cuid())
+  assemblyId String
+  assembly   Assembly @relation(fields: [assemblyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([assemblyId, userId])
+  @@index([userId])
 }

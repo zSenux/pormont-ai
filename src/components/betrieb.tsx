@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, BarChart3, Factory, CalendarClock, FileText, ClipboardList, Flag, HardHat, PackageX, ShoppingCart, Users } from "lucide-react";
+import { AlertTriangle, BarChart3, Factory, CalendarClock, FileText, ClipboardList, Flag, HardHat, PackageX, ShoppingCart, Users, Wrench } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/berlin";
@@ -38,6 +38,9 @@ export async function BetriebOverview() {
   const inProd = prodCounts.reduce((a, x) => a + x._count, 0);
   const materialMissing = prodCounts.find((x) => x.status === "MATERIAL_FEHLT")?._count ?? 0;
   const followUps = await dueFollowUps(in14, 10);
+  const in7 = new Date(now.getTime() + 7 * DAY);
+  const assemblies = await db.assembly.findMany({ where: { status: { in: ["GEPLANT", "LAEUFT"] }, startAt: { lte: in14 } }, orderBy: { startAt: "asc" }, take: 20, include: { project: { select: { name: true } }, leader: { select: { name: true } } } });
+  const toSign = await db.assembly.count({ where: { status: "ERLEDIGT", signedAt: null } });
 
   const withPhase = projects.map((p) => ({ ...p, pct: p.phases.length ? progressOf(p.phases) : null, cur: p.phases.length ? currentPhase(p.phases) : null }));
   const perPhase = PHASES.map((ph) => ({ ...ph, n: withPhase.filter((p) => p.cur?.key === ph.key).length }));
@@ -47,12 +50,14 @@ export async function BetriebOverview() {
   const deadlines = [
     ...milestones.map((m) => ({ id: m.id, date: m.dueDate!, title: m.title, sub: m.project.name, href: `/projekte/${m.project.id}`, kind: "Meilenstein" })),
     ...phaseEnds.map((ph) => ({ id: ph.id, date: ph.endDate!, title: PHASES.find((x) => x.key === ph.key)?.title ?? ph.key, sub: ph.project.name, href: `/projekte/${ph.project.id}`, kind: "Phase endet" })),
+    ...assemblies.map((a) => ({ id: a.id, date: a.startAt, title: a.title, sub: `${a.project.name}${a.leader ? ` · ${a.leader.name}` : ""}`, href: `/montage/${a.id}`, kind: a.status === "LAEUFT" ? "Montage läuft" : "Montage" })),
     ...followUps.map((n) => ({ id: n.id, date: n.followUpAt!, title: n.text.length > 60 ? `${n.text.slice(0, 60)}…` : n.text, sub: `${n.customer.name}${n.assignee ? ` · ${n.assignee.name}` : ""}`, href: `/buchhaltung/kunden/${n.customer.id}`, kind: "Wiedervorlage" })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, 10);
 
   const tiles = [
     { label: "Laufende Projekte", value: String(projects.length), hint: `${withPhase.filter((p) => p.cur?.key === "ANFRAGE").length} in Kundenanfrage`, icon: HardHat, href: "/projekte", tone: "text-brand" },
     { label: "Fertigungsaufträge", value: String(inProd), hint: materialMissing ? `${materialMissing} warten auf Material` : `${prodCounts.find((x) => x.status === "IN_FERTIGUNG")?._count ?? 0} in Fertigung`, icon: Factory, href: "/fertigung", tone: materialMissing ? "text-warn" : "text-brand" },
+    { label: "Montagen", value: String(assemblies.filter((a) => a.startAt <= in7).length), hint: toSign ? `nächste 7 Tage · ${toSign} warten auf Abnahme` : `nächste 7 Tage · ${assemblies.filter((a) => a.status === "LAEUFT").length} laufen`, icon: Wrench, href: "/montage", tone: toSign ? "text-warn" : "text-brand" },
     { label: "Überfällige Aufgaben", value: String(overdueTasks.length), hint: overdueTasks.length ? "Termin überschritten" : "alles im Plan", icon: AlertTriangle, href: "/aufgaben", tone: overdueTasks.length ? "text-bad" : "text-ok" },
     { label: "Offene Bestellungen", value: String(ordered), hint: `${waiting} Anfragen warten auf Antwort/Entscheidung`, icon: ShoppingCart, href: "/lieferanten", tone: "text-ink" },
     { label: "Unter Mindestbestand", value: String(low.length), hint: low.length ? "nachbestellen" : "Lager ausreichend", icon: PackageX, href: "/lager", tone: low.length ? "text-warn" : "text-ok" },
@@ -61,9 +66,9 @@ export async function BetriebOverview() {
   return (
     <section className="space-y-4" aria-labelledby="betrieb">
       <h2 id="betrieb" className="text-lg font-bold">Betrieb</h2>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         {tiles.map((t) => (
-          <Link key={t.label} href={t.href} className="card p-4 transition first:col-span-2 hover:border-brand md:first:col-span-1">
+          <Link key={t.label} href={t.href} className="card min-w-0 p-4 transition hover:border-brand">
             <div className="flex items-center gap-2 text-xs font-medium text-steel md:text-sm"><t.icon className="size-4 shrink-0" /> {t.label}</div>
             <p className={clsx("mt-1 text-3xl font-extrabold tracking-tight", t.tone)}>{t.value}</p>
             <p className="mt-0.5 text-xs text-steel">{t.hint}</p>
@@ -129,7 +134,7 @@ export async function BetriebOverview() {
         <section className="card min-w-0 p-5">
           <div className="mb-3 flex items-center gap-2">
             <CalendarClock className="size-5 text-brand" />
-            <h3 className="font-bold">Fristen & Wiedervorlagen</h3>
+            <h3 className="font-bold">Termine, Fristen & Wiedervorlagen</h3>
           </div>
           {deadlines.length === 0 ? (
             <p className="text-sm text-steel">Keine Fristen in den nächsten zwei Wochen.</p>
@@ -139,7 +144,7 @@ export async function BetriebOverview() {
                 <li key={d.id} className="flex items-start gap-3 py-2">
                   <span className={clsx("w-16 shrink-0 text-xs font-semibold", d.date < now ? "text-bad" : "text-brand")}>{formatDate(d.date).slice(0, 6)}</span>
                   <Link href={d.href} className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{d.kind === "Meilenstein" && <Flag className="mr-1 inline size-3.5 text-steel" />}{d.title}</span>
+                    <span className="block truncate font-medium">{d.kind === "Meilenstein" && <Flag className="mr-1 inline size-3.5 text-steel" />}{d.kind.startsWith("Montage") && <Wrench className="mr-1 inline size-3.5 text-steel" />}{d.title}</span>
                     <span className="block truncate text-xs text-steel">{d.kind} · {d.sub}</span>
                   </Link>
                 </li>
