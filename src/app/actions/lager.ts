@@ -6,8 +6,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireArea } from "@/lib/rights";
 import { berlinDateTime } from "@/lib/berlin";
-import { LexwareError, lexwareConfigured } from "@/lib/lexware/client";
-import { getVoucher } from "@/lib/lexware/api";
 import { bookStock, reorderRequest, STOCK_CATEGORIES, StockError } from "@/lib/stock";
 import { SupplierError } from "@/lib/suppliers";
 import { COST_KINDS } from "@/lib/nachkalkulation";
@@ -118,25 +116,19 @@ export async function saveCalcBasics(projectId: string, _prev: Result, form: For
   await requireArea("lager");
   const p = z.object({ budgetNet: z.number().finite().min(0).max(100_000_000).optional(), hourlyRate: z.number().finite().min(0).max(1000).optional() }).safeParse({ budgetNet: num(form.get("budgetNet")), hourlyRate: num(form.get("hourlyRate")) });
   if (!p.success) return { error: "Beträge prüfen." };
-  await db.project.update({ where: { id: z.cuid().parse(projectId) }, data: { budgetNet: p.data.budgetNet ?? null, hourlyRate: p.data.hourlyRate ?? null, ...(p.data.budgetNet === undefined ? { lexQuotationId: null, lexQuotationNo: null } : {}) } });
+  await db.project.update({ where: { id: z.cuid().parse(projectId) }, data: { budgetNet: p.data.budgetNet ?? null, hourlyRate: p.data.hourlyRate ?? null, ...(p.data.budgetNet === undefined ? { lexQuotationId: null, lexQuotationNo: null, quoteId: null } : {}) } });
   revalidatePath(`/projekte/${projectId}/nachkalkulation`);
   return { ok: "Gespeichert." };
 }
 
-/** Lexware-Angebot verknüpfen: Nettosumme wird als Auftragswert übernommen */
+/** Angebot aus der Buchhaltung verknüpfen: Nettosumme wird als Auftragswert übernommen */
 export async function linkQuotation(projectId: string, _prev: Result, form: FormData): Promise<Result> {
   await requireArea("lager");
-  if (!lexwareConfigured()) return { error: "Lexware ist nicht verbunden." };
-  const qid = z.uuid().safeParse(form.get("quotationId"));
+  const qid = z.string().min(5).max(40).safeParse(form.get("quotationId"));
   if (!qid.success) return { error: "Bitte ein Angebot wählen." };
-  try {
-    const v = await getVoucher("quotation", qid.data);
-    const net = v.totalPrice?.totalNetAmount;
-    if (net === undefined || net === null) return { error: "Das Angebot hat keine Nettosumme." };
-    await db.project.update({ where: { id: z.cuid().parse(projectId) }, data: { budgetNet: net, lexQuotationId: v.id, lexQuotationNo: v.voucherNumber ?? "Entwurf", ...(v.address?.contactId ? { lexContactId: v.address.contactId } : {}) } });
-  } catch (e) {
-    return { error: e instanceof LexwareError ? e.message : "Angebot konnte nicht geladen werden." };
-  }
+  const q = await db.salesDoc.findUnique({ where: { id: qid.data }, select: { id: true, kind: true, number: true, netCents: true, status: true } });
+  if (!q || q.kind !== "ANGEBOT" || !q.number) return { error: "Angebot nicht gefunden (nur festgeschriebene Angebote)." };
+  await db.project.update({ where: { id: z.cuid().parse(projectId) }, data: { budgetNet: q.netCents / 100, quoteId: q.id, lexQuotationId: null, lexQuotationNo: q.number } });
   revalidatePath(`/projekte/${projectId}/nachkalkulation`);
   return { ok: "Angebot übernommen." };
 }

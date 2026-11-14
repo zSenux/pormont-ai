@@ -17,7 +17,10 @@ export default async function ErpRecordPage({ params }: { params: Promise<{ id: 
   if (!id.success) notFound();
   const r = await db.erpRecord.findUnique({ where: { id: id.data }, include: { import: { select: { fileName: true } } } });
   if (!r) notFound();
-  const lexLink = r.lexId ? (r.kind === "kunde" ? permalink("contacts", r.lexId) : null) : null;
+  // lexId: Lexware-UUID (frühere Übernahme) oder ID in der eigenen Buchhaltung
+  const fromLex = Boolean(r.lexId?.includes("-"));
+  const lexLink = r.lexId && fromLex && r.kind === "kunde" ? permalink("contacts", r.lexId) : null;
+  const ownLink = r.lexId && !fromLex ? (r.kind === "kunde" ? `/buchhaltung/kunden/${r.lexId}` : r.kind === "artikel" ? "/buchhaltung/artikel" : null) : null;
   return (
     <main className="mx-auto max-w-3xl space-y-5 px-4 py-6 md:py-10">
       <Link href={`/datenuebernahme?art=${r.kind}`} className="flex w-fit items-center gap-1 text-sm text-steel hover:text-brand"><ArrowLeft className="size-4" /> Datenübernahme</Link>
@@ -26,9 +29,10 @@ export default async function ErpRecordPage({ params }: { params: Promise<{ id: 
         <h1 className="page-title [overflow-wrap:anywhere]">{[r.number, r.party ?? r.name].filter(Boolean).join(" · ") || "(ohne Namen)"}</h1>
         <p className="mt-1 text-sm text-steel">{[r.party && r.name ? r.name : null, r.date ? formatDate(r.date) : null, r.status, r.amount !== null ? formatEuro(r.amount) : null].filter(Boolean).join(" · ")}</p>
       </div>
-      {(lexLink || r.projectId || r.error) && (
+      {(lexLink || ownLink || r.projectId || r.error) && (
         <section className="card flex flex-wrap items-center gap-3 p-4 text-sm">
           {lexLink && <a href={lexLink} target="_blank" rel="noreferrer" className="btn-secondary"><ExternalLink className="size-4" /> In Lexware öffnen</a>}
+          {ownLink && <Link href={ownLink} className="btn-secondary">In der Buchhaltung öffnen</Link>}
           {r.projectId && <Link href={`/projekte/${r.projectId}`} className="btn-secondary">Projekt öffnen</Link>}
           {r.error && <p className="text-bad">Übernahme fehlgeschlagen: {r.error}</p>}
         </section>

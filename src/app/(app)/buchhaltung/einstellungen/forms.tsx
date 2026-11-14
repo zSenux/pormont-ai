@@ -27,6 +27,13 @@ export function ConfigForm({ c }: { c: BookConfig }) {
         <label className="text-xs text-steel">Gebühr 1. Mahnung €<input name="dunningFee1" inputMode="decimal" defaultValue={n(c.dunningFee1)} className="input mt-0.5" /></label>
         <label className="text-xs text-steel">Gebühr 2. Mahnung €<input name="dunningFee2" inputMode="decimal" defaultValue={n(c.dunningFee2)} className="input mt-0.5" /></label>
       </div>
+      <h3 className="pt-2 text-sm font-semibold">DATEV (Angaben vom Steuerberater)</h3>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <label className="text-xs text-steel">Beraternummer<input name="datevBerater" inputMode="numeric" defaultValue={c.datevBerater} className="input mt-0.5" /></label>
+        <label className="text-xs text-steel">Mandantennummer<input name="datevMandant" inputMode="numeric" defaultValue={c.datevMandant} className="input mt-0.5" /></label>
+        <label className="text-xs text-steel">Kontenrahmen<select name="datevSkr" defaultValue={c.datevSkr} className="input mt-0.5"><option value="03">SKR 03</option><option value="04">SKR 04</option></select></label>
+        <label className="text-xs text-steel">Wirtschaftsjahr beginnt im Monat<input name="datevWjMonth" inputMode="numeric" defaultValue={c.datevWjMonth} className="input mt-0.5" /></label>
+      </div>
       <h3 className="pt-2 text-sm font-semibold">Standardtexte</h3>
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="text-xs text-steel">Angebot – Einleitung<textarea name="quoteIntro" defaultValue={c.quoteIntro} rows={2} className="input mt-0.5 resize-y" /></label>

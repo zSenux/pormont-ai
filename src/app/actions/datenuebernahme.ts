@@ -6,10 +6,9 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth/user";
-import { lexwareConfigured } from "@/lib/lexware/client";
 import { changeTableKind, claim, ERP_KINDS, ErpImportError, transferArticles, transferCustomers, transferProjects } from "@/lib/erp-import";
 
-// Datenübernahme aus dem alten Programm: Übernahme nach Lexware/Jarvis nur per Klick eines Admins (mit Rückfrage im Browser)
+// Datenübernahme aus dem alten Programm: Übernahme in die Buchhaltung/Jarvis nur per Klick eines Admins (mit Rückfrage im Browser)
 
 type Result = { ok?: string; error?: string } | undefined;
 
@@ -30,7 +29,6 @@ export async function startTransfer(importId: string, what: "kunde" | "artikel" 
   const user = await requireAdmin();
   const id = z.cuid().parse(importId);
   const kind = z.enum(["kunde", "artikel", "projekt"]).parse(what);
-  if (kind !== "projekt" && !lexwareConfigured()) return { error: "Lexware ist noch nicht verbunden (Einstellungen → Verbindungen)." };
   const open = await db.erpRecord.count({ where: { importId: id, kind, ...(kind === "projekt" ? { projectId: null } : { lexId: null }) } });
   if (!open) return { ok: "Es ist nichts mehr zu übernehmen." };
   if (!(await claim(id, kind))) return { error: "Für diese Datei läuft gerade schon eine Übernahme." };

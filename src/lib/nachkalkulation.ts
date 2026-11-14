@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 
-// Nachkalkulation je Projekt: Auftragswert (Lexware-Angebot bzw. von Hand) gegen die echten Kosten:
+// Nachkalkulation je Projekt: Auftragswert (Angebot aus der Buchhaltung bzw. von Hand) gegen die echten Kosten:
 // Stunden × Kosten-Stundensatz, Material aus dem Lager (Entnahmen zum EK), bestellte Lieferanten-Angebote,
 // Spesen (ohne abgelehnte) und sonstige Kosten (Fremdleistung, Gerät …). Alles netto.
 
@@ -17,13 +17,18 @@ export type Calc = Awaited<ReturnType<typeof calcProject>>;
 
 export async function calcProject(projectId: string) {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
-  const [times, moves, orders, expenses, costs] = await Promise.all([
+  const [times, moves, allOrders, expenses, costs, purchases] = await Promise.all([
     db.timeEntry.findMany({ where: { projectId, kind: { in: ["ARBEIT", "FAHRT"] } }, select: { minutes: true, user: { select: { name: true } } } }),
     db.stockMove.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, include: { item: { select: { name: true, unit: true } } } }),
     db.supplierRequest.findMany({ where: { projectId, status: "BESTELLT", offerAmount: { not: null } }, include: { supplier: { select: { name: true } } } }),
     db.expense.findMany({ where: { projectId, status: { not: "ABGELEHNT" } }, select: { amountCents: true, kind: true, description: true } }),
     db.projectCost.findMany({ where: { projectId }, orderBy: { day: "desc" } }),
+    db.purchaseDoc.findMany({ where: { projectId }, orderBy: { date: "desc" }, select: { id: true, number: true, supplier: true, docNo: true, netCents: true, date: true } }),
   ]);
+  // Eingangsrechnungen (Ausgaben) sind echte Kosten – bestellte Angebote desselben Lieferanten nicht doppelt zählen
+  const billed = new Set(purchases.map((x) => x.supplier.trim().toLowerCase()));
+  const orders = allOrders.filter((o) => !billed.has(o.supplier.name.trim().toLowerCase()));
+  const invoices = purchases.reduce((s, x) => s + x.netCents, 0) / 100;
   const rate = p.hourlyRate ?? defaultHourlyRate();
   const minutes = times.reduce((s, t) => s + t.minutes, 0);
   const byUser = [...times.reduce((m, t) => m.set(t.user.name, (m.get(t.user.name) ?? 0) + t.minutes), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
@@ -34,7 +39,7 @@ export async function calcProject(projectId: string) {
   const supplier = orders.reduce((s, o) => s + (o.offerAmount ?? 0), 0);
   const spesen = expenses.reduce((s, e) => s + e.amountCents, 0) / 100;
   const extra = costs.reduce((s, c) => s + c.amount, 0);
-  const total = labor + material + supplier + spesen + extra;
+  const total = labor + material + supplier + spesen + extra + invoices;
   const revenue = p.budgetNet;
   const margin = revenue !== null ? revenue - total : null;
   return {
@@ -48,6 +53,8 @@ export async function calcProject(projectId: string) {
     materialLines,
     supplier,
     orders: orders.map((o) => ({ id: o.id, supplier: o.supplier.name, subject: o.subject, amount: o.offerAmount ?? 0 })),
+    invoices,
+    purchases,
     spesen,
     expenseCount: expenses.length,
     extra,
@@ -70,6 +77,7 @@ export function calcText(c: Calc) {
     `Lohn: ${h} Std. × ${e(c.rate)} = ${e(c.labor)}${c.byUser.length ? ` (${c.byUser.map(([n, m]) => `${n} ${(m / 60).toLocaleString("de-DE", { maximumFractionDigits: 1 })} Std.`).join(", ")})` : ""}`,
     `Material aus Lager: ${e(c.material)}${c.materialLines.some((l) => l.missingPrice) ? " (teils ohne Einkaufspreis!)" : ""}`,
     `Bestellte Lieferanten-Angebote: ${e(c.supplier)}`,
+    `Eingangsrechnungen (Ausgaben): ${e(c.invoices)}`,
     `Spesen: ${e(c.spesen)} · Sonstige Kosten: ${e(c.extra)}`,
     `Kosten gesamt: ${e(c.total)}`,
     c.margin !== null ? `Ergebnis: ${e(c.margin)} (${c.marginPct!.toLocaleString("de-DE", { maximumFractionDigits: 1 })} % vom Auftragswert)` : "Ergebnis: ohne Auftragswert nicht berechenbar.",

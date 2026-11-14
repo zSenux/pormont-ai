@@ -6,8 +6,8 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatEuro, todayYmd } from "@/lib/berlin";
 import { formatHours } from "@/lib/hours";
-import { lexwareConfigured } from "@/lib/lexware/client";
-import { voucherList, voucherLink } from "@/lib/lexware/api";
+import { db } from "@/lib/db";
+import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { calcProject, COST_LABEL, defaultHourlyRate } from "@/lib/nachkalkulation";
 import { addProjectCost, deleteProjectCost, linkQuotation, saveCalcBasics } from "@/app/actions/lager";
 import { ActionButton } from "@/components/confirm-button";
@@ -17,14 +17,15 @@ import { PrintButton } from "@/components/print-button";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Nachkalkulation" };
 
-async function quotations(contactId: string | null) {
-  if (!lexwareConfigured()) return null;
-  try {
-    const r = await voucherList({ type: "quotation", status: "open,accepted", contactId: contactId ?? undefined, size: 40 });
-    return r.content.map((v) => ({ id: v.id, label: `${v.voucherNumber ?? "Entwurf"} · ${v.contactName ?? "?"} · ${formatDate(v.voucherDate)} · ${formatEuro(v.totalAmount)} brutto` }));
-  } catch {
-    return null;
-  }
+/** Festgeschriebene Angebote zum Projekt bzw. zum Kunden des Projekts (eigene Buchhaltung) */
+async function quotations(projectId: string, customerId: string | null) {
+  const list = await db.salesDoc.findMany({
+    where: { kind: "ANGEBOT", number: { not: null }, status: { not: "ABGELEHNT" }, OR: [{ projectId }, ...(customerId ? [{ customerId }] : [])] },
+    orderBy: { date: "desc" },
+    take: 40,
+    include: { customer: { select: { name: true } } },
+  });
+  return list.map((v) => ({ id: v.id, label: `${v.number} · ${v.customer?.name ?? "?"} · ${formatDate(v.date)} · ${fmtEuroCents(v.netCents)} netto${v.title ? ` · ${v.title}` : ""}` }));
 }
 
 const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
@@ -37,12 +38,12 @@ export default async function NachkalkulationPage({ params }: { params: Promise<
   const c = await calcProject(id.data).catch(() => null);
   if (!c) notFound();
   const p = c.project;
-  const quotes = await quotations(p.lexContactId);
-  const lexLink = p.lexQuotationId ? voucherLink("quotation", p.lexQuotationId) : null;
+  const quotes = await quotations(p.id, p.customerId);
   const rows = [
     { icon: Clock, label: "Lohn", detail: `${formatHours(c.minutes)} × ${formatEuro(c.rate)}`, amount: c.labor },
     { icon: Package, label: "Material aus Lager", detail: n(c.materialLines.length, "Entnahme", "Entnahmen"), amount: c.material },
     { icon: Truck, label: "Bestellt bei Lieferanten", detail: n(c.orders.length, "Angebot", "Angebote"), amount: c.supplier },
+    { icon: Receipt, label: "Eingangsrechnungen", detail: n(c.purchases.length, "Ausgabe", "Ausgaben"), amount: c.invoices },
     { icon: Receipt, label: "Spesen", detail: n(c.expenseCount, "Eintrag", "Einträge"), amount: c.spesen },
     { icon: Wrench, label: "Sonstige Kosten", detail: n(c.costs.length, "Posten", "Posten"), amount: c.extra },
   ];
@@ -130,6 +131,20 @@ export default async function NachkalkulationPage({ params }: { params: Promise<
             </section>
           )}
 
+          {c.purchases.length > 0 && (
+            <section className="card p-4">
+              <h2 className="font-semibold">Eingangsrechnungen</h2>
+              <ul className="mt-2 divide-y divide-line">
+                {c.purchases.map((x) => (
+                  <li key={x.id} className="flex items-center gap-3 py-2 text-sm">
+                    <Link href={`/buchhaltung/ausgaben/${x.id}`} className="min-w-0 flex-1 hover:text-brand"><span className="font-medium">{x.supplier}</span><span className="block truncate text-xs text-steel">{x.number}{x.docNo ? ` · ${x.docNo}` : ""} · {formatDate(x.date)}</span></Link>
+                    <span className="shrink-0 font-medium">{formatEuro(x.netCents / 100)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="card space-y-3 p-4">
             <h2 className="font-semibold">Sonstige Kosten</h2>
             {c.costs.length > 0 && (
@@ -161,24 +176,25 @@ export default async function NachkalkulationPage({ params }: { params: Promise<
         <aside className="min-w-0 space-y-5 print:hidden">
           <section className="card space-y-3 p-4">
             <h2 className="font-semibold">Auftragswert</h2>
-            {quotes && quotes.length > 0 && (
-              <StateForm action={linkQuotation.bind(null, p.id)} submit="Aus Lexware übernehmen" submitClass="btn-secondary">
-                <select name="quotationId" className="input w-full" aria-label="Lexware-Angebot" defaultValue={p.lexQuotationId ?? ""}>
-                  <option value="" disabled>Lexware-Angebot wählen …</option>
+            {quotes.length > 0 && (
+              <StateForm action={linkQuotation.bind(null, p.id)} submit="Angebot übernehmen" submitClass="btn-secondary">
+                <select name="quotationId" className="input w-full" aria-label="Angebot" defaultValue={p.quoteId ?? ""}>
+                  <option value="" disabled>Angebot wählen …</option>
                   {quotes.map((q) => <option key={q.id} value={q.id}>{q.label}</option>)}
                 </select>
               </StateForm>
             )}
-            {lexLink && <a href={lexLink} target="_blank" rel="noreferrer" className="text-xs text-brand">Angebot {p.lexQuotationNo} in Lexware öffnen</a>}
+            {p.quoteId && <Link href={`/buchhaltung/beleg/${p.quoteId}`} className="text-xs text-brand">Angebot {p.lexQuotationNo} öffnen</Link>}
+            {quotes.length === 0 && <p className="text-xs text-steel">Noch kein festgeschriebenes Angebot zu diesem Projekt oder Kunden. <Link href="/buchhaltung" className="text-brand">Zur Buchhaltung</Link></p>}
             <StateForm action={saveCalcBasics.bind(null, p.id)} submit="Speichern" submitClass="btn-secondary">
-              <label className="block text-xs text-steel">Auftragswert netto (€)<input name="budgetNet" inputMode="decimal" defaultValue={de(p.budgetNet)} placeholder={quotes ? "oder von Hand" : "z. B. 18.500"} className="input mt-1 w-full" /></label>
+              <label className="block text-xs text-steel">Auftragswert netto (€)<input name="budgetNet" inputMode="decimal" defaultValue={de(p.budgetNet)} placeholder={quotes.length ? "oder von Hand" : "z. B. 18.500"} className="input mt-1 w-full" /></label>
               <label className="block text-xs text-steel">Kosten-Stundensatz (€/Std.)<input name="hourlyRate" inputMode="decimal" defaultValue={de(p.hourlyRate)} placeholder={`Standard ${de(defaultHourlyRate())}`} className="input mt-1 w-full" /></label>
             </StateForm>
             <p className="text-xs text-steel">Der Stundensatz sind eure Kosten je Mitarbeiterstunde (Lohn + Nebenkosten + Gemeinkosten), nicht der Verkaufspreis.</p>
           </section>
           <section className="card space-y-2 p-4 text-sm text-steel">
             <h2 className="font-semibold text-ink">Was zählt</h2>
-            <p>Stunden (Arbeit + Fahrt) aus Stempeluhr und Projekt, Entnahmen aus dem Lager zum Einkaufspreis, Lieferanten-Anfragen mit Status „Bestellt“, Spesen (ohne abgelehnte) und die sonstigen Kosten hier.</p>
+            <p>Stunden (Arbeit + Fahrt) aus Stempeluhr und Projekt, Entnahmen aus dem Lager zum Einkaufspreis, Lieferanten-Anfragen mit Status „Bestellt“ (ohne die, für die schon eine Eingangsrechnung gebucht ist), Eingangsrechnungen aus den Ausgaben, Spesen (ohne abgelehnte) und die sonstigen Kosten hier.</p>
           </section>
         </aside>
       </div>

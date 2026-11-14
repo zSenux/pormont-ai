@@ -295,6 +295,10 @@ export async function saveBookConfigAction(_prev: Result, form: FormData): Promi
     quoteOutro: opt(form.get("quoteOutro")) ?? "",
     invoiceIntro: opt(form.get("invoiceIntro")) ?? "",
     invoiceOutro: opt(form.get("invoiceOutro")) ?? "",
+    datevBerater: opt(form.get("datevBerater")) ?? "",
+    datevMandant: opt(form.get("datevMandant")) ?? "",
+    datevSkr: form.get("datevSkr") === "04" ? "04" : "03",
+    datevWjMonth: Math.round(n("datevWjMonth", cur.datevWjMonth)),
   });
   if (!p.success) return { error: p.error.issues[0]?.message };
   await saveBookConfig(p.data);

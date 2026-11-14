@@ -7,8 +7,6 @@ import { db } from "@/lib/db";
 import { onProjectClosed } from "@/lib/automation";
 import { requireUser } from "@/lib/auth/user";
 import { berlinDateTime } from "@/lib/berlin";
-import { LexwareError } from "@/lib/lexware/client";
-import { uploadReceipt } from "@/lib/receipts";
 import { parseHours } from "@/lib/hours";
 import { ensurePhases } from "@/lib/phases";
 
@@ -122,6 +120,8 @@ export async function deleteFile(id: string) {
   await requireUser();
   const f = await db.storedFile.findUnique({ where: { id: z.cuid().parse(id) }, select: { id: true, projectId: true } });
   if (!f) return;
+  // Belege, die als Ausgabe gebucht sind, bleiben erhalten (Aufbewahrungspflicht)
+  if (await db.purchaseDoc.findFirst({ where: { fileId: f.id }, select: { id: true } })) return;
   await db.projectNote.deleteMany({ where: { fileId: f.id, text: null } });
   await db.storedFile.delete({ where: { id: f.id } });
   revalidatePath("/dokumente");
@@ -135,15 +135,3 @@ export async function assignFile(id: string, projectId: string | null) {
   revalidatePath("/dokumente");
 }
 
-// ---------- Belege ----------
-/** Der Klick auf „In Lexware hochladen“ ist die Freigabe durch einen Menschen */
-export async function sendReceiptToLexware(id: string): Promise<{ ok: boolean; error?: string }> {
-  await requireUser();
-  try {
-    await uploadReceipt(z.cuid().parse(id));
-    revalidatePath("/belege/foto");
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof LexwareError ? e.message : "Hochladen fehlgeschlagen." };
-  }
-}

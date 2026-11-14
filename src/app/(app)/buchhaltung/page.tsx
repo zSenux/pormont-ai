@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, FilePlus2, FileText, Receipt, Settings } from "lucide-react";
+import { AlertTriangle, FilePlus2, FileText, Landmark, Receipt, Settings, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { berlinParts, formatDate, todayYmd } from "@/lib/berlin";
@@ -7,6 +7,7 @@ import { bookConfig, missingForInvoices } from "@/lib/buchhaltung/config";
 import { customerName, openInvoices, revenue, openCentsOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { docLabel } from "@/lib/buchhaltung/types";
+import { purchaseTotals, unbookedReceiptsWhere } from "@/lib/buchhaltung/purchases";
 import { newDocAction } from "@/app/actions/buchhaltung";
 
 export const metadata = { title: "Buchhaltung" };
@@ -18,7 +19,7 @@ export default async function BuchhaltungPage() {
   const p = berlinParts();
   const monthStart = `${today.slice(0, 7)}-01`;
   const yearStart = `${p.y}-01-01`;
-  const [cfg, open, month, year, quotes, drafts, recent, customers] = await Promise.all([
+  const [cfg, open, month, year, quotes, drafts, recent, customers, costs, bankOpen, photos] = await Promise.all([
     bookConfig(),
     openInvoices(),
     revenue(monthStart, today),
@@ -27,6 +28,9 @@ export default async function BuchhaltungPage() {
     db.salesDoc.findMany({ where: { status: "ENTWURF" }, orderBy: { updatedAt: "desc" }, take: 8, include: { customer: { select: { name: true } } } }),
     db.salesDoc.findMany({ where: { status: { not: "ENTWURF" } }, orderBy: { finalizedAt: "desc" }, take: 8, include: { customer: { select: { name: true } } } }),
     db.customer.count({ where: { archived: false } }),
+    purchaseTotals(monthStart, today),
+    db.bankTx.count({ where: { docId: null, purchaseId: null, ignored: false } }),
+    unbookedReceiptsWhere().then((w) => db.storedFile.count({ where: w })),
   ]);
   const missing = missingForInvoices(cfg);
 
@@ -56,6 +60,19 @@ export default async function BuchhaltungPage() {
         <Link href="/buchhaltung/belege?art=rechnungen&status=ueberfaellig" className="card p-4 hover:border-brand"><p className="text-xs text-steel">Überfällig</p><p className={`text-xl font-semibold sm:text-2xl ${open.overdueCents ? "text-bad" : ""}`}>{fmtEuroCents(open.overdueCents)}</p><p className="text-xs text-steel">{open.overdue.length} Stück</p></Link>
         <div className="card p-4"><p className="text-xs text-steel">Umsatz {new Intl.DateTimeFormat("de-DE", { month: "long" }).format(new Date())} (netto)</p><p className="text-xl font-semibold sm:text-2xl">{fmtEuroCents(month.netCents)}</p><p className="text-xs text-steel">Jahr {p.y}: {fmtEuroCents(year.netCents)}</p></div>
         <Link href="/buchhaltung/belege?art=angebote&status=offen" className="card p-4 hover:border-brand"><p className="text-xs text-steel">Offene Angebote (netto)</p><p className="text-xl font-semibold sm:text-2xl">{fmtEuroCents(quotes._sum.netCents)}</p><p className="text-xs text-steel">{quotes._count} Stück</p></Link>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2">
+        <Link href="/buchhaltung/ausgaben" className="card flex items-center gap-3 p-4 hover:border-brand">
+          <Wallet className="size-5 shrink-0 text-brand" />
+          <span className="min-w-0 flex-1"><span className="block text-xs text-steel">Ausgaben {new Intl.DateTimeFormat("de-DE", { month: "long" }).format(new Date())} (netto)</span><span className="text-lg font-semibold">{fmtEuroCents(costs.netCents)}</span></span>
+          {photos > 0 && <span className="chip border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-900">{photos} Beleg{photos === 1 ? "" : "e"} zu buchen</span>}
+        </Link>
+        <Link href="/buchhaltung/bank" className="card flex items-center gap-3 p-4 hover:border-brand">
+          <Landmark className="size-5 shrink-0 text-brand" />
+          <span className="min-w-0 flex-1"><span className="block text-xs text-steel">Bankabgleich</span><span className="text-lg font-semibold">{bankOpen ? `${bankOpen} Umsätze offen` : "Alles zugeordnet"}</span></span>
+          <span className="text-xs text-steel">Kontoauszug hochladen</span>
+        </Link>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-2">

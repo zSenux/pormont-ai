@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { addDaysYmd, berlinDateTime, berlinParts, formatDate, formatDateTime, todayYmd } from "@/lib/berlin";
 import { companyProfile } from "@/lib/company";
 import { AREA_LABEL, areasOf, TOOL_AREA } from "@/lib/rights-shared";
+import { unbookedReceiptsWhere } from "@/lib/buchhaltung/purchases";
 import { BOOK_TOOLS, BOOK_TOOL_NAMES, bookOverview, runBookTool } from "./book-tools";
 import { MAIL_TOOLS, MAIL_TOOL_NAMES, runMailTool } from "./mail-tools";
 import { eventLine, todayEvents } from "@/lib/calendar";
@@ -72,8 +73,8 @@ async function overview(userId: string) {
   parts.push(events.length ? `Termine heute:\n${events.map((e) => `- ${eventLine(e)}`).join("\n")}` : "Keine Termine heute.");
   const low = await lowStock(15);
   if (low.length) parts.push(`Lager unter Mindestbestand (${low.length}): ${low.map((i) => `${i.name} (noch ${fmtQty(i.quantity, i.unit)})`).join(", ")} – [Lager](/lager).`);
-  const openReceipts = await db.storedFile.count({ where: { kind: "beleg", lexFileId: null } });
-  if (openReceipts) parts.push(`${openReceipts} fotografierte Belege noch nicht in Lexware ([Belegfotos](/belege/foto)).`);
+  const openReceipts = await db.storedFile.count({ where: await unbookedReceiptsWhere() });
+  if (openReceipts) parts.push(`${openReceipts} fotografierte Belege noch nicht als Ausgabe gebucht ([Ausgaben](/buchhaltung/ausgaben)).`);
   if ((await userAreas(userId)).includes("buchhaltung")) parts.push(await bookOverview());
   return parts.join("\n\n");
 }
