@@ -13,6 +13,7 @@ import { addTime, deleteEvent, deleteFile, deleteNote, deleteTime, saveEvent, se
 import { ActionButton } from "@/components/confirm-button";
 import { calcProject } from "@/lib/nachkalkulation";
 import { Uploader } from "@/components/upload";
+import { ProjectPlan } from "./plan";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
   const p = await db.project.findUnique({
     where: { id },
     include: {
+      leader: { select: { name: true } },
       notes: { orderBy: { createdAt: "desc" }, take: 100, include: { file: { select: { id: true, name: true, mime: true } } } },
       times: { orderBy: [{ day: "desc" }, { createdAt: "desc" }], take: 200, include: { user: { select: { id: true, name: true } } } },
       events: { where: { startAt: { gte: new Date(Date.now() - 86400_000) } }, orderBy: { startAt: "asc" }, take: 20 },
@@ -54,7 +56,7 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">{p.name}</h1>
             <p className="text-sm text-steel">
-              {[p.customer, p.startDate && `ab ${formatDate(p.startDate)}`, p.endDate && `bis ${formatDate(p.endDate)}`].filter(Boolean).join(" · ") || "Noch keine Eckdaten"}
+              {[p.customer, p.leader && `Projektleiter ${p.leader.name}`, p.startDate && `ab ${formatDate(p.startDate)}`, p.endDate && `bis ${formatDate(p.endDate)}`].filter(Boolean).join(" · ") || "Noch keine Eckdaten"}
             </p>
             {p.address && (
               <a href={`https://maps.google.com/?q=${encodeURIComponent(p.address)}`} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-sm text-brand">
@@ -97,6 +99,8 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
           </details>
         </div>
       </header>
+
+      <ProjectPlan projectId={p.id} leaderId={p.leaderId} />
 
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
         <section className="card space-y-4 p-5">

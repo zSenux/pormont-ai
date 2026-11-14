@@ -9,6 +9,7 @@ import { berlinDateTime } from "@/lib/berlin";
 import { LexwareError } from "@/lib/lexware/client";
 import { uploadReceipt } from "@/lib/receipts";
 import { parseHours } from "@/lib/hours";
+import { ensurePhases } from "@/lib/phases";
 
 // Server-Actions für Kalender, Projekte/Baustellen, Stunden, Dateien und Belege.
 
@@ -62,6 +63,7 @@ export async function createProject(form: FormData) {
   const user = await requireUser();
   const p = projectForm.parse({ name: form.get("name"), customer: opt(form.get("customer")), address: opt(form.get("address")), description: opt(form.get("description")), startDate: opt(form.get("startDate")), endDate: opt(form.get("endDate")) });
   const created = await db.project.create({ data: { ...p, startDate: p.startDate ? berlinDateTime(p.startDate) : null, endDate: p.endDate ? berlinDateTime(p.endDate) : null, createdById: user.id } });
+  await ensurePhases(created.id);
   redirect(`/projekte/${created.id}`);
 }
 
