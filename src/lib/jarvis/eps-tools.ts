@@ -9,6 +9,9 @@ import { createOrder, createOrderFromQuote, OrderError, orderText } from "@/lib/
 import { ORDER_STATUS_LABEL, ORDER_STATUSES, type OrderStatus } from "@/lib/orders-shared";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { addNote, CrmError, customerFileText, dueFollowUps, newInquiry, NOTE_KINDS } from "@/lib/crm";
+import { capacity, createJob, jobLine, ProductionError, setJobStatus } from "@/lib/production";
+import { PROD_LABEL, PROD_STATUSES } from "@/lib/production-shared";
+import { addDaysYmd, todayYmd } from "@/lib/berlin";
 import type { ToolCtx } from "./tools";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
@@ -87,6 +90,33 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
       required: ["aktion"],
     },
   },
+  {
+    name: "fertigung",
+    description:
+      "Fertigung/Werkstatt: liste (offene Fertigungskarten, optional je Projekt, Status oder Mitarbeiter), details, anlegen (Fertigungsauftrag zu einem Projekt mit Arbeitsanweisung, Maschine, Mitarbeiter, Plan-Stunden, Termin), status (z. B. IN_FERTIGUNG, MATERIAL_FEHLT, QK, FERTIG mit Ist-Stunden und QK-Notiz), auslastung (Plan-Stunden je Mitarbeiter/Maschine diese oder nächste Woche).",
+    input_schema: {
+      type: "object",
+      properties: {
+        aktion: { type: "string", enum: ["liste", "details", "anlegen", "status", "auslastung"] },
+        id: str("details/status: ID oder Nummer FA-…"),
+        projekt_id: str("liste/anlegen: Projekt-ID"),
+        status: { type: "string", enum: PROD_STATUSES, description: "liste: Filter; status: neuer Status (OFFEN, AV, MATERIAL_FEHLT, IN_FERTIGUNG, QK, FERTIG, MONTAGEBEREIT)" },
+        mitarbeiter: str("liste/anlegen: Name"),
+        titel: str("anlegen: Bezeichnung, z. B. „Geländerfelder schweißen“"),
+        anweisung: str("anlegen: Arbeitsanweisung"),
+        menge: str("anlegen: Menge, z. B. „12 Stk“"),
+        maschine: str("anlegen: Maschine/Arbeitsplatz"),
+        plan_stunden: { type: "number" },
+        ist_stunden: { type: "number", description: "status FERTIG: tatsächliche Stunden" },
+        qk_notiz: str("status QK/FERTIG: Ergebnis der Qualitätskontrolle"),
+        beginn: str("anlegen: JJJJ-MM-TT"),
+        fertig_bis: str("anlegen: JJJJ-MM-TT"),
+        prioritaet: { type: "string", enum: PRIORITIES },
+        woche: { type: "string", enum: ["diese", "naechste"], description: "auslastung" },
+      },
+      required: ["aktion"],
+    },
+  },
 ];
 
 export const EPS_TOOL_NAMES = new Set(EPS_TOOLS.map((t) => t.name));
@@ -94,6 +124,7 @@ export const EPS_TOOL_NAMES = new Set(EPS_TOOLS.map((t) => t.name));
 export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
   if (name === "auftraege") return runOrders(i, ctx);
   if (name === "kundenakte") return runCrm(i, ctx);
+  if (name === "fertigung") return runProduction(i, ctx);
   try {
     const q = z
       .object({
@@ -315,6 +346,81 @@ async function runCrm(i: Record<string, unknown>, ctx: ToolCtx): Promise<string>
   } catch (e) {
     if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
     if (e instanceof CrmError || e instanceof PhaseError) return e.message;
+    throw e;
+  }
+  return "Unbekannte Aktion.";
+}
+
+async function findJob(ref: string) {
+  const r = ref.trim();
+  return db.productionJob.findFirst({ where: { OR: [{ id: r }, { number: { equals: r, mode: "insensitive" } }] }, include: { project: { select: { name: true } }, assignee: { select: { name: true } } } });
+}
+
+async function runProduction(i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+  try {
+    const q = z
+      .object({
+        aktion: z.enum(["liste", "details", "anlegen", "status", "auslastung"]),
+        id: z.string().trim().max(40).optional(),
+        projekt_id: z.cuid().optional(),
+        status: z.enum(PROD_STATUSES).optional(),
+        mitarbeiter: z.string().trim().max(80).optional(),
+        titel: z.string().trim().min(2).max(200).optional(),
+        anweisung: z.string().trim().max(8000).optional(),
+        menge: z.string().trim().max(60).optional(),
+        maschine: z.string().trim().max(60).optional(),
+        plan_stunden: z.number().min(0).max(5000).optional(),
+        ist_stunden: z.number().min(0).max(5000).optional(),
+        qk_notiz: z.string().trim().max(4000).optional(),
+        beginn: ymd.optional(),
+        fertig_bis: ymd.optional(),
+        prioritaet: z.enum(PRIORITIES).optional(),
+        woche: z.enum(["diese", "naechste"]).optional(),
+      })
+      .parse(i);
+    const me = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true } });
+    const actor = { id: me.id, name: `${me.name} (über Jarvis)` };
+    switch (q.aktion) {
+      case "liste": {
+        const u = q.mitarbeiter ? await findUserByName(q.mitarbeiter) : null;
+        const list = await db.productionJob.findMany({
+          where: { ...(q.status ? { status: q.status } : { status: { notIn: ["FERTIG", "MONTAGEBEREIT"] } }), ...(q.projekt_id ? { projectId: q.projekt_id } : {}), ...(u ? { assigneeId: u.id } : {}) },
+          orderBy: [{ plannedEnd: { sort: "asc", nulls: "last" } }],
+          take: 50,
+          include: { project: { select: { name: true } }, assignee: { select: { name: true } } },
+        });
+        return list.length ? `${list.length} Fertigungsaufträge:\n${list.map(jobLine).join("\n")}\n[Fertigung](/fertigung)` : "Keine passenden Fertigungsaufträge. [Fertigung](/fertigung)";
+      }
+      case "details": {
+        const j = q.id ? await findJob(q.id) : null;
+        if (!j) return "Fertigungsauftrag nicht gefunden.";
+        return `${jobLine(j)}\nArbeitsanweisung: ${j.instructions ?? "–"}${j.qcNote ? `\nQK: ${j.qcNote}` : ""}${j.actualHours ? `\nIst-Stunden: ${j.actualHours}` : ""}\n[Fertigungskarte](/fertigung/${j.id})`;
+      }
+      case "anlegen": {
+        if (!q.projekt_id || !q.titel) return "projekt_id und titel angeben.";
+        const u = q.mitarbeiter ? await findUserByName(q.mitarbeiter) : null;
+        const j = await createJob({ projectId: q.projekt_id, title: q.titel, instructions: q.anweisung, quantity: q.menge, machine: q.maschine, assigneeId: u?.id, start: q.beginn, end: q.fertig_bis, plannedHours: q.plan_stunden, priority: q.prioritaet }, actor);
+        return `Fertigungsauftrag ${j.number} „${j.title}“ angelegt. [Fertigungskarte](/fertigung/${j.id})`;
+      }
+      case "status": {
+        const j = q.id ? await findJob(q.id) : null;
+        if (!j || !q.status) return "Fertigungsauftrag (id/Nummer) und status angeben.";
+        await setJobStatus(j.id, q.status, actor, { actualHours: q.ist_stunden, qcNote: q.qk_notiz });
+        const open = await db.productionJob.count({ where: { projectId: j.projectId, status: { notIn: ["FERTIG", "MONTAGEBEREIT"] } } });
+        return `${j.number} steht jetzt auf „${PROD_LABEL[q.status]}“.${open === 0 && ["FERTIG", "MONTAGEBEREIT"].includes(q.status) ? " Alle Fertigungsaufträge des Projekts sind fertig – Phase Fertigung erledigt, Montage freigegeben, Projektleiter benachrichtigt." : ""} [Fertigungskarte](/fertigung/${j.id})`;
+      }
+      case "auslastung": {
+        const today = todayYmd();
+        const dow = (new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7;
+        const monday = addDaysYmd(today, -dow + (q.woche === "naechste" ? 7 : 0));
+        const c = await capacity(berlinDateTime(monday));
+        if (!c.jobs) return "Keine eingeplanten Fertigungsaufträge in dieser Woche.";
+        return `Auslastung Woche ab ${formatDate(berlinDateTime(monday))} (${c.jobs} Karten, Richtwert 40 Std./Person):\nMitarbeiter: ${c.workers.map(([n, h]) => `${n} ${h} Std.${h > 40 ? " ⚠ überplant" : ""}`).join(", ")}\nMaschinen: ${c.machines.map(([n, h]) => `${n} ${h} Std.`).join(", ")}`;
+      }
+    }
+  } catch (e) {
+    if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
+    if (e instanceof ProductionError || e instanceof PhaseError) return e.message;
     throw e;
   }
   return "Unbekannte Aktion.";

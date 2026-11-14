@@ -140,6 +140,24 @@ for (const [name, kind, text, off] of crm) {
   if (c) await db.customerNote.create({ data: { customerId: c.id, kind, text, followUpAt: off === null ? null : day(off), assigneeId: users["Anna Weber"], authorName: "Anna Weber" } });
 }
 
+// Fertigungsaufträge (Werkstatt)
+const proj = async (part: string) => (await db.project.findFirstOrThrow({ where: { name: { contains: part } } })).id;
+const jobsDemo: [string, string, string, string, string | null, string, number, number, number, string][] = [
+  ["Stahltreppe", "Treppenwangen U200 zuschneiden und bohren", "2 Stk", "Bandsäge", "Sven Müller", "FERTIG", -10, -8, 6, "Wangen nach Werkplanung Blatt 2, Bohrungen Ø 14 für Stufenwinkel"],
+  ["Stahltreppe", "Podest schweißen", "1 Stk", "Schweißplatz 1", "Sven Müller", "QK", -6, -1, 14, "Rahmen L 80×8, Diagonalen prüfen, Nähte a = 4 mm umlaufend"],
+  ["Stahltreppe", "Geländer Treppe + Podest", "3 Felder", "Schweißplatz 2", "Tobias Kern", "IN_FERTIGUNG", -2, 4, 18, "Handlauf Ø 42,4, Füllung Flachstahl 40×8 senkrecht, Abstand < 12 cm"],
+  ["Edelstahl-Geländer", "Pfosten V2A Ø 42,4 ablängen", "26 Stk", "Kreissäge", "Tobias Kern", "AV", 1, 3, 5, "Längen lt. Aufmaßliste, Enden entgraten"],
+  ["Edelstahl-Geländer", "Glashalter und Bodenplatten", "26 Stk", "Bohrwerk", null, "MATERIAL_FEHLT", 2, 6, 8, "Bodenplatten 120×120×10 V2A – Lieferung offen"],
+  ["Hallenvordach", "Stützen HEA 200 mit Kopf- und Fußplatten", "6 Stk", "Schweißplatz 1", "Sven Müller", "OFFEN", 8, 15, 32, "Fußplatten 300×300×20, Anker M20, Statik Pos. 3"],
+  ["Hallenvordach", "Pfetten IPE 160 vorbereiten", "8 Stk", "Bandsäge", "Tobias Kern", "OFFEN", 10, 16, 16, null as unknown as string],
+  ["Brandschutztüren", "Zargen vorbereiten", "6 Stk", "Montagetisch", "Mehmet Yılmaz", "MONTAGEBEREIT", -20, -15, 6, "Zargen lt. Türliste, Dübel und Schrauben beilegen"],
+];
+let faNo = 1;
+for (const [part, title, quantity, machine, who, status, s0, e0, h, instr] of jobsDemo) {
+  const done = status === "FERTIG" || status === "MONTAGEBEREIT";
+  await db.productionJob.create({ data: { number: `FA-DEMO-${String(faNo++).padStart(3, "0")}`, projectId: await proj(part), title, quantity, machine, assigneeId: who ? users[who] : null, status, plannedStart: day(s0), plannedEnd: day(e0), plannedHours: h, actualHours: done ? h + 1 : null, materialOk: status !== "MATERIAL_FEHLT" && status !== "OFFEN", instructions: instr, doneAt: done ? day(e0) : null, doneBy: done ? who : null, qcAt: done ? day(e0) : null, qcBy: done ? "Josip Cabraja" : null, qcNote: done ? "Maße und Nähte geprüft, i. O." : null, priority: part === "Edelstahl-Geländer" ? "HOCH" : "NORMAL", createdBy: "Demo" } });
+}
+
 // Umsatz der letzten Monate (Abschlags- und Schlussrechnungen)
 const firstCustomer = await db.customer.findFirstOrThrow();
 for (const [off, net, paid] of [[-160, 18400, true], [-130, 26100, true], [-100, 9800, true], [-75, 31200, true], [-45, 22650, true], [-20, 14900, false], [-6, 11800, false]] as const) {
