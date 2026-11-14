@@ -232,6 +232,7 @@ model Project {
   milestones ProjectMilestone[]
   members    ProjectMember[]
   tasks      Task[]
+  docs       SalesDoc[]
 
   @@index([status])
 }
@@ -793,4 +794,201 @@ model ProjectMember {
 
   @@unique([projectId, userId])
   @@index([userId])
+}
+
+// ---------- Buchhaltung (ersetzt Lexware): Kunden, Artikel, Angebote, Rechnungen, Gutschriften, Zahlungen, Mahnungen ----------
+// GoBD: Festgeschriebene Belege (mit Nummer) werden nie mehr geändert oder gelöscht – Korrektur nur per Storno-Gutschrift.
+// Nummern kommen lückenlos aus NumberSeq (in derselben Transaktion wie das Festschreiben).
+
+/// Kunde (Firma oder Privatperson)
+model Customer {
+  id             String   @id @default(cuid())
+  /// Kundennummer (fortlaufend, aus Lexware übernommen oder neu vergeben)
+  number         Int?     @unique
+  /// "FIRMA" | "PERSON"
+  kind           String   @default("FIRMA")
+  /// Anzeigename (Firmenname bzw. Vor- und Nachname)
+  name           String
+  salutation     String?
+  firstName      String?
+  lastName       String?
+  /// Ansprechpartner bei Firmen
+  contactName    String?
+  email          String?
+  phone          String?
+  street         String?
+  zip            String?
+  city           String?
+  country        String   @default("DE")
+  /// USt-IdNr. des Kunden (Pflicht bei § 13b Bauleistungen in der E-Rechnung)
+  vatId          String?
+  /// Leitweg-ID bzw. Käuferreferenz (öffentliche Auftraggeber, XRechnung)
+  buyerReference String?
+  /// Zahlungsziel in Tagen (sonst Standard aus den Einstellungen)
+  paymentDays    Int?
+  notes          String?
+  /// Übernommen aus Lexware (Kontakt-ID)
+  lexId          String?
+  archived       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  docs SalesDoc[]
+
+  @@index([name])
+  @@index([lexId])
+}
+
+/// Artikel bzw. Leistung mit Standardpreis
+model Article {
+  id          String   @id @default(cuid())
+  number      String?
+  name        String
+  description String?
+  unit        String   @default("Stk")
+  /// Einzelpreis netto in Euro
+  priceNet    Float    @default(0)
+  taxRate     Int      @default(19)
+  /// "LEISTUNG" | "MATERIAL"
+  kind        String   @default("LEISTUNG")
+  lexId       String?
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+  @@index([lexId])
+}
+
+enum SalesDocKind {
+  ANGEBOT
+  RECHNUNG
+  GUTSCHRIFT
+}
+
+enum SalesDocStatus {
+  ENTWURF
+  OFFEN
+  ANGENOMMEN
+  ABGELEHNT
+  BEZAHLT
+  STORNIERT
+}
+
+/// Angebot, Rechnung oder Gutschrift (Storno). Positionen als JSON (siehe src/lib/buchhaltung/money.ts)
+model SalesDoc {
+  id            String         @id @default(cuid())
+  kind          SalesDocKind
+  status        SalesDocStatus @default(ENTWURF)
+  /// Belegnummer – erst beim Festschreiben vergeben
+  number        String?
+  customerId    String?
+  customer      Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  /// Anschrift des Kunden (beim Festschreiben eingefroren)
+  address       Json           @default("{}")
+  projectId     String?
+  project       Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  title         String?
+  intro         String?
+  outro         String?
+  /// Belegdatum (00:00 Berliner Zeit)
+  date          DateTime
+  /// Leistungszeitraum bzw. Leistungsdatum
+  serviceFrom   DateTime?
+  serviceTo     DateTime?
+  /// Rechnung: fällig am; Angebot: gültig bis
+  dueDate       DateTime?
+  paymentDays   Int?
+  /// § 13b UStG: Steuerschuldnerschaft des Leistungsempfängers (Bauleistungen)
+  reverseCharge Boolean        @default(false)
+  lines         Json           @default("[]")
+  netCents      Int            @default(0)
+  taxCents      Int            @default(0)
+  grossCents    Int            @default(0)
+  paidCents     Int            @default(0)
+  /// Angebot, aus dem die Rechnung entstand – bzw. Rechnung, die diese Gutschrift storniert
+  sourceId      String?
+  finalizedAt   DateTime?
+  finalizedBy   String?
+  /// Archiv: PDF (ZUGFeRD) und XML (XRechnung) wie beim Festschreiben erzeugt – unveränderlich
+  pdf           Bytes?
+  xml           String?
+  sha256        String?
+  sentAt        DateTime?
+  sentTo        String?
+  dunningLevel  Int            @default(0)
+  dunnedAt      DateTime?
+  /// Aus Lexware übernommen (Archiv, Original-PDF von Lexware)
+  lexId         String?
+  imported      Boolean        @default(false)
+  createdById   String?
+  createdBy     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  payments Payment[]
+  dunnings Dunning[]
+  events   SalesDocEvent[]
+
+  @@unique([kind, number])
+  @@index([kind, status, date])
+  @@index([customerId])
+  @@index([projectId])
+  @@index([lexId])
+}
+
+/// Zahlungseingang zu einer Rechnung
+model Payment {
+  id          String   @id @default(cuid())
+  docId       String
+  doc         SalesDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+  day         DateTime
+  amountCents Int
+  /// UEBERWEISUNG | BAR | LASTSCHRIFT | SONSTIGES
+  method      String   @default("UEBERWEISUNG")
+  note        String?
+  userName    String?
+  createdAt   DateTime @default(now())
+
+  @@index([docId])
+  @@index([day])
+}
+
+/// Zahlungserinnerung bzw. Mahnung zu einer Rechnung
+model Dunning {
+  id        String    @id @default(cuid())
+  docId     String
+  doc       SalesDoc  @relation(fields: [docId], references: [id], onDelete: Cascade)
+  /// 1 = Zahlungserinnerung, 2 = 1. Mahnung, 3 = 2. Mahnung
+  level     Int
+  day       DateTime
+  /// Offener Betrag zum Zeitpunkt der Mahnung
+  openCents Int
+  feeCents  Int       @default(0)
+  dueDate   DateTime
+  pdf       Bytes
+  sentAt    DateTime?
+  sentTo    String?
+  userName  String?
+  createdAt DateTime  @default(now())
+
+  @@index([docId])
+}
+
+/// Verlauf je Beleg (Nachvollziehbarkeit nach GoBD: wer hat wann was gemacht)
+model SalesDocEvent {
+  id        String   @id @default(cuid())
+  docId     String
+  doc       SalesDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+  text      String
+  userName  String?
+  createdAt DateTime @default(now())
+
+  @@index([docId, createdAt])
+}
+
+/// Nummernkreise (z. B. "RECHNUNG-2026" → zuletzt vergebene Nummer)
+model NumberSeq {
+  key   String @id
+  value Int
 }

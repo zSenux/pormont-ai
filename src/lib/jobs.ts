@@ -1,15 +1,15 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { berlinParts, formatDate, formatDateTime, formatEuro } from "@/lib/berlin";
+import { berlinParts, formatDate, formatDateTime } from "@/lib/berlin";
 import { sendPush } from "@/lib/push";
-import { lexwareConfigured } from "@/lib/lexware/client";
-import { voucherListAll } from "@/lib/lexware/api";
+import { customerName, openInvoices } from "@/lib/buchhaltung/docs";
+import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { mailConfigured } from "@/lib/mail/config";
 import { mailsSince } from "@/lib/mail/client";
 import { timeHm, todayEvents } from "@/lib/calendar";
 import { readLicense } from "@/lib/license";
 
-// Hintergrund-Jobs im App-Prozess (wie in Klaic OS): Erinnerungen und Lexware-Warnungen per Push.
+// Hintergrund-Jobs im App-Prozess (wie in Klaic OS): Erinnerungen und Warnungen aus der Buchhaltung per Push.
 // Läuft nur in Produktion bzw. lokal mit JOBS=1.
 
 /** Atomar „einmal“ – true, wenn dieser Lauf den Schlüssel als Erster gesetzt hat */
@@ -46,18 +46,19 @@ async function eventReminders() {
 /** Neu überfällige Rechnungen melden (je Rechnung einmal), werktags 8–18 Uhr */
 async function overdueInvoices() {
   const p = berlinParts();
-  if (!lexwareConfigured() || ["Sat", "Sun"].includes(p.weekday) || p.h < 8 || p.h >= 18) return;
-  const list = await voucherListAll({ type: "invoice", status: "overdue" });
+  if (["Sat", "Sun"].includes(p.weekday) || p.h < 8 || p.h >= 18) return;
+  const { overdue: list } = await openInvoices();
   const fresh = [];
   for (const v of list) if (await once(`overdue:${v.id}`)) fresh.push(v);
+  const url = "/buchhaltung/belege?art=rechnungen&status=ueberfaellig";
   // Beim allerersten Lauf nur den Bestand merken, nicht alles auf einmal melden
   if (!(await once("overdue:init"))) {
     if (fresh.length === 1) {
       const v = fresh[0];
-      await sendPush({ title: "💶 Rechnung überfällig", body: `${v.voucherNumber} · ${v.contactName} · ${formatEuro(v.openAmount ?? v.totalAmount)} (fällig ${formatDate(v.dueDate)})`, url: "/belege?status=ueberfaellig", tag: "overdue" });
+      await sendPush({ title: "💶 Rechnung überfällig", body: `${v.number} · ${customerName(v)} · ${fmtEuroCents(v.grossCents - v.paidCents)} (fällig ${formatDate(v.dueDate)})`, url: `/buchhaltung/beleg/${v.id}`, tag: "overdue" });
     } else if (fresh.length > 1) {
-      const sum = fresh.reduce((s, v) => s + (v.openAmount ?? v.totalAmount ?? 0), 0);
-      await sendPush({ title: `💶 ${fresh.length} Rechnungen überfällig`, body: `Zusammen ${formatEuro(sum)} – u. a. ${fresh.slice(0, 2).map((v) => v.contactName).join(", ")}`, url: "/belege?status=ueberfaellig", tag: "overdue" });
+      const sum = fresh.reduce((s, v) => s + v.grossCents - v.paidCents, 0);
+      await sendPush({ title: `💶 ${fresh.length} Rechnungen überfällig`, body: `Zusammen ${fmtEuroCents(sum)} – u. a. ${fresh.slice(0, 2).map(customerName).join(", ")}`, url, tag: "overdue" });
     }
   }
 }
@@ -72,10 +73,8 @@ async function morningBriefing() {
   const first = events.find((e) => !e.allDay);
   const termine = events.length ? ` · ${events.length} ${events.length === 1 ? "Termin" : "Termine"}${first ? ` (erster ${timeHm(first.startAt)} ${first.title})` : ""}` : "";
   let money = "";
-  if (lexwareConfigured()) {
-    const overdue = await voucherListAll({ type: "invoice", status: "overdue" }).catch(() => []);
-    if (overdue.length) money = ` · ${overdue.length} überfällige Rechnungen (${formatEuro(overdue.reduce((s, v) => s + (v.openAmount ?? 0), 0))})`;
-  }
+  const open = await openInvoices().catch(() => null);
+  if (open?.overdue.length) money = ` · ${open.overdue.length} überfällige Rechnungen (${fmtEuroCents(open.overdueCents)})`;
   await sendPush({ title: "☀️ Guten Morgen – Jarvis", body: `${tasks} Aufgaben für heute${termine}${money}. Tippen für den Überblick.`, url: "/jarvis?q=Was%20steht%20heute%20an%3F", tag: "briefing" });
 }
 
@@ -99,7 +98,7 @@ let started = false;
 export function startJobs() {
   if (started) return;
   started = true;
-  // Ohne Freischaltung durch Klaic Media laufen keine Jobs (keine Push-Nachrichten, keine Lexware-/Mail-Abfragen)
+  // Ohne Freischaltung durch Klaic Media laufen keine Jobs (keine Push-Nachrichten, keine Buchhaltungs-/Mail-Abfragen)
   const safe = (name: string, fn: () => Promise<unknown>) => () =>
     readLicense()
       .then((s) => (s.ok ? fn() : undefined))
@@ -107,8 +106,8 @@ export function startJobs() {
   setInterval(safe("aufgaben", taskReminders), 60_000);
   setInterval(safe("termine", eventReminders), 60_000);
   setInterval(safe("briefing", morningBriefing), 60_000);
-  setInterval(safe("lexware", overdueInvoices), 30 * 60_000);
-  setTimeout(safe("lexware", overdueInvoices), 20_000);
+  setInterval(safe("rechnungen", overdueInvoices), 30 * 60_000);
+  setTimeout(safe("rechnungen", overdueInvoices), 20_000);
   setInterval(safe("mail", newMails), 2 * 60_000);
   setTimeout(safe("mail", newMails), 15_000);
   console.log("[jobs] gestartet");

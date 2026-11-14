@@ -10,17 +10,38 @@ import { receiptSummary, receiptData, uploadReceipt } from "@/lib/receipts";
 import { LEXWARE_APP } from "@/lib/lexware/client";
 import { sendRequest, SupplierError } from "@/lib/suppliers";
 import { contactBody, contactInput, invoiceBody, quotationBody, totals, voucherInput } from "@/lib/lexware/payloads";
+import { BookError, cancelInvoice, customerName, finalizeDoc } from "@/lib/buchhaltung/docs";
+import { createDunning, defaultDocMail, defaultDunningMail, sendDoc, sendDunning } from "@/lib/buchhaltung/send";
+import { fmtEuroCents } from "@/lib/buchhaltung/money";
+import { KIND_LABEL } from "@/lib/buchhaltung/types";
+import { DUNNING_LABEL } from "@/lib/buchhaltung/pdf";
 
-// Schreibende Schritte in Lexware laufen NIE direkt aus dem Chat: Jarvis legt eine PendingAction an,
+// Festschreiben, Versand, Mahnung und Storno der Buchhaltung sowie Mails laufen NIE direkt aus dem Chat: Jarvis legt eine PendingAction an,
 // das Team sieht eine Freigabe-Karte und erst „Freigeben“ führt sie aus (atomar, nur einmal).
 
-export const ACTION_KINDS = ["kunde_anlegen", "rechnung_erstellen", "angebot_erstellen", "mail_senden", "beleg_hochladen", "preisanfrage_senden"] as const;
+// kunde_anlegen/rechnung_erstellen/angebot_erstellen = alte Lexware-Karten (nur noch für bestehende Karten)
+export const ACTION_KINDS = ["kunde_anlegen", "rechnung_erstellen", "angebot_erstellen", "mail_senden", "beleg_hochladen", "preisanfrage_senden", "beleg_festschreiben", "beleg_senden", "mahnung_senden", "beleg_stornieren"] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
 export type ActionLink = { label: string; url: string };
 
 const anfrageInput = z.object({ requestId: z.cuid(), an: z.string().max(300), betreff: z.string().max(300), text: z.string().max(20000) });
 const belegInput = z.object({ fileId: z.string().min(1).max(40), text: z.string().max(300) });
+const docRef = z.object({ docId: z.string().min(5).max(40) });
+const docSend = docRef.extend({ an: z.string().trim().max(300).optional(), cc: z.string().trim().max(300).optional(), betreff: z.string().trim().max(300).optional(), text: z.string().trim().max(20000).optional(), xml: z.boolean().default(false) });
+const dunSend = docRef.extend({ an: z.string().trim().max(300).optional() });
+
+async function loadDoc(docId: string) {
+  const d = await db.salesDoc.findUnique({ where: { id: docId }, include: { customer: { select: { name: true, email: true } } } });
+  if (!d) throw new BookError("Beleg nicht gefunden.");
+  return d;
+}
+const docTitle = (d: Awaited<ReturnType<typeof loadDoc>>) => `${KIND_LABEL[d.kind]} ${d.number ?? "(Entwurf)"} für ${customerName(d)} über ${fmtEuroCents(d.grossCents)} brutto`;
+
+async function actorOf(userId: string) {
+  const u = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, name: true } });
+  return { id: u.id, name: u.name };
+}
 
 /** Für die Freigabe-Karte: Belegdaten aus der Datenbank lesen (nie vom Modell übernehmen) */
 export async function receiptActionInput(fileId: string) {
@@ -32,7 +53,39 @@ export async function receiptActionInput(fileId: string) {
 }
 
 /** Prüft die Eingabe und baut den Text für die Freigabe-Karte */
-export function describe(kind: ActionKind, input: unknown): { summary: string; payload: unknown } {
+export async function describe(kind: ActionKind, input: unknown): Promise<{ summary: string; payload: unknown }> {
+  if (kind === "beleg_festschreiben" || kind === "beleg_stornieren") {
+    const { docId } = docRef.parse(input);
+    const d = await loadDoc(docId);
+    if (kind === "beleg_festschreiben") {
+      if (d.status !== "ENTWURF") throw new BookError("Der Beleg ist schon festgeschrieben.");
+      return { summary: `${docTitle(d)} festschreiben – bekommt eine Nummer und ist danach nicht mehr änderbar.`, payload: { docId } };
+    }
+    if (d.kind !== "RECHNUNG" || d.status === "ENTWURF" || d.status === "STORNIERT") throw new BookError("Stornieren geht nur bei festgeschriebenen, nicht stornierten Rechnungen.");
+    return { summary: `${docTitle(d)} stornieren – dazu wird eine Storno-Gutschrift über den vollen Betrag festgeschrieben.`, payload: { docId } };
+  }
+  if (kind === "beleg_senden") {
+    const m = docSend.parse(input);
+    const d = await loadDoc(m.docId);
+    if (d.kind === "GUTSCHRIFT" && d.status === "ENTWURF") throw new BookError("Gutschriften entstehen nur per Storno.");
+    if (d.status === "STORNIERT") throw new BookError("Die Rechnung ist storniert und wird nicht mehr verschickt.");
+    const an = m.an || d.customer?.email;
+    if (!an) throw new BookError("Keine E-Mail-Adresse beim Kunden – bitte Empfänger angeben.");
+    const payload = { docId: m.docId, an, cc: m.cc || undefined, betreff: m.betreff || undefined, text: m.text || undefined, xml: m.xml };
+    return {
+      summary: `${d.status === "ENTWURF" ? "Festschreiben (Nummer, danach unveränderlich) und " : ""}${docTitle(d)} per E-Mail senden an ${an}${m.cc ? ` (CC ${m.cc})` : ""}, PDF mit E-Rechnung${m.xml ? " + XRechnung-XML" : ""} im Anhang.\nBetreff: ${m.betreff || "Vorlage"}\n\n${m.text || "(Standardtext der Vorlage)"}`,
+      payload,
+    };
+  }
+  if (kind === "mahnung_senden") {
+    const m = dunSend.parse(input);
+    const d = await loadDoc(m.docId);
+    if (d.kind !== "RECHNUNG" || d.status !== "OFFEN") throw new BookError("Nur offene Rechnungen können gemahnt werden.");
+    const an = m.an || d.customer?.email;
+    if (!an) throw new BookError("Keine E-Mail-Adresse beim Kunden – bitte Empfänger angeben.");
+    const level = Math.min(d.dunningLevel + 1, 3);
+    return { summary: `${DUNNING_LABEL[level]} zu ${docTitle(d)} (offen ${fmtEuroCents(d.grossCents - d.paidCents)}) erstellen und an ${an} senden (Vorlagentext, Mahnung + Rechnung als PDF).`, payload: { docId: m.docId, an } };
+  }
   if (kind === "kunde_anlegen") {
     const c = contactInput.parse(input);
     const name = c.art === "firma" ? c.firma : [c.vorname, c.nachname].filter(Boolean).join(" ");
@@ -63,7 +116,7 @@ export function describe(kind: ActionKind, input: unknown): { summary: string; p
 }
 
 export async function proposeAction(chatId: string, userId: string, kind: ActionKind, input: unknown) {
-  const { summary, payload } = describe(kind, input);
+  const { summary, payload } = await describe(kind, input);
   return db.pendingAction.create({ data: { chatId, userId, kind, summary, payload: payload as object } });
 }
 
@@ -109,12 +162,40 @@ export async function executeAction(id: string, userId: string) {
       await uploadReceipt(fileId);
       result = "Beleg an Lexware übergeben – er liegt dort unter Belege zum Verbuchen.";
       links = [{ label: "Belege in Lexware", url: `${LEXWARE_APP}/vouchers` }, { label: "Belegfotos", url: "/belege/foto" }];
+    } else if (a.kind === "beleg_festschreiben") {
+      const { docId } = docRef.parse(a.payload);
+      const d = await finalizeDoc(docId, await actorOf(userId));
+      result = `${KIND_LABEL[d.kind]} ${d.number} festgeschrieben.`;
+      links = [{ label: "Beleg", url: `/buchhaltung/beleg/${docId}` }, { label: "PDF", url: `/api/buchhaltung/pdf/${docId}` }];
+    } else if (a.kind === "beleg_stornieren") {
+      const { docId } = docRef.parse(a.payload);
+      const gs = await cancelInvoice(docId, await actorOf(userId));
+      result = `Rechnung storniert, Storno-Gutschrift ${gs.number} festgeschrieben.`;
+      links = [{ label: "Rechnung", url: `/buchhaltung/beleg/${docId}` }, { label: "Gutschrift", url: `/buchhaltung/beleg/${gs.creditId}` }];
+    } else if (a.kind === "beleg_senden") {
+      const m = docSend.parse(a.payload);
+      const user = await actorOf(userId);
+      const cur = await loadDoc(m.docId);
+      if (cur.status === "ENTWURF") await finalizeDoc(m.docId, user);
+      const def = await defaultDocMail(m.docId, user.name);
+      await sendDoc(m.docId, { an: m.an ?? def.an, cc: m.cc, betreff: m.betreff || def.betreff, text: m.text || def.text, xml: m.xml }, user);
+      const d = await loadDoc(m.docId);
+      result = `${KIND_LABEL[d.kind]} ${d.number} an ${m.an ?? def.an} gesendet.`;
+      links = [{ label: "Beleg", url: `/buchhaltung/beleg/${m.docId}` }, { label: "PDF", url: `/api/buchhaltung/pdf/${m.docId}` }];
+    } else if (a.kind === "mahnung_senden") {
+      const m = dunSend.parse(a.payload);
+      const user = await actorOf(userId);
+      const dn = await createDunning(m.docId, user);
+      const def = await defaultDunningMail(dn.id, user.name);
+      await sendDunning(dn.id, { an: m.an || def.an, betreff: def.betreff, text: def.text }, user);
+      result = `${DUNNING_LABEL[dn.level]} an ${m.an || def.an} gesendet.`;
+      links = [{ label: "Rechnung", url: `/buchhaltung/beleg/${m.docId}` }, { label: "Mahnung (PDF)", url: `/api/buchhaltung/mahnung/${dn.id}` }];
     } else throw new Error("Unbekannte Aktion.");
     await db.pendingAction.update({ where: { id }, data: { result, links } });
     await appendNote(a.chatId, `✓ Freigegeben und erledigt: ${result} ${links.map((l) => `[${l.label}](${l.url})`).join(" · ")}`);
     return { ok: true as const, result, links };
   } catch (e) {
-    const msg = e instanceof LexwareError || e instanceof MailError || e instanceof SupplierError ? e.message : e instanceof Error ? e.message : "Unbekannter Fehler.";
+    const msg = e instanceof LexwareError || e instanceof MailError || e instanceof SupplierError || e instanceof BookError ? e.message : e instanceof Error ? e.message : "Unbekannter Fehler.";
     console.error("[aktion]", a.kind, e);
     await db.pendingAction.update({ where: { id }, data: { status: "ERROR", result: msg } });
     await appendNote(a.chatId, `✗ Die freigegebene Aktion ist fehlgeschlagen: ${msg}`);

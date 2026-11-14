@@ -122,7 +122,7 @@ export async function setFlag(uid: number, flag: "\\Seen" | "\\Flagged", on: boo
   });
 }
 
-export type OutgoingMail = { to: string; cc?: string; subject: string; text: string; inReplyTo?: string | null; references?: string[] };
+export type OutgoingMail = { to: string; cc?: string; subject: string; text: string; inReplyTo?: string | null; references?: string[]; attachments?: { filename: string; content: Buffer; contentType: string }[] };
 
 function compose(c: MailConfig, m: OutgoingMail) {
   return {
@@ -133,6 +133,7 @@ function compose(c: MailConfig, m: OutgoingMail) {
     text: m.text,
     inReplyTo: m.inReplyTo || undefined,
     references: m.references?.length ? m.references : m.inReplyTo ? [m.inReplyTo] : undefined,
+    attachments: m.attachments?.length ? m.attachments : undefined,
   };
 }
 
