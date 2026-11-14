@@ -10,5 +10,5 @@ export default async function PcPage({ searchParams }: { searchParams: Promise<{
   const sp = await searchParams;
   const state = await pcState(user.id);
   // Daten serialisierbar machen (Datumswerte als Text)
-  return <PcView initial={JSON.parse(JSON.stringify(state))} focusJob={sp.auftrag ?? null} downloadUrl={process.env.WINDOWS_APP_URL || null} />;
+  return <PcView initial={JSON.parse(JSON.stringify(state))} focusJob={sp.auftrag ?? null} downloadUrl="/api/windows-app" />;
 }
