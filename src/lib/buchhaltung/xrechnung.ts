@@ -42,7 +42,9 @@ export function buildCii(d: DocData, profile: keyof typeof GUIDELINE): string {
   if (d.kind === "ANGEBOT") throw new Error("Für Angebote gibt es keine E-Rechnung.");
   if (!d.number) throw new Error("E-Rechnung erst nach dem Festschreiben.");
   const c = d.config;
-  const typeCode = d.kind === "GUTSCHRIFT" ? "381" : "380";
+  // 381 Gutschrift, 326 Teilrechnung (Abschlag), sonst 380 (auch Schlussrechnung mit abgezogenen Vorauszahlungen)
+  const typeCode = d.kind === "GUTSCHRIFT" ? "381" : d.invoiceType === "ABSCHLAG" ? "326" : "380";
+  const prepaid = d.deductions.reduce((s, x) => s + x.grossCents, 0);
   const b = d.buyer;
 
   const lines = d.lines
@@ -87,7 +89,12 @@ export function buildCii(d: DocData, profile: keyof typeof GUIDELINE): string {
       ? `<ram:SpecifiedTradePaymentTerms><ram:Description>${esc(d.dueDate ? `Zahlbar ohne Abzug bis ${d.dueDate.split("-").reverse().join(".")}` : "Zahlbar sofort ohne Abzug")}</ram:Description>${d.dueDate ? `<ram:DueDateDateTime><udt:DateTimeString format="102">${d102(d.dueDate)}</udt:DateTimeString></ram:DueDateDateTime>` : ""}</ram:SpecifiedTradePaymentTerms>`
       : `<ram:SpecifiedTradePaymentTerms><ram:Description>Gutschrift – der Betrag wird verrechnet bzw. erstattet.</ram:Description></ram:SpecifiedTradePaymentTerms>`;
 
-  const notes = [d.reverseCharge ? REVERSE_CHARGE_TEXT : null, d.title ?? null].filter(Boolean) as string[];
+  const notes = [
+    d.invoiceType === "ABSCHLAG" ? "Abschlagsrechnung" : d.invoiceType === "SCHLUSS" ? "Schlussrechnung" : null,
+    d.reverseCharge ? REVERSE_CHARGE_TEXT : null,
+    d.title ?? null,
+    d.deductions.length ? `Abzüglich Abschlagsrechnungen: ${d.deductions.map((x) => `${x.number} vom ${x.date.split("-").reverse().join(".")} (netto ${amt(x.netCents)}, USt. ${amt(x.taxCents)}, brutto ${amt(x.grossCents)} EUR)`).join("; ")}` : null,
+  ].filter(Boolean) as string[];
   const buyerRef = b.buyerReference || (b.customerNo ? String(b.customerNo) : b.name).slice(0, 100);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -137,8 +144,8 @@ ${terms}
 <ram:TaxBasisTotalAmount>${amt(d.totals.netCents)}</ram:TaxBasisTotalAmount>
 <ram:TaxTotalAmount currencyID="EUR">${amt(d.totals.taxCents)}</ram:TaxTotalAmount>
 <ram:GrandTotalAmount>${amt(d.totals.grossCents)}</ram:GrandTotalAmount>
-<ram:TotalPrepaidAmount>0.00</ram:TotalPrepaidAmount>
-<ram:DuePayableAmount>${amt(d.totals.grossCents)}</ram:DuePayableAmount>
+<ram:TotalPrepaidAmount>${amt(prepaid)}</ram:TotalPrepaidAmount>
+<ram:DuePayableAmount>${amt(d.totals.grossCents - prepaid)}</ram:DuePayableAmount>
 </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
 ${d.preceding ? `<ram:InvoiceReferencedDocument><ram:IssuerAssignedID>${esc(d.preceding.number)}</ram:IssuerAssignedID><ram:FormattedIssueDateTime><qdt:DateTimeString format="102">${d102(d.preceding.date)}</qdt:DateTimeString></ram:FormattedIssueDateTime></ram:InvoiceReferencedDocument>` : ""}
 </ram:ApplicableHeaderTradeSettlement>

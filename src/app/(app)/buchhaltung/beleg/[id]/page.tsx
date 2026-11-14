@@ -6,16 +6,16 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatDateTime, todayYmd } from "@/lib/berlin";
 import { bookConfig, missingForInvoices } from "@/lib/buchhaltung/config";
-import { customerName, isOverdue, PAYMENT_METHODS, readParty, statusText, ymdOf } from "@/lib/buchhaltung/docs";
+import { customerName, deductionIds, isOverdue, readDeductions, PAYMENT_METHODS, readParty, statusText, ymdOf, openCentsOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents, fmtNum, fmtPrice, lineNetCents, readLines } from "@/lib/buchhaltung/money";
 import { defaultDocMail, defaultDunningMail } from "@/lib/buchhaltung/send";
 import { DUNNING_LABEL } from "@/lib/buchhaltung/pdf";
-import { KIND_LABEL } from "@/lib/buchhaltung/types";
+import { docLabel } from "@/lib/buchhaltung/types";
 import { TONE } from "@/lib/buchhaltung/ui";
 import { cancelAction, copyAction, createDunningAction, deletePaymentAction, quoteStatusAction } from "@/app/actions/buchhaltung";
 import { ActionButton } from "@/components/confirm-button";
 import { DocEditor } from "./editor";
-import { PaymentForm, ResultButton, SendDocForm, SendDunningForm } from "./panels";
+import { DownPaymentForm, PaymentForm, ResultButton, SendDocForm, SendDunningForm } from "./panels";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +29,9 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
   });
   if (!d) notFound();
   const cfg = await bookConfig();
-  const label = KIND_LABEL[d.kind];
+  const label = docLabel(d);
   const back = d.kind === "ANGEBOT" ? "angebote" : d.kind === "GUTSCHRIFT" ? "gutschriften" : "rechnungen";
-  const related = await db.salesDoc.findMany({ where: { OR: [{ sourceId: d.id }, ...(d.sourceId ? [{ id: d.sourceId }] : [])] }, select: { id: true, kind: true, number: true, status: true } });
+  const related = await db.salesDoc.findMany({ where: { OR: [{ sourceId: d.id }, ...(d.sourceId ? [{ id: d.sourceId }] : [])] }, select: { id: true, kind: true, invoiceType: true, number: true, status: true } });
 
   if (d.status === "ENTWURF") {
     const [customers, projects, articles] = await Promise.all([
@@ -40,18 +40,23 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
       db.article.findMany({ where: { archived: false }, orderBy: { name: "asc" }, take: 1000 }),
     ]);
     const missing = d.kind !== "ANGEBOT" ? missingForInvoices(cfg) : [];
+    // Für Schlussrechnungen: offene Abschläge des Kunden (alle, damit auch andere Projekte wählbar sind)
+    const downPayments = d.kind === "RECHNUNG" && d.customerId
+      ? (await db.salesDoc.findMany({ where: { kind: "RECHNUNG", invoiceType: "ABSCHLAG", customerId: d.customerId, status: { in: ["OFFEN", "BEZAHLT"] }, OR: [{ finalId: null }, { finalId: d.id }] }, orderBy: { date: "asc" } })).map((x) => ({ id: x.id, number: x.number!, date: ymdOf(x.date)!, title: x.title, netCents: x.netCents, taxCents: x.taxCents, grossCents: x.grossCents, paid: x.status === "BEZAHLT" }))
+      : [];
     return (
       <main className="space-y-4">
         <Link href={`/buchhaltung/belege?art=${back}`} className="flex items-center gap-1 text-sm text-steel hover:text-brand"><ArrowLeft className="size-4" /> {back === "angebote" ? "Angebote" : back === "gutschriften" ? "Gutschriften" : "Rechnungen"}</Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="page-title">{label} <span className="text-steel">(Entwurf)</span></h1>
-          {related.map((r) => <Link key={r.id} href={`/buchhaltung/beleg/${r.id}`} className="chip border-brand/30 bg-brand-soft text-brand">aus {KIND_LABEL[r.kind]} {r.number ?? "Entwurf"}</Link>)}
+          {related.map((r) => <Link key={r.id} href={`/buchhaltung/beleg/${r.id}`} className="chip border-brand/30 bg-brand-soft text-brand">aus {docLabel(r)} {r.number ?? "Entwurf"}</Link>)}
         </div>
         {missing.length > 0 && (
           <p className="card flex items-start gap-2 border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mt-0.5 size-4 shrink-0" /> Vor dem Festschreiben fehlt noch: {missing.join(", ")}. {user.role === "ADMIN" ? <Link href="/buchhaltung/einstellungen" className="font-semibold underline">Jetzt eintragen</Link> : "Ein Administrator trägt das unter Buchhaltung → Einstellungen ein."}</p>
         )}
         <DocEditor
-          doc={{ id: d.id, kind: d.kind, customerId: d.customerId, projectId: d.projectId, title: d.title, intro: d.intro, outro: d.outro, date: ymdOf(d.date)!, serviceFrom: ymdOf(d.serviceFrom), serviceTo: ymdOf(d.serviceTo), dueDate: ymdOf(d.dueDate), paymentDays: d.paymentDays, reverseCharge: d.reverseCharge, lines: readLines(d.lines) }}
+          doc={{ id: d.id, kind: d.kind, customerId: d.customerId, projectId: d.projectId, title: d.title, intro: d.intro, outro: d.outro, date: ymdOf(d.date)!, serviceFrom: ymdOf(d.serviceFrom), serviceTo: ymdOf(d.serviceTo), dueDate: ymdOf(d.dueDate), paymentDays: d.paymentDays, reverseCharge: d.reverseCharge, lines: readLines(d.lines), invoiceType: d.invoiceType as "NORMAL" | "ABSCHLAG" | "SCHLUSS", deductionIds: deductionIds(d.deductions) }}
+          downPayments={downPayments}
           customers={customers.map((c) => ({ id: c.id, name: c.name, number: c.number, city: c.city, vatId: c.vatId, complete: Boolean(c.street && c.zip && c.city) }))}
           projects={projects}
           articles={articles.map((a) => ({ id: a.id, name: a.name, number: a.number, unit: a.unit, priceNet: a.priceNet, taxRate: a.taxRate, description: a.description }))}
@@ -65,7 +70,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
   const party = readParty(d.address);
   const lines = readLines(d.lines);
   const overdue = isOverdue(d);
-  const open = d.grossCents - d.paidCents;
+  const open = openCentsOf(d);
   const mail = await defaultDocMail(d.id, user.name);
   const lastDunning = d.dunnings[d.dunnings.length - 1];
   const dunningMail = lastDunning && !lastDunning.sentAt ? await defaultDunningMail(lastDunning.id, user.name) : null;
@@ -82,6 +87,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
             {" · "}{formatDate(d.date)}
             {d.project && <> · Projekt <Link href={`/projekte/${d.project.id}`} className="text-brand">{d.project.name}</Link></>}
             {d.imported && " · aus Lexware übernommen"}
+            {d.finalId && <> · <Link href={`/buchhaltung/beleg/${d.finalId}`} className="text-brand">in Schlussrechnung verrechnet</Link></>}
           </p>
         </div>
         <span className={clsx("chip px-3 py-1 text-sm", tone)}>{statusText(d)}</span>
@@ -123,6 +129,8 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
               <div className="flex justify-between"><dt className="text-steel">Netto</dt><dd>{fmtEuroCents(d.netCents)}</dd></div>
               <div className="flex justify-between"><dt className="text-steel">USt.</dt><dd>{fmtEuroCents(d.taxCents)}</dd></div>
               <div className="flex justify-between border-t border-line pt-1 font-bold"><dt>Brutto</dt><dd>{fmtEuroCents(d.grossCents)}</dd></div>
+              {readDeductions(d.deductions).map((x) => <div key={x.id} className="flex justify-between"><dt className="text-steel">abzgl. <Link href={`/buchhaltung/beleg/${x.id}`} className="text-brand">Abschlag {x.number}</Link></dt><dd>− {fmtEuroCents(x.grossCents)}</dd></div>)}
+              {d.prepaidCents > 0 && <div className="flex justify-between border-t border-line pt-1 font-bold"><dt>Zu zahlen</dt><dd>{fmtEuroCents(d.grossCents - d.prepaidCents)}</dd></div>}
               {d.kind === "RECHNUNG" && d.paidCents > 0 && <div className="flex justify-between text-ok"><dt>bezahlt</dt><dd>{fmtEuroCents(d.paidCents)}</dd></div>}
               {d.kind === "RECHNUNG" && d.status === "OFFEN" && <div className="flex justify-between font-semibold text-warn"><dt>offen</dt><dd>{fmtEuroCents(open)}</dd></div>}
             </dl>
@@ -174,8 +182,17 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
             </section>
           )}
 
+          {d.kind === "ANGEBOT" && (
+            <details className="card p-4">
+              <summary className="cursor-pointer font-semibold">Abschlagsrechnung zu diesem Angebot</summary>
+              <p className="mt-2 text-sm text-steel">Für größere Aufträge: Teilbetrag vorab berechnen. Am Ende über „Schlussrechnung“ alles abrechnen – die Abschläge werden automatisch abgezogen.</p>
+              <div className="mt-3"><DownPaymentForm quoteId={d.id} /></div>
+            </details>
+          )}
+
           <section className="card flex flex-wrap gap-2 p-4">
-            {d.kind === "ANGEBOT" && <ResultButton action={copyAction.bind(null, d.id, "RECHNUNG")} className="btn-primary"><Receipt className="size-4" /> In Rechnung umwandeln</ResultButton>}
+            {d.kind === "ANGEBOT" && <ResultButton action={copyAction.bind(null, d.id, "RECHNUNG", "NORMAL")} className="btn-primary"><Receipt className="size-4" /> In Rechnung umwandeln</ResultButton>}
+            {d.kind === "ANGEBOT" && <ResultButton action={copyAction.bind(null, d.id, "RECHNUNG", "SCHLUSS")}><Receipt className="size-4" /> Schlussrechnung</ResultButton>}
             {d.kind === "ANGEBOT" && d.status !== "ANGENOMMEN" && <ResultButton action={quoteStatusAction.bind(null, d.id, "ANGENOMMEN")}>Angenommen</ResultButton>}
             {d.kind === "ANGEBOT" && d.status !== "ABGELEHNT" && <ResultButton action={quoteStatusAction.bind(null, d.id, "ABGELEHNT")}>Abgelehnt</ResultButton>}
             {d.kind === "ANGEBOT" && d.status !== "OFFEN" && <ResultButton action={quoteStatusAction.bind(null, d.id, "OFFEN")}>Wieder offen</ResultButton>}
@@ -190,7 +207,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
           {related.length > 0 && (
             <section className="card p-4">
               <h2 className="font-semibold">Zugehörig</h2>
-              <ul className="mt-2 space-y-1 text-sm">{related.map((r) => <li key={r.id}><Link href={`/buchhaltung/beleg/${r.id}`} className="text-brand">{KIND_LABEL[r.kind]} {r.number ?? "(Entwurf)"}</Link></li>)}</ul>
+              <ul className="mt-2 space-y-1 text-sm">{related.map((r) => <li key={r.id}><Link href={`/buchhaltung/beleg/${r.id}`} className="text-brand">{docLabel(r)} {r.number ?? "(Entwurf)"}</Link></li>)}</ul>
             </section>
           )}
           <section className="card p-4">

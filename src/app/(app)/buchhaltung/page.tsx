@@ -4,9 +4,9 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { berlinParts, formatDate, todayYmd } from "@/lib/berlin";
 import { bookConfig, missingForInvoices } from "@/lib/buchhaltung/config";
-import { customerName, openInvoices, revenue } from "@/lib/buchhaltung/docs";
+import { customerName, openInvoices, revenue, openCentsOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
-import { KIND_LABEL } from "@/lib/buchhaltung/types";
+import { docLabel } from "@/lib/buchhaltung/types";
 import { newDocAction } from "@/app/actions/buchhaltung";
 
 export const metadata = { title: "Buchhaltung" };
@@ -64,7 +64,7 @@ export default async function BuchhaltungPage() {
           {open.overdue.length === 0 ? <p className="mt-2 text-sm text-steel">Keine – alles im grünen Bereich.</p> : (
             <ul className="mt-2 divide-y divide-line text-sm">
               {open.overdue.slice(0, 10).map((d) => (
-                <li key={d.id}><Link href={`/buchhaltung/beleg/${d.id}`} className="flex gap-2 py-2 hover:text-brand"><span className="min-w-0 flex-1 truncate"><strong>{d.number}</strong> · {customerName(d)}</span><span className="text-xs text-bad">fällig {formatDate(d.dueDate)}</span><span className="font-semibold">{fmtEuroCents(d.grossCents - d.paidCents)}</span></Link></li>
+                <li key={d.id}><Link href={`/buchhaltung/beleg/${d.id}`} className="flex gap-2 py-2 hover:text-brand"><span className="min-w-0 flex-1 truncate"><strong>{d.number}</strong> · {customerName(d)}</span><span className="text-xs text-bad">fällig {formatDate(d.dueDate)}</span><span className="font-semibold">{fmtEuroCents(openCentsOf(d))}</span></Link></li>
               ))}
             </ul>
           )}
@@ -73,7 +73,7 @@ export default async function BuchhaltungPage() {
           <h2 className="flex items-center gap-2 font-semibold"><FileText className="size-4 text-brand" /> Entwürfe</h2>
           {drafts.length === 0 ? <p className="mt-2 text-sm text-steel">Keine offenen Entwürfe.</p> : (
             <ul className="mt-2 divide-y divide-line text-sm">
-              {drafts.map((d) => <li key={d.id}><Link href={`/buchhaltung/beleg/${d.id}`} className="flex gap-2 py-2 hover:text-brand"><span className="min-w-0 flex-1 truncate">{KIND_LABEL[d.kind]} · {customerName(d)}{d.title ? ` · ${d.title}` : ""}</span><span className="font-semibold">{fmtEuroCents(d.grossCents)}</span></Link></li>)}
+              {drafts.map((d) => <li key={d.id}><Link href={`/buchhaltung/beleg/${d.id}`} className="flex gap-2 py-2 hover:text-brand"><span className="min-w-0 flex-1 truncate">{docLabel(d)} · {customerName(d)}{d.title ? ` · ${d.title}` : ""}</span><span className="font-semibold">{fmtEuroCents(d.grossCents)}</span></Link></li>)}
             </ul>
           )}
         </section>
@@ -81,7 +81,7 @@ export default async function BuchhaltungPage() {
           <h2 className="flex items-center gap-2 font-semibold"><Receipt className="size-4 text-brand" /> Zuletzt festgeschrieben</h2>
           {recent.length === 0 ? <p className="mt-2 text-sm text-steel">Noch nichts.</p> : (
             <ul className="mt-2 divide-y divide-line text-sm">
-              {recent.map((d) => <li key={d.id}><Link href={`/buchhaltung/beleg/${d.id}`} className="flex gap-2 py-2 hover:text-brand"><span className="w-32 shrink-0 font-semibold">{d.number}</span><span className="min-w-0 flex-1 truncate">{KIND_LABEL[d.kind]} · {customerName(d)}</span><span className="text-steel">{formatDate(d.date)}</span><span className="w-24 text-right font-semibold">{fmtEuroCents(d.grossCents)}</span></Link></li>)}
+              {recent.map((d) => <li key={d.id}><Link href={`/buchhaltung/beleg/${d.id}`} className="flex gap-2 py-2 hover:text-brand"><span className="w-32 shrink-0 font-semibold">{d.number}</span><span className="min-w-0 flex-1 truncate">{docLabel(d)} · {customerName(d)}</span><span className="text-steel">{formatDate(d.date)}</span><span className="w-24 text-right font-semibold">{fmtEuroCents(d.grossCents)}</span></Link></li>)}
             </ul>
           )}
         </section>

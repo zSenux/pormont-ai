@@ -8,7 +8,7 @@ import { bookConfig, missingForInvoices, type BookConfig } from "./config";
 import { computeTotals, fmtEuroCents, linesSchema, readLines, type Line } from "./money";
 import { buildCii } from "./xrechnung";
 import { renderDocPdf } from "./pdf";
-import { KIND_LABEL, type DocData, type DocKind, type Party } from "./types";
+import { docLabel, KIND_LABEL, sumDeductions, type Deduction, type DocData, type DocKind, type InvoiceType, type Party } from "./types";
 
 // Kern der Buchhaltung: Entwürfe anlegen/ändern, festschreiben (Nummer + Archiv-PDF/XML), stornieren,
 // Angebot → Rechnung, Zahlungen. Regeln (GoBD):
@@ -31,6 +31,33 @@ const dayOf = (ymd: string) => berlinDateTime(ymd, "00:00");
 /** Rechnung offen und Fälligkeit vorbei? */
 export function isOverdue(d: Pick<SalesDoc, "kind" | "status" | "dueDate">) {
   return d.kind === "RECHNUNG" && d.status === "OFFEN" && !!d.dueDate && d.dueDate < dayOf(todayYmd());
+}
+
+/** Rechnungsbetrag, der zu zahlen ist (Schlussrechnung: abzüglich Abschläge) */
+export const payableCents = (d: Pick<SalesDoc, "grossCents" | "prepaidCents">) => d.grossCents - d.prepaidCents;
+/** Noch offener Betrag einer Rechnung */
+export const openCentsOf = (d: Pick<SalesDoc, "grossCents" | "prepaidCents" | "paidCents">) => d.grossCents - d.prepaidCents - d.paidCents;
+
+const deductionSchema = z.object({ id: z.string(), number: z.string(), date: z.string(), netCents: z.number().int(), taxCents: z.number().int(), grossCents: z.number().int() });
+/** Festgeschriebene Abschläge (eingefroren) bzw. bei Entwürfen nur die IDs */
+export function readDeductions(raw: unknown): Deduction[] {
+  return Array.isArray(raw) ? raw.flatMap((x) => (deductionSchema.safeParse(x).success ? [deductionSchema.parse(x)] : [])) : [];
+}
+export function deductionIds(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.flatMap((x) => (x && typeof x === "object" && typeof (x as { id?: unknown }).id === "string" ? [(x as { id: string }).id] : [])) : [];
+}
+
+/** Abschlagsrechnungen eines Kunden, die noch in keiner Schlussrechnung verrechnet sind (festgeschrieben, nicht storniert) */
+export async function openDownPayments(customerId: string, opts: { sourceId?: string | null; projectId?: string | null } = {}) {
+  const list = await db.salesDoc.findMany({
+    where: { kind: "RECHNUNG", invoiceType: "ABSCHLAG", customerId, status: { in: ["OFFEN", "BEZAHLT"] }, finalId: null },
+    orderBy: { date: "asc" },
+    select: { id: true, number: true, date: true, netCents: true, taxCents: true, grossCents: true, paidCents: true, status: true, sourceId: true, projectId: true, title: true },
+  });
+  // Passend zum Angebot bzw. Projekt zuerst; ohne Bezug alle des Kunden
+  if (opts.sourceId && list.some((x) => x.sourceId === opts.sourceId)) return list.filter((x) => x.sourceId === opts.sourceId);
+  if (opts.projectId && list.some((x) => x.projectId === opts.projectId)) return list.filter((x) => x.projectId === opts.projectId);
+  return list;
 }
 
 export function statusText(d: Pick<SalesDoc, "kind" | "status" | "dueDate" | "paidCents" | "grossCents">) {
@@ -93,8 +120,17 @@ export async function docData(d: DocWithRefs, config?: BookConfig): Promise<DocD
     if (src?.number) preceding = { number: src.number, date: ymdOf(src.date)! };
   }
   const project = d.project !== undefined ? d.project : d.projectId ? await db.project.findUnique({ where: { id: d.projectId }, select: { name: true } }) : null;
+  let deductions = readDeductions(d.deductions);
+  if (d.status === "ENTWURF" && d.invoiceType === "SCHLUSS") {
+    // Entwurf: Abschläge live aus der Datenbank (Vorschau)
+    const ids = deductionIds(d.deductions);
+    const rows = ids.length ? await db.salesDoc.findMany({ where: { id: { in: ids }, number: { not: null } }, orderBy: [{ date: "asc" }, { number: "asc" }] }) : [];
+    deductions = rows.map((x) => ({ id: x.id, number: x.number!, date: ymdOf(x.date)!, netCents: x.netCents, taxCents: x.taxCents, grossCents: x.grossCents }));
+  }
   return {
     kind: d.kind,
+    invoiceType: (d.kind === "RECHNUNG" ? d.invoiceType : "NORMAL") as InvoiceType,
+    deductions,
     number: d.number,
     date: ymdOf(d.date)!,
     serviceFrom: ymdOf(d.serviceFrom),
@@ -135,6 +171,10 @@ export const draftInput = z.object({
   paymentDays: z.number().int().min(0).max(120).nullish(),
   reverseCharge: z.boolean().optional(),
   lines: linesSchema.optional(),
+  /** Rechnung: NORMAL, ABSCHLAG oder SCHLUSS */
+  invoiceType: z.enum(["NORMAL", "ABSCHLAG", "SCHLUSS"]).optional(),
+  /** Schlussrechnung: abzuziehende Abschlagsrechnungen */
+  deductionIds: z.array(z.string().max(40)).max(50).optional(),
 });
 export type DraftInput = z.infer<typeof draftInput>;
 
@@ -158,12 +198,17 @@ function draftData(i: DraftInput) {
     ...(i.dueDate !== undefined ? { dueDate: i.dueDate ? dayOf(i.dueDate) : null } : {}),
     ...(i.paymentDays !== undefined ? { paymentDays: i.paymentDays ?? null } : {}),
     ...(i.reverseCharge !== undefined ? { reverseCharge: i.reverseCharge } : {}),
+    ...(i.invoiceType !== undefined ? { invoiceType: i.invoiceType } : {}),
+    ...(i.deductionIds !== undefined ? { deductions: i.deductionIds.map((id) => ({ id })) } : {}),
     ...(lines && t ? { lines: lines as object[], netCents: t.netCents, taxCents: t.taxCents, grossCents: t.grossCents } : {}),
   };
 }
 
 export async function createDraft(kind: DocKind, input: DraftInput, user: Actor, extra: { sourceId?: string | null } = {}) {
   const i = draftInput.parse(input);
+  if (kind !== "RECHNUNG") i.invoiceType = undefined;
+  if (i.invoiceType !== "SCHLUSS") i.deductionIds = undefined;
+  else if (i.deductionIds === undefined && i.customerId) i.deductionIds = (await openDownPayments(i.customerId, { sourceId: extra.sourceId, projectId: i.projectId })).map((x) => x.id);
   await checkRefs(i);
   const cfg = await bookConfig();
   const today = todayYmd();
@@ -185,15 +230,17 @@ export async function createDraft(kind: DocKind, input: DraftInput, user: Actor,
       createdBy: user.name,
     },
   });
-  await log(db, doc.id, `${KIND_LABEL[kind]} als Entwurf angelegt`, user);
+  await log(db, doc.id, `${docLabel(doc)} als Entwurf angelegt`, user);
   return doc;
 }
 
 export async function updateDraft(id: string, input: DraftInput, user: Actor) {
   const i = draftInput.parse(input);
   await checkRefs(i);
-  const cur = await db.salesDoc.findUnique({ where: { id }, select: { reverseCharge: true, lines: true, status: true } });
+  const cur = await db.salesDoc.findUnique({ where: { id }, select: { reverseCharge: true, lines: true, status: true, kind: true, invoiceType: true } });
   if (!cur) throw new BookError("Beleg nicht gefunden.");
+  if (cur.kind !== "RECHNUNG") i.invoiceType = undefined;
+  if ((i.invoiceType ?? cur.invoiceType) !== "SCHLUSS") i.deductionIds = i.invoiceType ? [] : undefined;
   if (cur.status !== "ENTWURF") throw new BookError("Festgeschriebene Belege können nicht mehr geändert werden. Korrektur nur per Storno.");
   // Summen immer aus Positionen + Steuerart berechnen
   const lines = i.lines ?? readLines(cur.lines);
@@ -251,6 +298,26 @@ async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
     if (t.grossCents <= 0) throw new BookError("Der Rechnungsbetrag muss größer als 0 sein.");
   }
 
+  // Schlussrechnung: Abschläge einfrieren und als verrechnet markieren (atomar – kein Abschlag wird doppelt abgezogen)
+  let deductions = readDeductions(d.deductions);
+  if (d.kind === "RECHNUNG" && d.invoiceType === "SCHLUSS") {
+    const ids = [...new Set(deductionIds(d.deductions))];
+    const rows = ids.length ? await tx.salesDoc.findMany({ where: { id: { in: ids } }, orderBy: [{ date: "asc" }, { number: "asc" }] }) : [];
+    for (const x of rows) {
+      if (x.kind !== "RECHNUNG" || x.invoiceType !== "ABSCHLAG" || !x.number || (x.status !== "OFFEN" && x.status !== "BEZAHLT")) throw new BookError(`${x.number ?? "Ein Beleg"} ist keine gültige, festgeschriebene Abschlagsrechnung.`);
+      if (x.customerId !== d.customerId) throw new BookError(`Abschlag ${x.number} gehört zu einem anderen Kunden.`);
+    }
+    if (rows.length !== ids.length) throw new BookError("Eine der Abschlagsrechnungen gibt es nicht mehr.");
+    if (ids.length) {
+      const claim = await tx.salesDoc.updateMany({ where: { id: { in: ids }, finalId: null }, data: { finalId: id } });
+      if (claim.count !== ids.length) throw new BookError("Mindestens ein Abschlag ist schon in einer anderen Schlussrechnung verrechnet.");
+    }
+    deductions = rows.map((x) => ({ id: x.id, number: x.number!, date: ymdOf(x.date)!, netCents: x.netCents, taxCents: x.taxCents, grossCents: x.grossCents }));
+    const t = computeTotals(lines, d.reverseCharge);
+    if (sumDeductions(deductions).grossCents > t.grossCents) throw new BookError("Die Abschläge sind höher als die Schlussrechnung – bitte Positionen prüfen.");
+  }
+  const prepaid = sumDeductions(deductions);
+
   const dateYmd = ymdOf(d.date)!;
   const days = d.paymentDays ?? d.customer.paymentDays ?? cfg.paymentDays;
   const dueDate = d.kind === "RECHNUNG" ? dayOf(addDaysYmd(dateYmd, days)) : d.kind === "ANGEBOT" ? (d.dueDate ?? dayOf(addDaysYmd(dateYmd, cfg.quoteDays))) : null;
@@ -258,7 +325,7 @@ async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
   const address = partyOf(d.customer);
   const t = computeTotals(lines, d.reverseCharge);
 
-  const frozen = { ...d, number, status: "OFFEN" as const, address: address as object, dueDate, serviceFrom: d.kind === "ANGEBOT" ? d.serviceFrom : (d.serviceFrom ?? d.date) };
+  const frozen = { ...d, number, status: "OFFEN" as const, address: address as object, dueDate, serviceFrom: d.kind === "ANGEBOT" ? d.serviceFrom : (d.serviceFrom ?? d.date), deductions: deductions as object[], prepaidCents: prepaid.grossCents, prepaidNet: prepaid.netCents };
   const data = await docData({ ...frozen, customer: d.customer }, cfg);
   data.buyer = address;
   const xml = d.kind === "ANGEBOT" ? null : buildCii(data, "zugferd");
@@ -274,6 +341,10 @@ async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
       netCents: t.netCents,
       taxCents: t.taxCents,
       grossCents: t.grossCents,
+      deductions: deductions as object[],
+      prepaidCents: prepaid.grossCents,
+      prepaidNet: prepaid.netCents,
+      ...(d.kind === "RECHNUNG" && t.grossCents - prepaid.grossCents === 0 ? { status: "BEZAHLT" as const } : {}),
       finalizedAt: new Date(),
       finalizedBy: user.name,
       pdf,
@@ -281,7 +352,8 @@ async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
       sha256: createHash("sha256").update(pdf).digest("hex"),
     },
   });
-  await log(tx, id, `Festgeschrieben als ${KIND_LABEL[d.kind]} ${number} (${fmtEuroCents(t.grossCents)} brutto)`, user);
+  await log(tx, id, `Festgeschrieben als ${docLabel(d)} ${number} (${fmtEuroCents(t.grossCents)} brutto${prepaid.grossCents ? `, abzüglich Abschläge ${fmtEuroCents(prepaid.grossCents)} – zu zahlen ${fmtEuroCents(t.grossCents - prepaid.grossCents)}` : ""})`, user);
+  for (const x of deductions) await log(tx, x.id, `In Schlussrechnung ${number} verrechnet`, user);
   return { number, kind: d.kind };
 }
 
@@ -303,6 +375,10 @@ export async function cancelInvoice(id: string, user: Actor) {
       if (inv.status === "STORNIERT") throw new BookError("Diese Rechnung ist schon storniert.");
       if (inv.status === "ENTWURF") throw new BookError("Einen Entwurf kannst du einfach löschen.");
       if (!inv.customerId) throw new BookError("Zur Rechnung gehört kein Kunde mehr – Storno nicht möglich.");
+      if (inv.finalId) {
+        const fin = await tx.salesDoc.findUnique({ where: { id: inv.finalId }, select: { number: true } });
+        throw new BookError(`Dieser Abschlag ist in der Schlussrechnung ${fin?.number ?? ""} verrechnet – bitte zuerst die Schlussrechnung stornieren.`);
+      }
       const claim = await tx.salesDoc.updateMany({ where: { id, status: { in: ["OFFEN", "BEZAHLT"] } }, data: { status: "STORNIERT" } });
       if (!claim.count) throw new BookError("Diese Rechnung kann nicht storniert werden.");
       const lines = readLines(inv.lines);
@@ -323,12 +399,18 @@ export async function cancelInvoice(id: string, user: Actor) {
           netCents: t.netCents,
           taxCents: t.taxCents,
           grossCents: t.grossCents,
+          // Storno einer Schlussrechnung: dieselben Abschläge abziehen (Gutschrift = tatsächlich berechneter Betrag)
+          deductions: inv.deductions as object[],
+          prepaidCents: inv.prepaidCents,
+          prepaidNet: inv.prepaidNet,
           sourceId: inv.id,
           createdById: user.id,
           createdBy: user.name,
         },
       });
       const r = await finalizeInTx(tx, gs.id, user, cfg);
+      // Abschläge werden wieder frei für eine neue Schlussrechnung
+      if (inv.invoiceType === "SCHLUSS") await tx.salesDoc.updateMany({ where: { finalId: inv.id }, data: { finalId: null } });
       await log(tx, inv.id, `Storniert durch Gutschrift ${r.number}${inv.paidCents ? ` – Achtung: ${fmtEuroCents(inv.paidCents)} waren schon bezahlt (ggf. erstatten)` : ""}`, user);
       return { creditId: gs.id, number: r.number };
     },
@@ -337,10 +419,11 @@ export async function cancelInvoice(id: string, user: Actor) {
 }
 
 /** Neuer Entwurf aus einem bestehenden Beleg (z. B. Angebot → Rechnung, oder Kopie) */
-export async function copyDoc(id: string, kind: DocKind, user: Actor) {
+export async function copyDoc(id: string, kind: DocKind, user: Actor, opts: { invoiceType?: InvoiceType } = {}) {
   const src = await db.salesDoc.findUnique({ where: { id } });
   if (!src) throw new BookError("Beleg nicht gefunden.");
   const lines = readLines(src.lines);
+  const invoiceType = kind === "RECHNUNG" ? (opts.invoiceType ?? (src.kind === "RECHNUNG" && src.invoiceType !== "SCHLUSS" ? (src.invoiceType as InvoiceType) : "NORMAL")) : undefined;
   const doc = await createDraft(
     kind,
     {
@@ -351,6 +434,7 @@ export async function copyDoc(id: string, kind: DocKind, user: Actor) {
       serviceTo: kind === "RECHNUNG" ? null : ymdOf(src.serviceTo),
       reverseCharge: src.reverseCharge,
       lines,
+      invoiceType,
       ...(kind === src.kind ? { intro: src.intro, outro: src.outro } : {}),
     },
     user,
@@ -358,10 +442,50 @@ export async function copyDoc(id: string, kind: DocKind, user: Actor) {
   );
   if (src.kind === "ANGEBOT" && kind === "RECHNUNG") {
     if (src.status === "OFFEN") await db.salesDoc.updateMany({ where: { id: src.id, status: "OFFEN" }, data: { status: "ANGENOMMEN" } });
-    await log(db, src.id, `In Rechnung übernommen (Entwurf)`, user);
+    await log(db, src.id, `In ${docLabel(doc)} übernommen (Entwurf)`, user);
     await log(db, doc.id, `Aus Angebot ${src.number ?? "(Entwurf)"} übernommen`, user);
     if (src.status !== "ENTWURF") await (await import("@/lib/orders")).onQuoteAccepted(src.id, user);
   } else await log(db, doc.id, `Kopie von ${KIND_LABEL[src.kind]} ${src.number ?? "(Entwurf)"}`, user);
+  return doc;
+}
+
+/**
+ * Abschlagsrechnung aus einem Angebot: je Steuersatz eine Position „n. Abschlag … (x %)“ über den Anteil der Angebotssumme.
+ * Alternativ fester Nettobetrag (nur bei einem Steuersatz).
+ */
+export async function downPaymentFromQuote(quoteId: string, p: { percent?: number; netEuro?: number }, user: Actor) {
+  const q = await db.salesDoc.findUnique({ where: { id: quoteId } });
+  if (!q || q.kind !== "ANGEBOT") throw new BookError("Angebot nicht gefunden.");
+  if (q.status === "ENTWURF") throw new BookError("Bitte das Angebot zuerst festschreiben.");
+  const t = computeTotals(readLines(q.lines), q.reverseCharge);
+  if (t.netCents <= 0) throw new BookError("Das Angebot hat keinen Betrag.");
+  const before = await db.salesDoc.count({ where: { kind: "RECHNUNG", invoiceType: "ABSCHLAG", sourceId: q.id, status: { not: "STORNIERT" } } });
+  const n = before + 1;
+  let share: number;
+  if (p.percent !== undefined) {
+    if (!(p.percent > 0 && p.percent <= 100)) throw new BookError("Prozentsatz zwischen 0 und 100 angeben.");
+    share = p.percent / 100;
+  } else if (p.netEuro !== undefined) {
+    if (!(p.netEuro > 0)) throw new BookError("Betrag muss größer als 0 sein.");
+    share = Math.round(p.netEuro * 100) / t.netCents;
+    if (share > 1) throw new BookError("Der Abschlag ist höher als die Angebotssumme.");
+  } else throw new BookError("Prozentsatz oder Betrag angeben.");
+  const pct = Math.round(share * 10000) / 100;
+  const label = `${n}. Abschlag gemäß Angebot ${q.number}${p.percent !== undefined ? ` (${pct.toLocaleString("de-DE")} %)` : ""}`;
+  const lines: Line[] = t.taxes.map((g) => ({
+    articleId: null,
+    name: t.taxes.length > 1 ? `${label} – Leistungen mit ${g.rate} % USt.` : label,
+    description: q.title ? `Bauvorhaben/Leistung: ${q.title}` : null,
+    qty: 1,
+    unit: "pauschal",
+    price: p.netEuro !== undefined && t.taxes.length === 1 ? Math.round(p.netEuro * 100) / 100 : Math.round(g.netCents * share) / 100,
+    discount: 0,
+    taxRate: g.rate as Line["taxRate"],
+  }));
+  const doc = await createDraft("RECHNUNG", { customerId: q.customerId, projectId: q.projectId, title: q.title ? `${n}. Abschlag – ${q.title}` : `${n}. Abschlag`, reverseCharge: q.reverseCharge, lines, invoiceType: "ABSCHLAG" }, user, { sourceId: q.id });
+  if (q.status === "OFFEN") await db.salesDoc.updateMany({ where: { id: q.id, status: "OFFEN" }, data: { status: "ANGENOMMEN" } });
+  await log(db, q.id, `${n}. Abschlagsrechnung angelegt (Entwurf)`, user);
+  await log(db, doc.id, `Aus Angebot ${q.number} (${n}. Abschlag)`, user);
   return doc;
 }
 
@@ -380,8 +504,8 @@ export const PAYMENT_METHODS: Record<string, string> = { UEBERWEISUNG: "Überwei
 async function recalcPaid(tx: Tx, docId: string) {
   const sum = await tx.payment.aggregate({ where: { docId }, _sum: { amountCents: true } });
   const paid = sum._sum.amountCents ?? 0;
-  const d = await tx.salesDoc.findUniqueOrThrow({ where: { id: docId }, select: { grossCents: true, status: true } });
-  const status = d.status === "STORNIERT" ? "STORNIERT" : paid >= d.grossCents ? "BEZAHLT" : "OFFEN";
+  const d = await tx.salesDoc.findUniqueOrThrow({ where: { id: docId }, select: { grossCents: true, prepaidCents: true, status: true } });
+  const status = d.status === "STORNIERT" ? "STORNIERT" : paid >= payableCents(d) ? "BEZAHLT" : "OFFEN";
   await tx.salesDoc.update({ where: { id: docId }, data: { paidCents: paid, status } });
   return { paid, status };
 }
@@ -394,7 +518,7 @@ export async function addPayment(docId: string, p: { day: string; amountCents: n
     if (d.status !== "OFFEN" && d.status !== "BEZAHLT") throw new BookError("Zu diesem Beleg kann keine Zahlung erfasst werden.");
     await tx.payment.create({ data: { docId, day: dayOf(p.day), amountCents: p.amountCents, method: p.method && PAYMENT_METHODS[p.method] ? p.method : "UEBERWEISUNG", note: p.note || null, userName: user.name } });
     const r = await recalcPaid(tx, docId);
-    await log(tx, docId, `Zahlung ${fmtEuroCents(p.amountCents)} vom ${p.day.split("-").reverse().join(".")} erfasst${r.status === "BEZAHLT" ? " – Rechnung ist bezahlt" : ` – offen ${fmtEuroCents(d.grossCents - r.paid)}`}`, user);
+    await log(tx, docId, `Zahlung ${fmtEuroCents(p.amountCents)} vom ${p.day.split("-").reverse().join(".")} erfasst${r.status === "BEZAHLT" ? " – Rechnung ist bezahlt" : ` – offen ${fmtEuroCents(payableCents(d) - r.paid)}`}`, user);
     return r;
   });
 }
@@ -416,20 +540,19 @@ export async function deletePayment(paymentId: string, user: Actor) {
 export async function revenue(from: string, to: string) {
   const where = (kind: "RECHNUNG" | "GUTSCHRIFT") => ({ kind, status: { not: "ENTWURF" as const }, date: { gte: dayOf(from), lte: dayOf(to) } });
   const [inv, cr] = await Promise.all([
-    db.salesDoc.aggregate({ where: where("RECHNUNG"), _sum: { netCents: true, grossCents: true }, _count: true }),
-    db.salesDoc.aggregate({ where: where("GUTSCHRIFT"), _sum: { netCents: true, grossCents: true } }),
+    db.salesDoc.aggregate({ where: where("RECHNUNG"), _sum: { netCents: true, grossCents: true, prepaidNet: true, prepaidCents: true }, _count: true }),
+    db.salesDoc.aggregate({ where: where("GUTSCHRIFT"), _sum: { netCents: true, grossCents: true, prepaidNet: true, prepaidCents: true } }),
   ]);
-  return {
-    count: inv._count,
-    netCents: (inv._sum.netCents ?? 0) - (cr._sum.netCents ?? 0),
-    grossCents: (inv._sum.grossCents ?? 0) - (cr._sum.grossCents ?? 0),
-  };
+  // Schlussrechnungen nur mit dem Rest zählen – die Abschläge sind schon als eigene Rechnungen im Umsatz
+  const net = (a: typeof inv._sum) => (a.netCents ?? 0) - (a.prepaidNet ?? 0);
+  const gross = (a: typeof inv._sum) => (a.grossCents ?? 0) - (a.prepaidCents ?? 0);
+  return { count: inv._count, netCents: net(inv._sum) - net(cr._sum), grossCents: gross(inv._sum) - gross(cr._sum) };
 }
 
 export async function openInvoices() {
   const list = await db.salesDoc.findMany({ where: { kind: "RECHNUNG", status: "OFFEN" }, orderBy: { dueDate: "asc" }, include: { customer: { select: { name: true } } } });
   const overdue = list.filter(isOverdue);
-  const sum = (l: typeof list) => l.reduce((s, d) => s + d.grossCents - d.paidCents, 0);
+  const sum = (l: typeof list) => l.reduce((s, d) => s + openCentsOf(d), 0);
   return { list, overdue, openCents: sum(list), overdueCents: sum(overdue) };
 }
 

@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { requireAdmin, requireUser } from "@/lib/auth/user";
 import { todayYmd } from "@/lib/berlin";
 import { bookConfig, bookConfigSchema, saveBookConfig } from "@/lib/buchhaltung/config";
-import { addPayment, BookError, cancelInvoice, copyDoc, createDraft, deleteDraft, deletePayment, draftInput, finalizeDoc, setNextNumber, setQuoteStatus, updateDraft, type DraftInput } from "@/lib/buchhaltung/docs";
+import { addPayment, BookError, cancelInvoice, copyDoc, downPaymentFromQuote, createDraft, deleteDraft, deletePayment, draftInput, finalizeDoc, setNextNumber, setQuoteStatus, updateDraft, type DraftInput } from "@/lib/buchhaltung/docs";
 import { createDunning, sendDoc, sendDunning } from "@/lib/buchhaltung/send";
 import { articleInput, createCustomer, customerInput, updateCustomer } from "@/lib/buchhaltung/customers";
 import { startLexwareImport } from "@/lib/buchhaltung/lexware-import";
@@ -88,15 +88,32 @@ export async function cancelAction(id: string): Promise<Result> {
   redirect(`/buchhaltung/beleg/${creditId}`);
 }
 
-export async function copyAction(id: string, kind: DocKind): Promise<Result> {
+export async function copyAction(id: string, kind: DocKind, invoiceType?: "NORMAL" | "SCHLUSS"): Promise<Result> {
   const user = await requireUser();
   let newId: string;
   try {
-    newId = (await copyDoc(cuid.parse(id), z.enum(["ANGEBOT", "RECHNUNG"]).parse(kind), user)).id;
+    newId = (await copyDoc(cuid.parse(id), z.enum(["ANGEBOT", "RECHNUNG"]).parse(kind), user, { invoiceType: z.enum(["NORMAL", "SCHLUSS"]).optional().parse(invoiceType) })).id;
   } catch (e) {
     return fail(e);
   }
   refresh(id);
+  redirect(`/buchhaltung/beleg/${newId}`);
+}
+
+/** Abschlagsrechnung aus einem Angebot (Formular: Prozent oder Nettobetrag) */
+export async function downPaymentAction(quoteId: string, _prev: Result, form: FormData): Promise<Result> {
+  const user = await requireUser();
+  const mode = form.get("mode") === "betrag" ? "betrag" : "prozent";
+  const raw = String(form.get("value") ?? "").trim().replace(/\./g, "").replace(",", ".");
+  const value = Number(raw);
+  if (!raw || !Number.isFinite(value) || value <= 0) return { error: mode === "prozent" ? "Bitte einen Prozentsatz eintragen, z. B. 30." : "Bitte einen Nettobetrag eintragen." };
+  let newId: string;
+  try {
+    newId = (await downPaymentFromQuote(cuid.parse(quoteId), mode === "prozent" ? { percent: value } : { netEuro: value }, user)).id;
+  } catch (e) {
+    return fail(e);
+  }
+  refresh(quoteId);
   redirect(`/buchhaltung/beleg/${newId}`);
 }
 

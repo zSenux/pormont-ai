@@ -918,6 +918,15 @@ model SalesDoc {
   paidCents     Int            @default(0)
   /// Angebot, aus dem die Rechnung entstand – bzw. Rechnung, die diese Gutschrift storniert
   sourceId      String?
+  /// Rechnungsart: NORMAL | ABSCHLAG | SCHLUSS
+  invoiceType   String         @default("NORMAL")
+  /// Schlussrechnung: abgezogene Abschläge. Entwurf: [{ id }]; festgeschrieben: eingefrorene Beträge je Abschlag
+  deductions    Json           @default("[]")
+  /// Schlussrechnung: Summe der Abschläge brutto/netto – zu zahlen ist grossCents − prepaidCents
+  prepaidCents  Int            @default(0)
+  prepaidNet    Int            @default(0)
+  /// Abschlagsrechnung: in dieser Schlussrechnung verrechnet (verhindert doppeltes Abziehen)
+  finalId       String?
   finalizedAt   DateTime?
   finalizedBy   String?
   /// Archiv: PDF (ZUGFeRD) und XML (XRechnung) wie beim Festschreiben erzeugt – unveränderlich

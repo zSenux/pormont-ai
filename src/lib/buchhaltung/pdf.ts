@@ -7,7 +7,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { COMPANY } from "@/lib/company";
 import { fmtIban } from "./config";
 import { fmtEuroCents, fmtNum, fmtPrice, lineNetCents } from "./money";
-import { KIND_LABEL, type DocData, type Party } from "./types";
+import { docLabel, sumDeductions, type DocData, type Party } from "./types";
 import { REVERSE_CHARGE_TEXT } from "./xrechnung";
 
 // PDF für Angebote, Rechnungen, Gutschriften und Mahnungen im ProMont-Briefbogen (DIN 5008, Form B).
@@ -266,7 +266,7 @@ ${fx}
 
 /** PDF für Angebot/Rechnung/Gutschrift. Mit xml → PDF/A-3 mit eingebetteter E-Rechnung (ZUGFeRD). */
 export async function renderDocPdf(d: DocData, xml: string | null = null): Promise<Uint8Array> {
-  const label = KIND_LABEL[d.kind];
+  const label = docLabel(d);
   const title = d.number ? `${label} ${d.number}` : `${label} (Entwurf)`;
   const { doc, letter: L } = await newDoc(title, { headerLabel: title, bank: d.config, draft: !d.number });
   L.newPage(true);
@@ -347,22 +347,28 @@ export async function renderDocPdf(d: DocData, xml: string | null = null): Promi
 
   // Summen
   const t = d.totals;
-  const rows: [string, string, boolean][] = [["Summe netto", fmtEuroCents(t.netCents), false]];
+  const rows: [string, string, boolean, boolean?][] = [["Summe netto", fmtEuroCents(t.netCents), false]];
   for (const g of t.taxes) {
     if (d.reverseCharge) continue;
     rows.push([`zzgl. ${g.rate} % USt.${t.taxes.length > 1 ? ` auf ${fmtEuroCents(g.netCents)}` : ""}`, fmtEuroCents(g.taxCents), false]);
   }
-  rows.push([d.kind === "GUTSCHRIFT" ? "Gutschriftsbetrag" : "Gesamtbetrag", fmtEuroCents(t.grossCents), true]);
+  const pre = sumDeductions(d.deductions);
+  if (d.deductions.length) {
+    // Schlussrechnung (§ 14 Abs. 5 UStG): volles Entgelt + Steuer, dann Abschläge mit ihren Steueranteilen abziehen
+    rows.push(["Gesamtbetrag der Leistung", fmtEuroCents(t.grossCents), false]);
+    for (const x of d.deductions) rows.push([`abzgl. Abschlagsrechnung ${x.number} vom ${fmtDate(x.date)}`, `− ${fmtEuroCents(x.grossCents)}`, false, true]);
+    rows.push([d.kind === "GUTSCHRIFT" ? "Gutschriftsbetrag" : "Noch zu zahlen", fmtEuroCents(t.grossCents - pre.grossCents), true]);
+  } else rows.push([d.kind === "GUTSCHRIFT" ? "Gutschriftsbetrag" : "Gesamtbetrag", fmtEuroCents(t.grossCents), true]);
   L.ensure(rows.length * 5.5 * MM + 6 * MM);
   L.y -= 3 * MM;
-  for (const [k, v, strong] of rows) {
+  for (const [k, v, strong, wide] of rows) {
     if (strong) {
       L.page.drawRectangle({ x: RIGHT - 80 * MM, y: L.y - 6.5 * MM, width: 80 * MM, height: 7.5 * MM, color: BRAND });
       L.text(k, RIGHT - 78 * MM, L.y - 4.6 * MM, { size: 10, bold: true, color: rgb(1, 1, 1) });
       L.text(v, RIGHT - 2 * MM, L.y - 4.6 * MM, { size: 10, bold: true, color: rgb(1, 1, 1), align: "right" });
       L.y -= 9 * MM;
     } else {
-      L.text(k, RIGHT - 78 * MM, L.y - 3.6 * MM, { size: 9, color: STEEL });
+      L.text(k, RIGHT - (wide ? 110 : 78) * MM, L.y - 3.6 * MM, { size: 9, color: STEEL });
       L.text(v, RIGHT - 2 * MM, L.y - 3.6 * MM, { size: 9, align: "right" });
       L.y -= 5.5 * MM;
     }
@@ -372,7 +378,11 @@ export async function renderDocPdf(d: DocData, xml: string | null = null): Promi
   // Hinweise
   if (d.reverseCharge) L.para(`${REVERSE_CHARGE_TEXT}: Die Umsatzsteuer schuldet der Leistungsempfänger.`, { bold: true, gap: 6 });
   if (d.kind === "RECHNUNG") {
-    L.para(d.dueDate ? `Bitte überweisen Sie den Gesamtbetrag ohne Abzug bis zum ${fmtDate(d.dueDate)} unter Angabe der Rechnungsnummer ${d.number ?? ""} auf das unten genannte Konto.` : "Der Betrag ist sofort ohne Abzug fällig.", { gap: 6 });
+    if (d.deductions.length) {
+      const each = d.deductions.map((x) => `${x.number}: netto ${fmtEuroCents(x.netCents)}${d.reverseCharge ? "" : ` + USt. ${fmtEuroCents(x.taxCents)}`} = ${fmtEuroCents(x.grossCents)}`).join("; ");
+      L.para(`Abgezogene Abschläge (${each}) – zusammen netto ${fmtEuroCents(pre.netCents)}${d.reverseCharge ? "" : `, USt. ${fmtEuroCents(pre.taxCents)}`}, brutto ${fmtEuroCents(pre.grossCents)}. Noch nicht bezahlte Abschläge bleiben zusätzlich offen.`, { gap: 6, size: 9 });
+    }
+    L.para(d.dueDate ? `Bitte überweisen Sie den ${d.deductions.length ? "noch zu zahlenden Betrag" : "Gesamtbetrag"} ohne Abzug bis zum ${fmtDate(d.dueDate)} unter Angabe der Rechnungsnummer ${d.number ?? ""} auf das unten genannte Konto.` : "Der Betrag ist sofort ohne Abzug fällig.", { gap: 6 });
   }
   if (d.kind === "GUTSCHRIFT" && d.preceding) L.para(`Diese Gutschrift storniert die Rechnung ${d.preceding.number} vom ${fmtDate(d.preceding.date)}.`, { gap: 6 });
   if (d.kind === "ANGEBOT" && d.dueDate) L.para(`Dieses Angebot ist gültig bis zum ${fmtDate(d.dueDate)}.`, { gap: 6 });

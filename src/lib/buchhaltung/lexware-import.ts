@@ -142,12 +142,12 @@ async function importVoucher(item: LexVoucherListItem, s: ImportState) {
   const openCents = item.openAmount !== undefined && item.openAmount !== null ? cents(item.openAmount) : status === "BEZAHLT" ? 0 : grossCents;
   const paid = kind === "RECHNUNG" ? Math.max(0, grossCents - openCents) : 0;
 
-  const existing = await db.salesDoc.findFirst({ where: { lexId: item.id }, select: { id: true, paidCents: true, status: true, grossCents: true } });
+  const existing = await db.salesDoc.findFirst({ where: { lexId: item.id }, select: { id: true, paidCents: true, status: true, grossCents: true, prepaidCents: true } });
   if (existing) {
     // Abgleich: Zahlungsstand bzw. Storno aus Lexware nachziehen (nur bei übernommenen Belegen)
     if (kind === "RECHNUNG" && existing.status === "OFFEN" && paid > existing.paidCents) {
       await db.payment.create({ data: { docId: existing.id, day: new Date(), amountCents: paid - existing.paidCents, note: "Zahlungsabgleich aus Lexware" } });
-      await db.salesDoc.update({ where: { id: existing.id }, data: { paidCents: paid, status: paid >= existing.grossCents ? "BEZAHLT" : "OFFEN" } });
+      await db.salesDoc.update({ where: { id: existing.id }, data: { paidCents: paid, status: paid >= existing.grossCents - existing.prepaidCents ? "BEZAHLT" : "OFFEN" } });
       await db.salesDocEvent.create({ data: { docId: existing.id, text: `Zahlung ${formatEuro((paid - existing.paidCents) / 100)} aus Lexware abgeglichen` } });
       s.abgeglichen++;
     }

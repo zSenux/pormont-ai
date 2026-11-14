@@ -6,11 +6,11 @@ import { addDaysYmd, todayYmd } from "@/lib/berlin";
 import { sendMail, MailError } from "@/lib/mail/client";
 import { mailConfigured } from "@/lib/mail/config";
 import { bookConfig } from "./config";
-import { BookError, docData, readParty, ymdOf, isOverdue, type Actor } from "./docs";
+import { BookError, docData, readParty, ymdOf, isOverdue, type Actor, openCentsOf } from "./docs";
 import { fmtEuroCents } from "./money";
 import { buildCii, xrechnungGaps } from "./xrechnung";
 import { DUNNING_LABEL, renderDunningPdf } from "./pdf";
-import { KIND_LABEL } from "./types";
+import { docLabel } from "./types";
 import { berlinDateTime } from "@/lib/berlin";
 
 // Versand von Belegen und Mahnungen per Mail. Läuft nur nach einem menschlichen Klick (Seite, mit Rückfrage)
@@ -33,13 +33,13 @@ export async function defaultDocMail(docId: string, userName: string) {
   const d = await db.salesDoc.findUnique({ where: { id: docId }, include: { customer: true } });
   if (!d) throw new BookError("Beleg nicht gefunden.");
   const party = readParty(d.address);
-  const label = KIND_LABEL[d.kind];
+  const label = docLabel(d);
   const greet = party.greeting || "Sehr geehrte Damen und Herren,";
   const body =
     d.kind === "ANGEBOT"
       ? `anbei erhalten Sie unser Angebot ${d.number}${d.title ? ` („${d.title}“)` : ""}. Es ist gültig bis zum ${fmtDate(ymdOf(d.dueDate))}.\n\nBei Fragen sind wir gerne für Sie da. Wir freuen uns auf Ihren Auftrag.`
       : d.kind === "RECHNUNG"
-        ? `anbei erhalten Sie unsere Rechnung ${d.number} über ${fmtEuroCents(d.grossCents)}${d.dueDate ? `, zahlbar bis zum ${fmtDate(ymdOf(d.dueDate))}` : ""}.\n\nDie PDF-Datei enthält die E-Rechnung (ZUGFeRD) und kann direkt in Ihre Buchhaltung übernommen werden.\n\nVielen Dank für Ihren Auftrag.`
+        ? `anbei erhalten Sie unsere ${label} ${d.number} über ${fmtEuroCents(d.grossCents - d.prepaidCents)}${d.prepaidCents ? " (nach Abzug der Abschläge)" : ""}${d.dueDate ? `, zahlbar bis zum ${fmtDate(ymdOf(d.dueDate))}` : ""}.\n\nDie PDF-Datei enthält die E-Rechnung (ZUGFeRD) und kann direkt in Ihre Buchhaltung übernommen werden.\n\nVielen Dank für Ihren Auftrag.`
         : `anbei erhalten Sie unsere Gutschrift ${d.number} über ${fmtEuroCents(d.grossCents)}.`;
   return {
     an: d.customer?.email ?? party.email ?? "",
@@ -56,7 +56,7 @@ export async function sendDoc(docId: string, input: SendInput, user: Actor) {
   const d = await db.salesDoc.findUnique({ where: { id: docId } });
   if (!d) throw new BookError("Beleg nicht gefunden.");
   if (d.status === "ENTWURF" || !d.number || !d.pdf) throw new BookError("Bitte den Beleg zuerst festschreiben – Entwürfe werden nicht verschickt.");
-  const attachments = [{ filename: `${KIND_LABEL[d.kind]}_${d.number}.pdf`, content: Buffer.from(d.pdf), contentType: "application/pdf" }];
+  const attachments = [{ filename: `${docLabel(d)}_${d.number}.pdf`, content: Buffer.from(d.pdf), contentType: "application/pdf" }];
   if (m.xml && d.kind !== "ANGEBOT" && !d.imported) {
     const data = await docData(d);
     const gaps = xrechnungGaps(data);
@@ -87,7 +87,7 @@ export async function createDunning(docId: string, user: Actor) {
   const today = todayYmd();
   const due = addDaysYmd(today, cfg.dunningDays);
   const feeCents = Math.round(fee * 100);
-  const openCents = d.grossCents - d.paidCents;
+  const openCents = openCentsOf(d);
   const pdf = Buffer.from(
     await renderDunningPdf({
       level,
