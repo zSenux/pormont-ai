@@ -7,6 +7,7 @@ import { lowStock, fmtQty } from "@/lib/stock";
 import { currentPhase, progressOf } from "@/lib/phases";
 import { PHASES } from "@/lib/phases-shared";
 import { ProgressBar } from "@/components/progress-bar";
+import { dueFollowUps } from "@/lib/crm";
 import { revenue } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { todayYmd } from "@/lib/berlin";
@@ -33,6 +34,7 @@ export async function BetriebOverview() {
     db.timeEntry.findMany({ where: { startAt: { not: null }, endAt: null }, select: { userId: true, project: { select: { name: true } } } }),
     db.user.count(),
   ]);
+  const followUps = await dueFollowUps(in14, 10);
 
   const withPhase = projects.map((p) => ({ ...p, pct: p.phases.length ? progressOf(p.phases) : null, cur: p.phases.length ? currentPhase(p.phases) : null }));
   const perPhase = PHASES.map((ph) => ({ ...ph, n: withPhase.filter((p) => p.cur?.key === ph.key).length }));
@@ -40,9 +42,10 @@ export async function BetriebOverview() {
   const ordered = requests.filter((r) => r.status === "BESTELLT").length;
   const waiting = requests.length - ordered;
   const deadlines = [
-    ...milestones.map((m) => ({ id: m.id, date: m.dueDate!, title: m.title, project: m.project, kind: "Meilenstein" })),
-    ...phaseEnds.map((ph) => ({ id: ph.id, date: ph.endDate!, title: PHASES.find((x) => x.key === ph.key)?.title ?? ph.key, project: ph.project, kind: "Phase endet" })),
-  ].sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, 8);
+    ...milestones.map((m) => ({ id: m.id, date: m.dueDate!, title: m.title, sub: m.project.name, href: `/projekte/${m.project.id}`, kind: "Meilenstein" })),
+    ...phaseEnds.map((ph) => ({ id: ph.id, date: ph.endDate!, title: PHASES.find((x) => x.key === ph.key)?.title ?? ph.key, sub: ph.project.name, href: `/projekte/${ph.project.id}`, kind: "Phase endet" })),
+    ...followUps.map((n) => ({ id: n.id, date: n.followUpAt!, title: n.text.length > 60 ? `${n.text.slice(0, 60)}…` : n.text, sub: `${n.customer.name}${n.assignee ? ` · ${n.assignee.name}` : ""}`, href: `/buchhaltung/kunden/${n.customer.id}`, kind: "Wiedervorlage" })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, 10);
 
   const tiles = [
     { label: "Laufende Projekte", value: String(projects.length), hint: `${withPhase.filter((p) => p.cur?.key === "ANFRAGE").length} in Kundenanfrage`, icon: HardHat, href: "/projekte", tone: "text-brand" },
@@ -122,7 +125,7 @@ export async function BetriebOverview() {
         <section className="card min-w-0 p-5">
           <div className="mb-3 flex items-center gap-2">
             <CalendarClock className="size-5 text-brand" />
-            <h3 className="font-bold">Fristen (14 Tage)</h3>
+            <h3 className="font-bold">Fristen & Wiedervorlagen</h3>
           </div>
           {deadlines.length === 0 ? (
             <p className="text-sm text-steel">Keine Fristen in den nächsten zwei Wochen.</p>
@@ -131,9 +134,9 @@ export async function BetriebOverview() {
               {deadlines.map((d) => (
                 <li key={d.id} className="flex items-start gap-3 py-2">
                   <span className={clsx("w-16 shrink-0 text-xs font-semibold", d.date < now ? "text-bad" : "text-brand")}>{formatDate(d.date).slice(0, 6)}</span>
-                  <Link href={`/projekte/${d.project.id}`} className="min-w-0 flex-1">
+                  <Link href={d.href} className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{d.kind === "Meilenstein" && <Flag className="mr-1 inline size-3.5 text-steel" />}{d.title}</span>
-                    <span className="block truncate text-xs text-steel">{d.kind} · {d.project.name}</span>
+                    <span className="block truncate text-xs text-steel">{d.kind} · {d.sub}</span>
                   </Link>
                 </li>
               ))}

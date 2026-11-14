@@ -8,6 +8,7 @@ import { PHASE_KEYS, PHASE_STATUSES, PRIORITIES } from "@/lib/phases-shared";
 import { createOrder, createOrderFromQuote, OrderError, orderText } from "@/lib/orders";
 import { ORDER_STATUS_LABEL, ORDER_STATUSES, type OrderStatus } from "@/lib/orders-shared";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
+import { addNote, CrmError, customerFileText, dueFollowUps, newInquiry, NOTE_KINDS } from "@/lib/crm";
 import type { ToolCtx } from "./tools";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
@@ -66,12 +67,33 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
       required: ["aktion"],
     },
   },
+  {
+    name: "kundenakte",
+    description:
+      "Kundenakte (CRM): akte (Kontakt, Aufträge, Anfragen, Belege, Kontakthistorie, Wiedervorlagen eines Kunden), notiz (Anruf/Mail/Besuch/Notiz festhalten, optional mit Wiedervorlage), wiedervorlagen (fällige bis Datum, Standard heute + 7 Tage), erledigt (Wiedervorlage abhaken), anfrage (neue Kundenanfrage → Projekt in Phase Kundenanfrage).",
+    input_schema: {
+      type: "object",
+      properties: {
+        aktion: { type: "string", enum: ["akte", "notiz", "wiedervorlagen", "erledigt", "anfrage"] },
+        kunde: str("akte/notiz/anfrage: Kunden-ID (aus kunden_suchen) oder Name"),
+        art: { type: "string", enum: NOTE_KINDS, description: "notiz: NOTIZ, ANRUF, MAIL, TERMIN, BESUCH" },
+        text: str("notiz: Inhalt; anfrage: Beschreibung"),
+        wiedervorlage: str("notiz: Wiedervorlage am JJJJ-MM-TT (optional)"),
+        mitarbeiter: str("notiz: zuständig für die Wiedervorlage (Name, optional)"),
+        bis: str("wiedervorlagen: bis JJJJ-MM-TT"),
+        id: str("erledigt: Wiedervorlagen-ID"),
+        titel: str("anfrage: kurze Bezeichnung, z. B. „Geländer Balkon 2. OG“"),
+      },
+      required: ["aktion"],
+    },
+  },
 ];
 
 export const EPS_TOOL_NAMES = new Set(EPS_TOOLS.map((t) => t.name));
 
 export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
   if (name === "auftraege") return runOrders(i, ctx);
+  if (name === "kundenakte") return runCrm(i, ctx);
   try {
     const q = z
       .object({
@@ -229,6 +251,70 @@ async function runOrders(i: Record<string, unknown>, ctx: ToolCtx): Promise<stri
   } catch (e) {
     if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
     if (e instanceof OrderError || e instanceof PhaseError) return e.message;
+    throw e;
+  }
+  return "Unbekannte Aktion.";
+}
+
+async function findCustomer(ref: string) {
+  const r = ref.trim();
+  const byId = await db.customer.findUnique({ where: { id: r } }).catch(() => null);
+  if (byId) return byId;
+  const list = await db.customer.findMany({ where: { archived: false, name: { contains: r, mode: "insensitive" } }, take: 4 });
+  if (list.length === 1) return list[0];
+  if (list.length > 1) throw new CrmError(`Mehrere Kunden passen zu „${r}“: ${list.map((c) => `${c.name} (id ${c.id})`).join(", ")}. Bitte genauer angeben.`);
+  throw new CrmError(`Kein Kunde „${r}“ gefunden. Neue Kunden legt kunde_anlegen an.`);
+}
+
+async function runCrm(i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+  try {
+    const q = z
+      .object({
+        aktion: z.enum(["akte", "notiz", "wiedervorlagen", "erledigt", "anfrage"]),
+        kunde: z.string().trim().min(2).max(120).optional(),
+        art: z.enum(NOTE_KINDS).optional(),
+        text: z.string().trim().max(4000).optional(),
+        wiedervorlage: ymd.optional(),
+        mitarbeiter: z.string().trim().max(80).optional(),
+        bis: ymd.optional(),
+        id: z.cuid().optional(),
+        titel: z.string().trim().min(2).max(200).optional(),
+      })
+      .parse(i);
+    const me = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true } });
+    switch (q.aktion) {
+      case "akte": {
+        if (!q.kunde) return "Welcher Kunde?";
+        return customerFileText((await findCustomer(q.kunde)).id);
+      }
+      case "notiz": {
+        if (!q.kunde || !q.text) return "kunde und text angeben.";
+        const c = await findCustomer(q.kunde);
+        const u = q.mitarbeiter ? await findUserByName(q.mitarbeiter) : null;
+        await addNote({ customerId: c.id, kind: q.art ?? "NOTIZ", text: q.text, followUp: q.wiedervorlage, assigneeId: u?.id ?? (q.wiedervorlage ? me.id : null), authorName: `${me.name} (über Jarvis)` });
+        return `In der Kundenakte ${c.name} festgehalten${q.wiedervorlage ? `, Wiedervorlage am ${formatDate(berlinDateTime(q.wiedervorlage))}${u ? ` für ${u.name}` : ""}` : ""}. [Kundenakte](/buchhaltung/kunden/${c.id})`;
+      }
+      case "wiedervorlagen": {
+        const until = q.bis ? berlinDateTime(q.bis, "23:59") : new Date(Date.now() + 7 * 86400_000);
+        const list = await dueFollowUps(until, 40);
+        if (!list.length) return "Keine offenen Wiedervorlagen im Zeitraum.";
+        return list.map((n) => `- ${formatDate(n.followUpAt)}${n.followUpAt! < new Date() ? " ⚠" : ""} · ${n.customer.name}: ${n.text}${n.assignee ? ` · ${n.assignee.name}` : ""} · id ${n.id}`).join("\n");
+      }
+      case "erledigt": {
+        if (!q.id) return "Wiedervorlagen-ID fehlt.";
+        const r = await db.customerNote.updateMany({ where: { id: q.id, followUpDone: null }, data: { followUpDone: new Date() } });
+        return r.count ? "Wiedervorlage erledigt." : "Nicht gefunden oder schon erledigt.";
+      }
+      case "anfrage": {
+        if (!q.kunde || !q.titel) return "kunde und titel angeben.";
+        const c = await findCustomer(q.kunde);
+        const p = await newInquiry({ customerId: c.id, title: q.titel, description: q.text, userId: me.id, userName: `${me.name} (über Jarvis)` });
+        return `Anfrage „${p.name}“ für ${c.name} angelegt (Projekt in Phase Kundenanfrage). Nächster Schritt: Angebot schreiben. [Projekt öffnen](/projekte/${p.id}) · Projekt-ID ${p.id}`;
+      }
+    }
+  } catch (e) {
+    if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
+    if (e instanceof CrmError || e instanceof PhaseError) return e.message;
     throw e;
   }
   return "Unbekannte Aktion.";

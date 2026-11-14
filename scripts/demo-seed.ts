@@ -127,6 +127,19 @@ for (const p of allProjects) {
   }
 }
 await db.salesDoc.create({ data: { kind: "ANGEBOT", status: "ABGELEHNT", number: `DEMO-AN-${docNo++}`, title: "Wendeltreppe Edelstahl", date: day(-60), lines: line("Wendeltreppe Edelstahl", 23800), ...money(23800) } });
+// Kundenakte: Kontakthistorie und Wiedervorlagen
+const crm: [string, string, string, number | null][] = [
+  ["Herr Bauer", "ANRUF", "Hat wegen Carport angerufen, möchte Variante mit Geräteraum. Angebot nachreichen.", 1],
+  ["Herr Bauer", "BESUCH", "Aufmaß-Termin vor Ort vereinbart, Zufahrt eng (max. 3,5 t).", null],
+  ["Hausverwaltung Krämer", "MAIL", "Glasfarbe bestätigt: VSG klar. Wünscht Montage ab KW 50.", null],
+  ["Neckar Logistik AG", "ANRUF", "Einkauf (Frau Hoffmann) fragt nach Statik-Termin – zurückrufen.", -1],
+  ["Familie Schneider", "NOTIZ", "Antrieb Sommer gewünscht, Funkfernbedienung 3 Stk.", 5],
+];
+for (const [name, kind, text, off] of crm) {
+  const c = await db.customer.findFirst({ where: { name } });
+  if (c) await db.customerNote.create({ data: { customerId: c.id, kind, text, followUpAt: off === null ? null : day(off), assigneeId: users["Anna Weber"], authorName: "Anna Weber" } });
+}
+
 // Umsatz der letzten Monate (Abschlags- und Schlussrechnungen)
 const firstCustomer = await db.customer.findFirstOrThrow();
 for (const [off, net, paid] of [[-160, 18400, true], [-130, 26100, true], [-100, 9800, true], [-75, 31200, true], [-45, 22650, true], [-20, 14900, false], [-6, 11800, false]] as const) {
