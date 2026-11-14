@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { berlinDateTime } from "@/lib/berlin";
-import { createOrder, createOrderFromQuote, OrderError } from "@/lib/orders";
+import { changeOrderStatus, createOrder, createOrderFromQuote, OrderError } from "@/lib/orders";
 import { ORDER_STATUSES } from "@/lib/orders-shared";
 
 // Server-Actions für Aufträge (EPS). Auftrag = interne Daten; Buchhaltungsbelege werden hier nie geändert
@@ -59,12 +59,9 @@ export async function updateOrder(id: string, form: FormData) {
 }
 
 export async function setOrderStatus(id: string, status: string) {
-  await requireUser();
+  const u = await requireUser();
   const s = z.enum(ORDER_STATUSES).parse(status);
-  const order = await db.order.update({ where: { id: z.cuid().parse(id) }, data: { status: s } });
-  // Projektstatus mitziehen
-  const projectStatus = s === "ABGESCHLOSSEN" ? "FERTIG" : s === "PAUSIERT" || s === "STORNIERT" ? "PAUSIERT" : "LAEUFT";
-  await db.project.update({ where: { id: order.projectId }, data: { status: projectStatus } });
+  const order = await changeOrderStatus(z.cuid().parse(id), s, u.name);
   revalidatePath(`/auftraege/${order.id}`);
   revalidatePath("/auftraege");
   revalidatePath(`/projekte/${order.projectId}`);

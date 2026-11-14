@@ -65,7 +65,11 @@ export async function setPhase(input: { projectId: string; key: PhaseKey; status
   if (!r.count) throw new PhaseError("Phase nicht gefunden.");
   // Projektstatus mitziehen: Phase läuft → Projekt läuft; Abschluss erledigt → Projekt fertig
   if (input.status === "LAEUFT") await db.project.updateMany({ where: { id: input.projectId, status: "PLANUNG" }, data: { status: "LAEUFT" } });
-  if (input.status === "ERLEDIGT" && input.key === "ABSCHLUSS") await db.project.update({ where: { id: input.projectId }, data: { status: "FERTIG" } });
+  if (input.status === "ERLEDIGT" && input.key === "ABSCHLUSS") {
+    const r = await db.project.updateMany({ where: { id: input.projectId, status: { not: "FERTIG" } }, data: { status: "FERTIG" } });
+    // Automatik: Projekt abgeschlossen → Nachkalkulation
+    if (r.count) await (await import("@/lib/automation")).onProjectClosed(input.projectId, input.userName);
+  }
 }
 
 /** Kurztext für Jarvis: Phasen, Meilensteine, Team, offene Projektaufgaben */

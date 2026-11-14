@@ -108,3 +108,12 @@ export async function orderText(id: string) {
     `[Auftrag öffnen](/auftraege/${o.id}) · [Projektakte](/projekte/${o.projectId}) · id ${o.id} · Projekt-ID ${o.projectId}`,
   ].filter(Boolean).join("\n");
 }
+
+/** Auftragsstatus setzen; der Projektstatus folgt. Abgeschlossen → Projekt fertig → Nachkalkulation (Automatik). */
+export async function changeOrderStatus(orderId: string, status: OrderStatus, userName: string) {
+  const order = await db.order.update({ where: { id: orderId }, data: { status } });
+  const ps = status === "ABGESCHLOSSEN" ? "FERTIG" : status === "PAUSIERT" || status === "STORNIERT" ? "PAUSIERT" : "LAEUFT";
+  const r = await db.project.updateMany({ where: { id: order.projectId, status: { not: ps } }, data: { status: ps } });
+  if (r.count && ps === "FERTIG") await (await import("@/lib/automation")).onProjectClosed(order.projectId, userName);
+  return order;
+}

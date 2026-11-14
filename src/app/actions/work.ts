@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { onProjectClosed } from "@/lib/automation";
 import { requireUser } from "@/lib/auth/user";
 import { berlinDateTime } from "@/lib/berlin";
 import { LexwareError } from "@/lib/lexware/client";
@@ -75,8 +76,12 @@ export async function updateProject(id: string, form: FormData) {
 }
 
 export async function setProjectStatus(id: string, status: string) {
-  await requireUser();
-  await db.project.update({ where: { id: z.cuid().parse(id) }, data: { status: z.enum(["PLANUNG", "LAEUFT", "PAUSIERT", "FERTIG"]).parse(status) } });
+  const u = await requireUser();
+  const pid = z.cuid().parse(id);
+  const st = z.enum(["PLANUNG", "LAEUFT", "PAUSIERT", "FERTIG"]).parse(status);
+  const r = await db.project.updateMany({ where: { id: pid, status: { not: st } }, data: { status: st } });
+  // Automatik: Projekt abgeschlossen → Nachkalkulation
+  if (r.count && st === "FERTIG") await onProjectClosed(pid, u.name);
   revalidatePath(`/projekte/${id}`);
   revalidatePath("/projekte");
 }

@@ -11,6 +11,7 @@ import { dueFollowUps } from "@/lib/crm";
 import { revenue } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { todayYmd } from "@/lib/berlin";
+import { lateItems } from "@/lib/automation";
 
 // Betriebs-Übersicht (EPS-Dashboard): laufende Projekte mit Fortschritt, Projekte je Phase, Fristen,
 // überfällige Aufgaben, Lager unter Mindestbestand, offene Bestellungen/Anfragen, wer heute eingestempelt ist.
@@ -20,13 +21,12 @@ const DAY = 86400_000;
 export async function BetriebOverview() {
   const now = new Date();
   const in14 = new Date(now.getTime() + 14 * DAY);
-  const [projects, overdueTasks, low, requests, milestones, phaseEnds, clockedIn, users] = await Promise.all([
+  const [projects, low, requests, milestones, phaseEnds, clockedIn, users] = await Promise.all([
     db.project.findMany({
       where: { status: { not: "FERTIG" } },
       orderBy: { updatedAt: "desc" },
       select: { id: true, name: true, customer: true, status: true, endDate: true, leader: { select: { name: true } }, phases: { select: { key: true, status: true, sort: true } } },
     }),
-    db.task.findMany({ where: { doneAt: null, dueAt: { lt: now } }, orderBy: { dueAt: "asc" }, take: 8, include: { assignee: { select: { name: true } }, project: { select: { id: true, name: true } } } }),
     lowStock(8),
     db.supplierRequest.findMany({ where: { status: { in: ["GESENDET", "ANGEBOT", "BESTELLT"] } }, orderBy: { updatedAt: "desc" }, take: 50, select: { id: true, status: true, subject: true, dueAt: true, supplier: { select: { name: true } } } }),
     db.projectMilestone.findMany({ where: { doneAt: null, dueDate: { lte: in14 } }, orderBy: { dueDate: "asc" }, take: 10, include: { project: { select: { id: true, name: true } } } }),
@@ -38,6 +38,7 @@ export async function BetriebOverview() {
   const inProd = prodCounts.reduce((a, x) => a + x._count, 0);
   const materialMissing = prodCounts.find((x) => x.status === "MATERIAL_FEHLT")?._count ?? 0;
   const followUps = await dueFollowUps(in14, 10);
+  const late = await lateItems(now);
   const in7 = new Date(now.getTime() + 7 * DAY);
   const assemblies = await db.assembly.findMany({ where: { status: { in: ["GEPLANT", "LAEUFT"] }, startAt: { lte: in14 } }, orderBy: { startAt: "asc" }, take: 20, include: { project: { select: { name: true } }, leader: { select: { name: true } } } });
   const toSign = await db.assembly.count({ where: { status: "ERLEDIGT", signedAt: null } });
@@ -58,7 +59,7 @@ export async function BetriebOverview() {
     { label: "Laufende Projekte", value: String(projects.length), hint: `${withPhase.filter((p) => p.cur?.key === "ANFRAGE").length} in Kundenanfrage`, icon: HardHat, href: "/projekte", tone: "text-brand" },
     { label: "Fertigungsaufträge", value: String(inProd), hint: materialMissing ? `${materialMissing} warten auf Material` : `${prodCounts.find((x) => x.status === "IN_FERTIGUNG")?._count ?? 0} in Fertigung`, icon: Factory, href: "/fertigung", tone: materialMissing ? "text-warn" : "text-brand" },
     { label: "Montagen", value: String(assemblies.filter((a) => a.startAt <= in7).length), hint: toSign ? `nächste 7 Tage · ${toSign} warten auf Abnahme` : `nächste 7 Tage · ${assemblies.filter((a) => a.status === "LAEUFT").length} laufen`, icon: Wrench, href: "/montage", tone: toSign ? "text-warn" : "text-brand" },
-    { label: "Überfällige Aufgaben", value: String(overdueTasks.length), hint: overdueTasks.length ? "Termin überschritten" : "alles im Plan", icon: AlertTriangle, href: "/aufgaben", tone: overdueTasks.length ? "text-bad" : "text-ok" },
+    { label: "Termin überschritten", value: String(late.length), hint: late.length ? `${late.filter((l) => l.key.startsWith("task:")).length} Aufgaben, ${late.filter((l) => !l.key.startsWith("task:")).length} Projekt-Termine` : "alles im Plan", icon: AlertTriangle, href: "#ueberfaellig", tone: late.length ? "text-bad" : "text-ok" },
     { label: "Offene Bestellungen", value: String(ordered), hint: `${waiting} Anfragen warten auf Antwort/Entscheidung`, icon: ShoppingCart, href: "/lieferanten", tone: "text-ink" },
     { label: "Unter Mindestbestand", value: String(low.length), hint: low.length ? "nachbestellen" : "Lager ausreichend", icon: PackageX, href: "/lager", tone: low.length ? "text-warn" : "text-ok" },
   ];
@@ -153,24 +154,22 @@ export async function BetriebOverview() {
           )}
         </section>
 
-        <section className="card min-w-0 p-5">
+        <section id="ueberfaellig" className="card min-w-0 scroll-mt-24 p-5">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle className="size-5 text-bad" />
-            <h3 className="font-bold">Überfällige Aufgaben</h3>
-            <Link href="/aufgaben" className="ml-auto text-sm font-medium text-brand">Alle</Link>
+            <h3 className="font-bold">Termin überschritten</h3>
+            <Link href="/aufgaben" className="ml-auto text-sm font-medium text-brand">Aufgaben</Link>
           </div>
-          {overdueTasks.length === 0 ? (
+          {late.length === 0 ? (
             <p className="text-sm text-steel">Nichts überfällig.</p>
           ) : (
             <ul className="divide-y divide-line text-sm">
-              {overdueTasks.map((t) => (
-                <li key={t.id} className="py-2">
-                  <span className="block truncate font-medium">{t.title}</span>
-                  <span className="block truncate text-xs text-bad">
-                    fällig {formatDate(t.dueAt)}{t.assignee && ` · ${t.assignee.name}`}{t.project && ` · ${t.project.name}`}
-                  </span>
+              {late.slice(0, 8).map((l) => (
+                <li key={l.key} className="py-2">
+                  <Link href={l.url} className="block text-bad hover:underline">{l.text}</Link>
                 </li>
               ))}
+              {late.length > 8 && <li className="pt-2 text-xs text-steel">… und {late.length - 8} weitere. Frag Jarvis: „Was ist überfällig?“</li>}
             </ul>
           )}
         </section>

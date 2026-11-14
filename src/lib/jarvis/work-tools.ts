@@ -189,7 +189,14 @@ export async function runWorkTool(name: string, i: Record<string, unknown>, ctx:
       }
       if (q.aktion === "status") {
         if (!q.id || !q.status) return "Bitte Projekt-ID und Status angeben.";
+        const before = await db.project.findUnique({ where: { id: q.id }, select: { status: true } });
         const p = await db.project.update({ where: { id: q.id }, data: { status: q.status, ...(q.status === "FERTIG" ? { endDate: new Date() } : {}) } });
+        // Automatik: Projekt abgeschlossen → Nachkalkulation
+        if (q.status === "FERTIG" && before?.status !== "FERTIG") {
+          const me = await db.user.findUnique({ where: { id: ctx.userId }, select: { name: true } });
+          await (await import("@/lib/automation")).onProjectClosed(p.id, `${me?.name ?? "Jarvis"} (über Jarvis)`);
+          return `Status von ${p.name}: ${STATUS_LABEL[p.status]}. Nachkalkulation erstellt: [Nachkalkulation](/projekte/${p.id}/nachkalkulation)`;
+        }
         return `Status von ${p.name}: ${STATUS_LABEL[p.status]}.`;
       }
       if (q.aktion === "details") {
