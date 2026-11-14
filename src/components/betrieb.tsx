@@ -42,12 +42,13 @@ export async function BetriebOverview({ money = true }: { money?: boolean }) {
   const in7 = new Date(now.getTime() + 7 * DAY);
   const assemblies = await db.assembly.findMany({ where: { status: { in: ["GEPLANT", "LAEUFT"] }, startAt: { lte: in14 } }, orderBy: { startAt: "asc" }, take: 20, include: { project: { select: { name: true } }, leader: { select: { name: true } } } });
   const toSign = await db.assembly.count({ where: { status: "ERLEDIGT", signedAt: null } });
+  const openOrders = await db.supplierOrder.findMany({ where: { status: { in: ["BESTELLT", "TEILGELIEFERT"] } }, select: { expectedAt: true } });
+  const lateDeliveries = openOrders.filter((o) => o.expectedAt && o.expectedAt < now).length;
 
   const withPhase = projects.map((p) => ({ ...p, pct: p.phases.length ? progressOf(p.phases) : null, cur: p.phases.length ? currentPhase(p.phases) : null }));
   const perPhase = PHASES.map((ph) => ({ ...ph, n: withPhase.filter((p) => p.cur?.key === ph.key).length }));
   const maxN = Math.max(1, ...perPhase.map((x) => x.n));
-  const ordered = requests.filter((r) => r.status === "BESTELLT").length;
-  const waiting = requests.length - ordered;
+  const waiting = requests.filter((r) => r.status !== "BESTELLT").length;
   const deadlines = [
     ...milestones.map((m) => ({ id: m.id, date: m.dueDate!, title: m.title, sub: m.project.name, href: `/projekte/${m.project.id}`, kind: "Meilenstein" })),
     ...phaseEnds.map((ph) => ({ id: ph.id, date: ph.endDate!, title: PHASES.find((x) => x.key === ph.key)?.title ?? ph.key, sub: ph.project.name, href: `/projekte/${ph.project.id}`, kind: "Phase endet" })),
@@ -60,7 +61,7 @@ export async function BetriebOverview({ money = true }: { money?: boolean }) {
     { label: "Fertigungsaufträge", value: String(inProd), hint: materialMissing ? `${materialMissing} warten auf Material` : `${prodCounts.find((x) => x.status === "IN_FERTIGUNG")?._count ?? 0} in Fertigung`, icon: Factory, href: "/fertigung", tone: materialMissing ? "text-warn" : "text-brand" },
     { label: "Montagen", value: String(assemblies.filter((a) => a.startAt <= in7).length), hint: toSign ? `nächste 7 Tage · ${toSign} warten auf Abnahme` : `nächste 7 Tage · ${assemblies.filter((a) => a.status === "LAEUFT").length} laufen`, icon: Wrench, href: "/montage", tone: toSign ? "text-warn" : "text-brand" },
     { label: "Termin überschritten", value: String(late.length), hint: late.length ? `${late.filter((l) => l.key.startsWith("task:")).length} Aufgaben, ${late.filter((l) => !l.key.startsWith("task:")).length} Projekt-Termine` : "alles im Plan", icon: AlertTriangle, href: "#ueberfaellig", tone: late.length ? "text-bad" : "text-ok" },
-    { label: "Offene Bestellungen", value: String(ordered), hint: `${waiting} Anfragen warten auf Antwort/Entscheidung`, icon: ShoppingCart, href: "/lieferanten", tone: "text-ink" },
+    { label: "Offene Bestellungen", value: String(openOrders.length), hint: lateDeliveries ? `${lateDeliveries} Lieferungen überfällig` : `${waiting} Anfragen warten auf Antwort`, icon: ShoppingCart, href: "/bestellungen", tone: lateDeliveries ? "text-bad" : "text-ink" },
     { label: "Unter Mindestbestand", value: String(low.length), hint: low.length ? "nachbestellen" : "Lager ausreichend", icon: PackageX, href: "/lager", tone: low.length ? "text-warn" : "text-ok" },
   ];
 

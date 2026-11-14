@@ -237,6 +237,7 @@ model Project {
   files    StoredFile[]
   expenses Expense[]
   requests SupplierRequest[]
+  supplierOrders SupplierOrder[]
   stockMoves StockMove[]
   costs    ProjectCost[]
   phases     ProjectPhase[]
@@ -538,6 +539,7 @@ model Supplier {
   updatedAt   DateTime     @updatedAt
 
   requests SupplierRequest[]
+  orders   SupplierOrder[]
   items    CatalogItem[]
   imports  CatalogImport[]
   stock    StockItem[]
@@ -576,9 +578,61 @@ model SupplierRequest {
   createdBy   String?
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
+  orders      SupplierOrder[]
 
   @@index([status, createdAt])
   @@index([supplierId, createdAt])
+}
+
+/// Bestellung beim Lieferanten (BE-<Jahr>-0001) mit Wareneingang
+model SupplierOrder {
+  id          String            @id @default(cuid())
+  number      String            @unique
+  supplierId  String
+  supplier    Supplier          @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// aus dieser Preisanfrage entstanden
+  requestId   String?
+  request     SupplierRequest?  @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  /// BESTELLT | TEILGELIEFERT | GELIEFERT | STORNIERT
+  status      String            @default("BESTELLT")
+  /// Positionen [{ text, qty, unit, price (netto/Einheit), stockItemId, received }]
+  lines       Json              @default("[]")
+  /// Summe netto (Euro)
+  totalNet    Float             @default(0)
+  orderedAt   DateTime          @default(now())
+  /// Liefertermin laut Lieferant
+  expectedAt  DateTime?
+  deliveredAt DateTime?
+  /// Bestellnummer/Auftragsbestätigung des Lieferanten
+  supplierRef String?
+  note        String?
+  createdBy   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  receipts    GoodsReceipt[]
+
+  @@index([status, expectedAt])
+  @@index([projectId])
+}
+
+/// Wareneingang zu einer Bestellung (Teil- oder Komplettlieferung)
+model GoodsReceipt {
+  id        String        @id @default(cuid())
+  orderId   String
+  order     SupplierOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// gelieferte Mengen [{ index, qty, stockItemId }]
+  lines     Json          @default("[]")
+  /// Lieferschein-Nummer
+  slipNo    String?
+  note      String?
+  /// Foto vom Lieferschein (StoredFile)
+  fileId    String?
+  userName  String?
+  createdAt DateTime      @default(now())
+
+  @@index([orderId])
 }
 
 /// Katalog-Artikel eines Lieferanten (aus CSV/DATANORM/PDF-Preisliste importiert)

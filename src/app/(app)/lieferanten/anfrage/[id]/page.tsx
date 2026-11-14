@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, ShoppingCart, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -8,6 +8,8 @@ import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatDateTime } from "@/lib/berlin";
 import { REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE } from "@/lib/suppliers";
 import { deleteRequest } from "@/app/actions/lieferanten";
+import { supplierOrderFromRequest } from "@/app/actions/bestellungen";
+import { BE_LABEL, BE_TONE, type BeStatus } from "@/lib/bestellungen-shared";
 import { ActionButton } from "@/components/confirm-button";
 import { RequestStatusForm, RequestTextForm, SendRequestButton } from "../../forms";
 
@@ -17,7 +19,7 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   await requireUser();
   const id = z.cuid().safeParse((await params).id);
   if (!id.success) notFound();
-  const r = await db.supplierRequest.findUnique({ where: { id: id.data }, include: { supplier: true, project: { select: { id: true, name: true } } } });
+  const r = await db.supplierRequest.findUnique({ where: { id: id.data }, include: { supplier: true, project: { select: { id: true, name: true } }, orders: { orderBy: { orderedAt: "desc" }, select: { id: true, number: true, status: true } } } });
   if (!r) notFound();
   const draft = r.status === "ENTWURF";
 
@@ -52,6 +54,21 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
           <section className="card space-y-3 p-4">
             <h2 className="font-semibold">Angebot erfassen</h2>
             <RequestStatusForm id={r.id} status={r.status} offerAmount={r.offerAmount} offerNote={r.offerNote} />
+          </section>
+          <section className="card space-y-2 p-4">
+            <h2 className="font-semibold">Bestellung</h2>
+            {r.orders.map((o) => (
+              <Link key={o.id} href={`/bestellungen/${o.id}`} className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-sm hover:border-brand">
+                <span className="font-medium">{o.number}</span>
+                <span className={clsx("chip", BE_TONE[o.status as BeStatus])}>{BE_LABEL[o.status as BeStatus] ?? o.status}</span>
+              </Link>
+            ))}
+            {r.orders.length === 0 && (
+              <>
+                <p className="text-sm text-steel">Angebot passt? Dann daraus eine Bestellung machen – die Positionen werden übernommen, beim Wareneingang wird ins Lager gebucht.</p>
+                <ActionButton action={supplierOrderFromRequest.bind(null, r.id)} confirm="Bestellung aus dieser Anfrage anlegen?" className="btn-primary"><ShoppingCart className="size-4" /> Bestellung anlegen</ActionButton>
+              </>
+            )}
           </section>
           <section className="card p-4">
             <p className="text-xs text-steel">Gesendet {formatDateTime(r.sentAt)} an {r.sentTo}{r.createdBy ? ` · angelegt von ${r.createdBy}` : ""}</p>

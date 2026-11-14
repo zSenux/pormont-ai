@@ -42,7 +42,7 @@ export default async function NachkalkulationPage({ params }: { params: Promise<
   const rows = [
     { icon: Clock, label: "Lohn", detail: `${formatHours(c.minutes)} × ${formatEuro(c.rate)}`, amount: c.labor },
     { icon: Package, label: "Material aus Lager", detail: n(c.materialLines.length, "Entnahme", "Entnahmen"), amount: c.material },
-    { icon: Truck, label: "Bestellt bei Lieferanten", detail: n(c.orders.length, "Angebot", "Angebote"), amount: c.supplier },
+    { icon: Truck, label: "Bestellt bei Lieferanten", detail: n(c.orders.length, "Bestellung", "Bestellungen"), amount: c.supplier },
     { icon: Receipt, label: "Eingangsrechnungen", detail: n(c.purchases.length, "Ausgabe", "Ausgaben"), amount: c.invoices },
     { icon: Receipt, label: "Spesen", detail: n(c.expenseCount, "Eintrag", "Einträge"), amount: c.spesen },
     { icon: Wrench, label: "Sonstige Kosten", detail: n(c.costs.length, "Posten", "Posten"), amount: c.extra },
@@ -123,7 +123,7 @@ export default async function NachkalkulationPage({ params }: { params: Promise<
               <ul className="mt-2 divide-y divide-line">
                 {c.orders.map((o) => (
                   <li key={o.id} className="flex items-center gap-3 py-2 text-sm">
-                    <Link href={`/lieferanten/anfrage/${o.id}`} className="min-w-0 flex-1 hover:text-brand"><span className="font-medium">{o.supplier}</span><span className="block truncate text-xs text-steel">{o.subject}</span></Link>
+                    <Link href={o.href} className="min-w-0 flex-1 hover:text-brand"><span className="font-medium">{o.supplier}</span><span className="block truncate text-xs text-steel">{o.subject}</span></Link>
                     <span className="shrink-0 font-medium">{formatEuro(o.amount)}</span>
                   </li>
                 ))}

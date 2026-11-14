@@ -67,6 +67,7 @@ export const PATH_AREA: Record<string, Area> = {
   "/montage": "montage",
   "/lager": "lager",
   "/lieferanten": "einkauf",
+  "/bestellungen": "einkauf",
   "/akquise": "akquise",
   "/pc": "pc",
 };
@@ -83,7 +84,7 @@ export const TOOL_AREA: Record<string, Area> = {
   beleg_senden: "buchhaltung", zahlung_erfassen: "buchhaltung", mahnen: "buchhaltung", beleg_stornieren: "buchhaltung", kundenakte: "buchhaltung", altdaten: "buchhaltung", belegfotos: "buchhaltung", beleg_hochladen: "buchhaltung",
   mails: "mail", mail_lesen: "mail", mail_entwurf: "mail", mail_senden: "mail",
   lieferanten: "einkauf", katalog_suchen: "einkauf", preisanfrage: "einkauf",
-  lager: "lager",
+  lager: "lager", bestellungen: "einkauf",
   nachkalkulation: "projekte", projekte: "projekte", projekt_notiz: "projekte", projekt_planung: "projekte", zeichnungen: "projekte",
   auftraege: "auftraege", fertigung: "fertigung", montage: "montage", akquise: "akquise", am_pc: "pc",
 };
