@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, BarChart3, CalendarClock, FileText, ClipboardList, Flag, HardHat, PackageX, ShoppingCart, Users } from "lucide-react";
+import { AlertTriangle, BarChart3, Factory, CalendarClock, FileText, ClipboardList, Flag, HardHat, PackageX, ShoppingCart, Users } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/berlin";
@@ -34,6 +34,9 @@ export async function BetriebOverview() {
     db.timeEntry.findMany({ where: { startAt: { not: null }, endAt: null }, select: { userId: true, project: { select: { name: true } } } }),
     db.user.count(),
   ]);
+  const prodCounts = await db.productionJob.groupBy({ by: ["status"], where: { status: { notIn: ["FERTIG", "MONTAGEBEREIT"] } }, _count: true });
+  const inProd = prodCounts.reduce((a, x) => a + x._count, 0);
+  const materialMissing = prodCounts.find((x) => x.status === "MATERIAL_FEHLT")?._count ?? 0;
   const followUps = await dueFollowUps(in14, 10);
 
   const withPhase = projects.map((p) => ({ ...p, pct: p.phases.length ? progressOf(p.phases) : null, cur: p.phases.length ? currentPhase(p.phases) : null }));
@@ -49,6 +52,7 @@ export async function BetriebOverview() {
 
   const tiles = [
     { label: "Laufende Projekte", value: String(projects.length), hint: `${withPhase.filter((p) => p.cur?.key === "ANFRAGE").length} in Kundenanfrage`, icon: HardHat, href: "/projekte", tone: "text-brand" },
+    { label: "Fertigungsaufträge", value: String(inProd), hint: materialMissing ? `${materialMissing} warten auf Material` : `${prodCounts.find((x) => x.status === "IN_FERTIGUNG")?._count ?? 0} in Fertigung`, icon: Factory, href: "/fertigung", tone: materialMissing ? "text-warn" : "text-brand" },
     { label: "Überfällige Aufgaben", value: String(overdueTasks.length), hint: overdueTasks.length ? "Termin überschritten" : "alles im Plan", icon: AlertTriangle, href: "/aufgaben", tone: overdueTasks.length ? "text-bad" : "text-ok" },
     { label: "Offene Bestellungen", value: String(ordered), hint: `${waiting} Anfragen warten auf Antwort/Entscheidung`, icon: ShoppingCart, href: "/lieferanten", tone: "text-ink" },
     { label: "Unter Mindestbestand", value: String(low.length), hint: low.length ? "nachbestellen" : "Lager ausreichend", icon: PackageX, href: "/lager", tone: low.length ? "text-warn" : "text-ok" },
@@ -57,9 +61,9 @@ export async function BetriebOverview() {
   return (
     <section className="space-y-4" aria-labelledby="betrieb">
       <h2 id="betrieb" className="text-lg font-bold">Betrieb</h2>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
         {tiles.map((t) => (
-          <Link key={t.label} href={t.href} className="card p-4 transition hover:border-brand">
+          <Link key={t.label} href={t.href} className="card p-4 transition first:col-span-2 hover:border-brand md:first:col-span-1">
             <div className="flex items-center gap-2 text-xs font-medium text-steel md:text-sm"><t.icon className="size-4 shrink-0" /> {t.label}</div>
             <p className={clsx("mt-1 text-3xl font-extrabold tracking-tight", t.tone)}>{t.value}</p>
             <p className="mt-0.5 text-xs text-steel">{t.hint}</p>

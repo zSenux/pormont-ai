@@ -11,6 +11,7 @@ import { calcProject } from "@/lib/nachkalkulation";
 import { ORDER_STATUS_LABEL, ORDER_STATUS_TONE, type OrderStatus } from "@/lib/orders-shared";
 import { setOrderStatus, updateOrder } from "@/app/actions/auftraege";
 import { ActionButton } from "@/components/confirm-button";
+import { ProjectProduction } from "@/components/project-production";
 import { ProjectPlan } from "../../projekte/[id]/plan";
 
 export const dynamic = "force-dynamic";
@@ -31,14 +32,14 @@ export default async function AuftragDetail({ params }: { params: Promise<{ id: 
     include: {
       customer: true,
       quote: { select: { id: true, number: true, status: true, date: true } },
-      project: { include: { files: { where: { kind: { not: "foto" } }, orderBy: { createdAt: "desc" }, take: 10, select: { id: true, name: true } }, docs: { where: { kind: { in: ["RECHNUNG", "GUTSCHRIFT"] } }, orderBy: { date: "desc" }, select: { id: true, kind: true, number: true, status: true, grossCents: true, paidCents: true, date: true } } } },
+      project: { include: { files: { where: { kind: { not: "foto" } }, orderBy: { createdAt: "desc" }, take: 10, select: { id: true, name: true } }, docs: { where: { kind: { in: ["RECHNUNG", "GUTSCHRIFT"] } }, orderBy: { date: "desc" }, select: { id: true, kind: true, number: true, status: true, grossCents: true, paidCents: true, prepaidCents: true, date: true } } } },
     },
   });
   if (!o) notFound();
   const calc = await calcProject(o.projectId);
   const st = o.status as OrderStatus;
   const late = o.dueDate && o.dueDate < new Date() && st !== "ABGESCHLOSSEN" && st !== "STORNIERT";
-  const invoiced = o.project.docs.filter((d) => d.kind === "RECHNUNG" && d.status !== "ENTWURF" && d.status !== "STORNIERT").reduce((s, d) => s + d.grossCents, 0);
+  const invoiced = o.project.docs.filter((d) => d.kind === "RECHNUNG" && d.status !== "ENTWURF" && d.status !== "STORNIERT").reduce((s, d) => s + d.grossCents - d.prepaidCents, 0);
   const ask = `/jarvis?q=${encodeURIComponent(`Gib mir einen Stand zum Auftrag ${o.number} „${o.title}“.`)}`;
 
   return (
@@ -119,6 +120,8 @@ export default async function AuftragDetail({ params }: { params: Promise<{ id: 
           </section>
         </div>
       </div>
+
+      <ProjectProduction projectId={o.projectId} />
 
       <ProjectPlan projectId={o.projectId} leaderId={o.project.leaderId} />
     </main>
