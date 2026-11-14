@@ -21,8 +21,17 @@ export type Party = {
 
 export type DocKind = "ANGEBOT" | "RECHNUNG" | "GUTSCHRIFT";
 
+export type InvoiceType = "NORMAL" | "ABSCHLAG" | "SCHLUSS";
+
+/** In einer Schlussrechnung abgezogene Abschlagsrechnung (Beträge beim Festschreiben eingefroren) */
+export type Deduction = { id: string; number: string; date: string; netCents: number; taxCents: number; grossCents: number };
+
 export type DocData = {
   kind: DocKind;
+  /** Rechnungen: normal, Abschlag oder Schluss */
+  invoiceType: InvoiceType;
+  /** Schlussrechnung: abgezogene Abschläge */
+  deductions: Deduction[];
   /** null = Entwurf (Vorschau mit Wasserzeichen) */
   number: string | null;
   /** JJJJ-MM-TT */
@@ -45,3 +54,13 @@ export type DocData = {
 };
 
 export const KIND_LABEL: Record<DocKind, string> = { ANGEBOT: "Angebot", RECHNUNG: "Rechnung", GUTSCHRIFT: "Gutschrift" };
+
+export const INVOICE_TYPE_LABEL: Record<InvoiceType, string> = { NORMAL: "Rechnung", ABSCHLAG: "Abschlagsrechnung", SCHLUSS: "Schlussrechnung" };
+
+/** Bezeichnung des Belegs, z. B. „Abschlagsrechnung“ */
+export function docLabel(d: { kind: DocKind; invoiceType?: string | null }) {
+  return d.kind === "RECHNUNG" ? (INVOICE_TYPE_LABEL[(d.invoiceType ?? "NORMAL") as InvoiceType] ?? "Rechnung") : KIND_LABEL[d.kind];
+}
+
+/** Summe der Abschläge */
+export const sumDeductions = (l: Deduction[]) => l.reduce((s, x) => ({ netCents: s.netCents + x.netCents, taxCents: s.taxCents + x.taxCents, grossCents: s.grossCents + x.grossCents }), { netCents: 0, taxCents: 0, grossCents: 0 });

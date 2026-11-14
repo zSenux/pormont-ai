@@ -27,7 +27,12 @@ export type EditorDoc = {
   paymentDays: number | null;
   reverseCharge: boolean;
   lines: Line[];
+  invoiceType: "NORMAL" | "ABSCHLAG" | "SCHLUSS";
+  deductionIds: string[];
 };
+
+/** Abschlagsrechnung, die in einer Schlussrechnung abgezogen werden kann */
+export type DownPayment = { id: string; number: string; date: string; title: string | null; netCents: number; taxCents: number; grossCents: number; paid: boolean };
 
 const de = (n: number, max = 4) => (Number.isFinite(n) ? n.toLocaleString("de-DE", { maximumFractionDigits: max, useGrouping: false }) : "");
 const parse = (s: string) => {
@@ -42,7 +47,7 @@ let seq = 1;
 const toRow = (l: Line): Row => ({ key: seq++, articleId: l.articleId ?? null, name: l.name, description: l.description ?? "", qty: de(l.qty, 3), unit: l.unit, price: de(l.price), discount: l.discount ? de(l.discount, 2) : "", taxRate: l.taxRate, open: Boolean(l.description) });
 const emptyRow = (): Row => ({ key: seq++, articleId: null, name: "", description: "", qty: "1", unit: "Stk", price: "", discount: "", taxRate: 19, open: false });
 
-export function DocEditor({ doc, customers, projects, articles, defaultPaymentDays }: { doc: EditorDoc; customers: Customer[]; projects: { id: string; name: string }[]; articles: Article[]; defaultPaymentDays: number }) {
+export function DocEditor({ doc, customers, projects, articles, defaultPaymentDays, downPayments = [] }: { doc: EditorDoc; customers: Customer[]; projects: { id: string; name: string }[]; articles: Article[]; defaultPaymentDays: number; downPayments?: DownPayment[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok?: string; error?: string } | null>(null);
@@ -58,10 +63,14 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
     dueDate: doc.dueDate ?? "",
     paymentDays: doc.paymentDays !== null ? String(doc.paymentDays) : "",
     reverseCharge: doc.reverseCharge,
+    invoiceType: doc.invoiceType,
   });
+  const [ded, setDed] = useState<string[]>(doc.deductionIds);
   const [rows, setRows] = useState<Row[]>(() => (doc.lines.length ? doc.lines.map(toRow) : [emptyRow()]));
   const [pick, setPick] = useState("");
   const set = (k: keyof typeof f, v: string | boolean) => setF((x) => ({ ...x, [k]: v }));
+  const chosen = f.invoiceType === "SCHLUSS" ? downPayments.filter((x) => ded.includes(x.id)) : [];
+  const prepaid = chosen.reduce((s, x) => s + x.grossCents, 0);
   const setRow = (key: number, patch: Partial<Row>) => setRows((r) => r.map((x) => (x.key === key ? { ...x, ...patch } : x)));
   const invoice = doc.kind === "RECHNUNG";
   const customer = customers.find((c) => c.id === f.customerId);
@@ -91,12 +100,13 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
       paymentDays: invoice ? (Number.isFinite(days) ? days : null) : undefined,
       reverseCharge: f.reverseCharge,
       lines,
+      ...(invoice ? { invoiceType: f.invoiceType, deductionIds: f.invoiceType === "SCHLUSS" ? ded : [] } : {}),
     };
   }
 
   function run(kind: "save" | "preview" | "final") {
     if (bad) return setMsg({ error: "Bitte Mengen und Preise als Zahl eintragen (z. B. 12,5)." });
-    if (kind === "final" && !window.confirm(`${doc.kind === "ANGEBOT" ? "Angebot" : "Rechnung"} jetzt festschreiben?\n\nDanach bekommt der Beleg seine Nummer und kann nicht mehr geändert werden (GoBD). Korrektur nur noch per Storno.`)) return;
+    if (kind === "final" && !window.confirm(`${doc.kind === "ANGEBOT" ? "Angebot" : f.invoiceType === "ABSCHLAG" ? "Abschlagsrechnung" : f.invoiceType === "SCHLUSS" ? "Schlussrechnung" : "Rechnung"} jetzt festschreiben?\n\nDanach bekommt der Beleg seine Nummer und kann nicht mehr geändert werden (GoBD). Korrektur nur noch per Storno.`)) return;
     // Vorschau-Fenster sofort öffnen (sonst blockt Safari das Pop-up), Adresse nach dem Speichern setzen
     const win = kind === "preview" ? window.open("about:blank", "_blank") : null;
     start(async () => {
@@ -164,6 +174,40 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
             <span className="label">Zahlungsziel (Tage)</span>
             <input value={f.paymentDays} onChange={(e) => set("paymentDays", e.target.value)} inputMode="numeric" placeholder={`Standard ${defaultPaymentDays}`} className="input" />
           </label>
+        )}
+        {invoice && (
+          <div className="block sm:col-span-2">
+            <span className="label">Rechnungsart</span>
+            <div className="flex flex-wrap gap-2">
+              {([["NORMAL", "Rechnung"], ["ABSCHLAG", "Abschlagsrechnung"], ["SCHLUSS", "Schlussrechnung"]] as const).map(([k, l]) => (
+                <label key={k} className={`chip cursor-pointer px-3 py-1.5 ${f.invoiceType === k ? "border-brand bg-brand text-white" : "bg-mist text-steel"}`}>
+                  <input type="radio" name="invoiceType" value={k} checked={f.invoiceType === k} onChange={() => set("invoiceType", k)} className="sr-only" />
+                  {l}
+                </label>
+              ))}
+            </div>
+            {f.invoiceType === "ABSCHLAG" && <p className="mt-1 text-xs text-steel">Teilbetrag vor Fertigstellung. Wird später in der Schlussrechnung abgezogen.</p>}
+            {f.invoiceType === "SCHLUSS" && (
+              <div className="mt-2 rounded-xl border border-line p-3">
+                <p className="text-sm font-semibold">Abzuziehende Abschläge</p>
+                {downPayments.length ? (
+                  <ul className="mt-1 space-y-1 text-sm">
+                    {downPayments.map((x) => (
+                      <li key={x.id}>
+                        <label className="flex items-start gap-2">
+                          <input type="checkbox" checked={ded.includes(x.id)} onChange={(e) => setDed((l) => (e.target.checked ? [...l, x.id] : l.filter((y) => y !== x.id)))} className="mt-1" />
+                          <span className="flex-1">{x.number} vom {x.date.split("-").reverse().join(".")}{x.title ? ` · ${x.title}` : ""} <span className="text-steel">· {fmtEuroCents(x.grossCents)} brutto · {x.paid ? "bezahlt" : "noch offen"}</span></span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-sm text-steel">Keine offenen Abschlagsrechnungen für diesen Kunden{f.customerId !== (doc.customerId ?? "") ? " – nach dem Kundenwechsel erst speichern" : ""}.</p>
+                )}
+                <p className="mt-2 text-xs text-steel">In die Positionen gehört die gesamte Leistung. Die Abschläge werden mit ihrer Umsatzsteuer abgezogen; nicht bezahlte Abschläge bleiben zusätzlich offen.</p>
+              </div>
+            )}
+          </div>
         )}
         {invoice && (
           <div className="grid grid-cols-2 gap-2 sm:col-span-2">
@@ -243,6 +287,8 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
           {!f.reverseCharge && totals.taxes.map((t) => <div key={t.rate} className="flex justify-between"><dt className="text-steel">zzgl. {t.rate} % USt.</dt><dd>{fmtEuroCents(t.taxCents)}</dd></div>)}
           {f.reverseCharge && <div className="flex justify-between"><dt className="text-steel">USt. (§ 13b, schuldet der Kunde)</dt><dd>0,00 €</dd></div>}
           <div className="flex justify-between border-t border-line pt-1 text-base font-bold"><dt>Gesamt</dt><dd>{fmtEuroCents(totals.grossCents)}</dd></div>
+          {chosen.map((x) => <div key={x.id} className="flex justify-between"><dt className="text-steel">abzgl. Abschlag {x.number}</dt><dd>− {fmtEuroCents(x.grossCents)}</dd></div>)}
+          {chosen.length > 0 && <div className={`flex justify-between border-t border-line pt-1 text-base font-bold ${prepaid > totals.grossCents ? "text-bad" : ""}`}><dt>Noch zu zahlen</dt><dd>{fmtEuroCents(totals.grossCents - prepaid)}</dd></div>}
         </dl>
       </section>
 

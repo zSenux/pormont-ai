@@ -5,9 +5,9 @@ import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate } from "@/lib/berlin";
-import { isOverdue, statusText } from "@/lib/buchhaltung/docs";
+import { isOverdue, statusText, openCentsOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
-import { KIND_LABEL } from "@/lib/buchhaltung/types";
+import { docLabel } from "@/lib/buchhaltung/types";
 import { TONE } from "@/lib/buchhaltung/ui";
 import { archiveCustomerAction, newDocAction } from "@/app/actions/buchhaltung";
 import { ActionButton } from "@/components/confirm-button";
@@ -22,7 +22,7 @@ export default async function KundePage({ params }: { params: Promise<{ id: stri
   if (!/^[a-z0-9]{10,40}$/.test(id)) notFound();
   const c = await db.customer.findUnique({ where: { id }, include: { docs: { orderBy: { date: "desc" }, take: 100 } } });
   if (!c) notFound();
-  const open = c.docs.filter((d) => d.kind === "RECHNUNG" && d.status === "OFFEN").reduce((s, d) => s + d.grossCents - d.paidCents, 0);
+  const open = c.docs.filter((d) => d.kind === "RECHNUNG" && d.status === "OFFEN").reduce((s, d) => s + openCentsOf(d), 0);
   const total = c.docs.filter((d) => d.kind === "RECHNUNG" && d.status !== "ENTWURF" && d.status !== "STORNIERT").reduce((s, d) => s + d.netCents, 0);
   return (
     <main className="space-y-4">
@@ -52,7 +52,7 @@ export default async function KundePage({ params }: { params: Promise<{ id: stri
           {c.docs.length === 0 ? <p className="mt-2 text-sm text-steel">Noch keine Belege.</p> : (
             <ul className="mt-2 divide-y divide-line text-sm">
               {c.docs.map((d) => (
-                <li key={d.id}><Link href={`/buchhaltung/beleg/${d.id}`} className="flex items-center gap-2 py-2 hover:text-brand"><span className="min-w-0 flex-1 truncate"><strong>{KIND_LABEL[d.kind]} {d.number ?? "(Entwurf)"}</strong>{d.title ? ` · ${d.title}` : ""}</span><span className="text-xs text-steel">{formatDate(d.date)}</span><span className="w-24 text-right font-semibold">{fmtEuroCents(d.grossCents)}</span><span className={clsx("chip", isOverdue(d) ? TONE.UEBERFAELLIG : TONE[d.status])}>{statusText(d)}</span></Link></li>
+                <li key={d.id}><Link href={`/buchhaltung/beleg/${d.id}`} className="flex items-center gap-2 py-2 hover:text-brand"><span className="min-w-0 flex-1 truncate"><strong>{docLabel(d)} {d.number ?? "(Entwurf)"}</strong>{d.title ? ` · ${d.title}` : ""}</span><span className="text-xs text-steel">{formatDate(d.date)}</span><span className="w-24 text-right font-semibold">{fmtEuroCents(d.grossCents)}</span><span className={clsx("chip", isOverdue(d) ? TONE.UEBERFAELLIG : TONE[d.status])}>{statusText(d)}</span></Link></li>
               ))}
             </ul>
           )}

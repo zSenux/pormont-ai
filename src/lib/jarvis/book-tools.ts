@@ -3,10 +3,10 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/berlin";
-import { addPayment, BookError, copyDoc, createDraft, customerName, isOverdue, openInvoices, revenue, statusText, updateDraft, ymdOf, type DraftInput } from "@/lib/buchhaltung/docs";
+import { addPayment, BookError, copyDoc, createDraft, downPaymentFromQuote, openDownPayments, readDeductions, customerName, isOverdue, openInvoices, revenue, statusText, updateDraft, ymdOf, type DraftInput, openCentsOf } from "@/lib/buchhaltung/docs";
 import { createCustomer, customerInput, customerLine, searchArticles, searchCustomers } from "@/lib/buchhaltung/customers";
 import { fmtEuroCents, fmtNum, fmtPrice, lineNetCents, readLines, type Line } from "@/lib/buchhaltung/money";
-import { KIND_LABEL } from "@/lib/buchhaltung/types";
+import { docLabel } from "@/lib/buchhaltung/types";
 import { proposeAction } from "./actions";
 import type { ToolCtx } from "./tools";
 
@@ -47,6 +47,11 @@ const DOC_PROPS = {
   zahlungszielTage: num("Rechnung: Zahlungsziel in Tagen (sonst Kunde/Standard)"),
   paragraph13b: { type: "boolean" as const, description: "§ 13b UStG: Bauleistung an ein Bauunternehmen, ohne USt. (Kunde braucht USt-IdNr.)" },
   positionen: POS,
+};
+const INVOICE_PROPS = {
+  ...DOC_PROPS,
+  rechnungsart: { type: "string" as const, enum: ["normal", "abschlag", "schluss"], description: "normal (Standard), abschlag = Abschlagsrechnung, schluss = Schlussrechnung (zieht Abschläge ab)" },
+  abschlagIds: { type: "array" as const, items: { type: "string" as const }, description: "Schlussrechnung: IDs der abzuziehenden Abschlagsrechnungen (ohne Angabe: alle offenen Abschläge des Kunden/Projekts)" },
 };
 
 export const BOOK_TOOLS: Anthropic.Tool[] = [
@@ -105,15 +110,20 @@ export const BOOK_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "rechnung_erstellen",
-    description: "Rechnung als ENTWURF anlegen (sofort, änderbar). Festschreiben/Senden nur über beleg_festschreiben bzw. beleg_senden (Freigabe-Karte).",
-    input_schema: { type: "object", properties: DOC_PROPS, required: ["kundeId", "positionen"] },
+    description: "Rechnung als ENTWURF anlegen (sofort, änderbar) – auch Abschlags- oder Schlussrechnung. Schlussrechnung: alle Leistungen als Positionen, die Abschläge werden automatisch abgezogen. Festschreiben/Senden nur über beleg_festschreiben bzw. beleg_senden (Freigabe-Karte).",
+    input_schema: { type: "object", properties: INVOICE_PROPS, required: ["kundeId", "positionen"] },
   },
   {
     name: "beleg_aendern",
-    description: "Einen ENTWURF ändern (Kunde, Texte, Daten, Positionen). Festgeschriebene Belege lassen sich nicht ändern – dann Storno + neue Rechnung.",
-    input_schema: { type: "object", properties: { id: str("Beleg-ID"), ...DOC_PROPS }, required: ["id"] },
+    description: "Einen ENTWURF ändern (Kunde, Texte, Daten, Positionen, Rechnungsart, abzuziehende Abschläge). Festgeschriebene Belege lassen sich nicht ändern – dann Storno + neue Rechnung.",
+    input_schema: { type: "object", properties: { id: str("Beleg-ID"), ...INVOICE_PROPS }, required: ["id"] },
   },
-  { name: "angebot_in_rechnung", description: "Aus einem Angebot einen Rechnungs-ENTWURF machen (Positionen werden übernommen, Angebot gilt als angenommen).", input_schema: { type: "object", properties: { id: str("Angebots-ID") }, required: ["id"] } },
+  {
+    name: "angebot_in_rechnung",
+    description: "Aus einem festgeschriebenen Angebot einen Rechnungs-ENTWURF machen (Angebot gilt als angenommen): normal (alle Positionen), abschlag (Anteil in % oder fester Nettobetrag) oder schluss (alle Positionen, bisherige Abschläge zum Angebot werden abgezogen).",
+    input_schema: { type: "object", properties: { id: str("Angebots-ID"), art: { type: "string", enum: ["normal", "abschlag", "schluss"], description: "Standard normal" }, prozent: num("Abschlag: Anteil der Angebotssumme in %"), betragNetto: num("Abschlag: fester Nettobetrag in Euro (statt prozent)") }, required: ["id"] },
+  },
+  { name: "abschlaege", description: "Offene (noch nicht verrechnete) Abschlagsrechnungen eines Kunden – für die Schlussrechnung.", input_schema: { type: "object", properties: { kundeId: str("Kunden-ID"), angebotId: str("nur zu diesem Angebot (optional)"), projektId: str("nur zu diesem Projekt (optional)") }, required: ["kundeId"] } },
   { name: "beleg_festschreiben", description: "Entwurf festschreiben (Nummer, PDF/E-Rechnung, danach unveränderlich) – NUR als Freigabe-Karte.", input_schema: { type: "object", properties: { id: str("Beleg-ID") }, required: ["id"] } },
   {
     name: "beleg_senden",
@@ -147,6 +157,8 @@ const docIn = z.object({
   zahlungszielTage: z.number().int().min(0).max(120).optional(),
   paragraph13b: z.boolean().optional(),
   positionen: z.array(posIn).max(200).optional(),
+  rechnungsart: z.enum(["normal", "abschlag", "schluss"]).optional(),
+  abschlagIds: z.array(id).max(50).optional(),
 });
 
 function toDraft(i: z.infer<typeof docIn>): DraftInput {
@@ -162,13 +174,15 @@ function toDraft(i: z.infer<typeof docIn>): DraftInput {
     ...(i.gueltigBis !== undefined ? { dueDate: i.gueltigBis } : {}),
     ...(i.zahlungszielTage !== undefined ? { paymentDays: i.zahlungszielTage } : {}),
     ...(i.paragraph13b !== undefined ? { reverseCharge: i.paragraph13b } : {}),
+    ...(i.rechnungsart ? { invoiceType: ({ normal: "NORMAL", abschlag: "ABSCHLAG", schluss: "SCHLUSS" } as const)[i.rechnungsart] } : {}),
+    ...(i.abschlagIds ? { deductionIds: i.abschlagIds } : {}),
     ...(i.positionen ? { lines: i.positionen.map((p): Line => ({ articleId: null, name: p.name, description: p.beschreibung ?? null, qty: p.menge, unit: p.einheit || "Stk", price: p.nettoPreis, discount: p.rabatt ?? 0, taxRate: p.ustSatz })) } : {}),
   };
 }
 
-type DocRow = { id: string; kind: "ANGEBOT" | "RECHNUNG" | "GUTSCHRIFT"; number: string | null; status: string; date: Date; dueDate: Date | null; grossCents: number; paidCents: number; address: unknown; title: string | null; customer?: { name: string } | null; dunningLevel?: number };
+type DocRow = { id: string; kind: "ANGEBOT" | "RECHNUNG" | "GUTSCHRIFT"; invoiceType: string; number: string | null; status: string; date: Date; dueDate: Date | null; grossCents: number; prepaidCents: number; paidCents: number; address: unknown; title: string | null; customer?: { name: string } | null; dunningLevel?: number };
 const docLine = (d: DocRow) =>
-  `- ${KIND_LABEL[d.kind]} ${d.number ?? "(Entwurf)"} · ${customerName(d)}${d.title ? ` · ${d.title}` : ""} · ${formatDate(d.date)} · ${fmtEuroCents(d.grossCents)}${d.kind === "RECHNUNG" && d.paidCents && d.status === "OFFEN" ? ` (offen ${fmtEuroCents(d.grossCents - d.paidCents)})` : ""} · ${statusText(d as never)}${d.dueDate && d.kind === "RECHNUNG" ? ` · fällig ${formatDate(d.dueDate)}` : ""}${d.dunningLevel ? ` · Mahnstufe ${d.dunningLevel}` : ""} · id ${d.id} · [öffnen](/buchhaltung/beleg/${d.id})`;
+  `- ${docLabel(d)} ${d.number ?? "(Entwurf)"} · ${customerName(d)}${d.title ? ` · ${d.title}` : ""} · ${formatDate(d.date)} · ${fmtEuroCents(d.grossCents)}${d.prepaidCents ? ` (abzgl. Abschläge ${fmtEuroCents(d.prepaidCents)}, zu zahlen ${fmtEuroCents(d.grossCents - d.prepaidCents)})` : ""}${d.kind === "RECHNUNG" && d.paidCents && d.status === "OFFEN" ? ` (offen ${fmtEuroCents(openCentsOf(d))})` : ""} · ${statusText(d as never)}${d.dueDate && d.kind === "RECHNUNG" ? ` · fällig ${formatDate(d.dueDate)}` : ""}${d.dunningLevel ? ` · Mahnstufe ${d.dunningLevel}` : ""} · id ${d.id} · [öffnen](/buchhaltung/beleg/${d.id})`;
 
 /** Für den Tagesüberblick */
 export async function bookOverview() {
@@ -212,7 +226,7 @@ export async function runBookTool(name: string, i: Record<string, unknown>, ctx:
       case "kunde_details": {
         const c = await db.customer.findUnique({ where: { id: id.parse(i.id) }, include: { docs: { orderBy: { date: "desc" }, take: 10, include: { customer: { select: { name: true } } } } } });
         if (!c) return "Kunde nicht gefunden.";
-        const open = c.docs.filter((d) => d.kind === "RECHNUNG" && d.status === "OFFEN").reduce((s, d) => s + d.grossCents - d.paidCents, 0);
+        const open = c.docs.filter((d) => d.kind === "RECHNUNG" && d.status === "OFFEN").reduce((s, d) => s + openCentsOf(d), 0);
         return [
           `${customerLine(c)} · [Kundenakte](/buchhaltung/kunden/${c.id})`,
           c.contactName ? `Ansprechpartner: ${[c.salutation, c.contactName].filter(Boolean).join(" ")}` : null,
@@ -253,6 +267,9 @@ export async function runBookTool(name: string, i: Record<string, unknown>, ctx:
           d.reverseCharge ? "§ 13b UStG (ohne USt.)" : null,
           `Positionen:\n${items.join("\n") || "-"}`,
           `Summe ${fmtEuroCents(d.netCents)} netto · ${fmtEuroCents(d.taxCents)} USt. · ${fmtEuroCents(d.grossCents)} brutto`,
+          d.status !== "ENTWURF" && readDeductions(d.deductions).length ? `Abgezogene Abschläge: ${readDeductions(d.deductions).map((x) => `${x.number} ${fmtEuroCents(x.grossCents)}`).join(", ")} → zu zahlen ${fmtEuroCents(d.grossCents - d.prepaidCents)}` : null,
+          d.status === "ENTWURF" && d.invoiceType === "SCHLUSS" ? `Abschläge werden beim Festschreiben abgezogen (${Array.isArray(d.deductions) ? d.deductions.length : 0} ausgewählt) – Vorschau zeigt den Betrag.` : null,
+          d.finalId ? "In einer Schlussrechnung verrechnet." : null,
           d.kind === "ANGEBOT" && d.dueDate ? `Gültig bis ${formatDate(d.dueDate)}` : null,
           d.payments.length ? `Zahlungen: ${d.payments.map((p) => `${formatDate(p.day)} ${fmtEuroCents(p.amountCents)}`).join(", ")}` : null,
           d.dunnings.length ? `Mahnungen: ${d.dunnings.map((m) => `Stufe ${m.level} am ${formatDate(m.day)}${m.sentAt ? " (gesendet)" : " (nicht gesendet)"}`).join(", ")}` : null,
@@ -266,16 +283,16 @@ export async function runBookTool(name: string, i: Record<string, unknown>, ctx:
       case "umsatz": {
         const q = z.object({ von: ymd, bis: ymd }).parse(i);
         const r = await revenue(q.von, q.bis);
-        const docs = await db.salesDoc.findMany({ where: { kind: { in: ["RECHNUNG", "GUTSCHRIFT"] }, status: { not: "ENTWURF" }, date: { gte: new Date(`${q.von}T00:00:00Z`), lte: new Date(`${q.bis}T23:59:59Z`) } }, select: { kind: true, date: true, netCents: true, status: true, paidCents: true, grossCents: true, address: true, customer: { select: { name: true } } } });
+        const docs = await db.salesDoc.findMany({ where: { kind: { in: ["RECHNUNG", "GUTSCHRIFT"] }, status: { not: "ENTWURF" }, date: { gte: new Date(`${q.von}T00:00:00Z`), lte: new Date(`${q.bis}T23:59:59Z`) } }, select: { kind: true, date: true, netCents: true, prepaidNet: true, prepaidCents: true, status: true, paidCents: true, grossCents: true, address: true, customer: { select: { name: true } } } });
         const byMonth = new Map<string, number>();
         const byCustomer = new Map<string, number>();
         let open = 0;
         for (const d of docs) {
-          const v = d.kind === "GUTSCHRIFT" ? -d.netCents : d.netCents;
+          const v = (d.kind === "GUTSCHRIFT" ? -1 : 1) * (d.netCents - d.prepaidNet);
           const m = ymdOf(d.date)!.slice(0, 7);
           byMonth.set(m, (byMonth.get(m) ?? 0) + v);
           byCustomer.set(customerName(d), (byCustomer.get(customerName(d)) ?? 0) + v);
-          if (d.kind === "RECHNUNG" && d.status === "OFFEN") open += d.grossCents - d.paidCents;
+          if (d.kind === "RECHNUNG" && d.status === "OFFEN") open += openCentsOf(d);
         }
         return `Umsatz ${formatDate(q.von)}–${formatDate(q.bis)}: ${fmtEuroCents(r.netCents)} netto (${fmtEuroCents(r.grossCents)} brutto) aus ${r.count} Rechnungen, Gutschriften abgezogen. Davon noch offen: ${fmtEuroCents(open)} brutto.\nJe Monat:\n${[...byMonth].sort().map(([m, v]) => `- ${m}: ${fmtEuroCents(v)}`).join("\n") || "-"}\nTop-Kunden:\n${[...byCustomer].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c, v]) => `- ${c}: ${fmtEuroCents(v)}`).join("\n") || "-"}`;
       }
@@ -289,7 +306,8 @@ export async function runBookTool(name: string, i: Record<string, unknown>, ctx:
         if (!q.kundeId) return "kundeId fehlt – Kunden erst mit kunden_suchen finden oder mit kunde_anlegen anlegen.";
         if (!q.positionen?.length) return "Positionen fehlen.";
         const d = await createDraft(name === "angebot_erstellen" ? "ANGEBOT" : "RECHNUNG", toDraft(q), user);
-        return `${KIND_LABEL[d.kind]}-Entwurf angelegt: ${fmtEuroCents(d.netCents)} netto / ${fmtEuroCents(d.grossCents)} brutto · id ${d.id} · [ansehen & bearbeiten](/buchhaltung/beleg/${d.id}) · [PDF-Vorschau](/api/buchhaltung/pdf/${d.id})\nNoch ein Entwurf ohne Nummer. Festschreiben bzw. Senden nur auf Wunsch über beleg_festschreiben / beleg_senden.`;
+        const ded = d.invoiceType === "SCHLUSS" ? `\nAbzuziehende Abschläge: ${Array.isArray(d.deductions) ? d.deductions.length : 0} (prüfen mit abschlaege bzw. in der Vorschau).` : "";
+        return `${docLabel(d)}-Entwurf angelegt: ${fmtEuroCents(d.netCents)} netto / ${fmtEuroCents(d.grossCents)} brutto · id ${d.id} · [ansehen & bearbeiten](/buchhaltung/beleg/${d.id}) · [PDF-Vorschau](/api/buchhaltung/pdf/${d.id})\nNoch ein Entwurf ohne Nummer. Festschreiben bzw. Senden nur auf Wunsch über beleg_festschreiben / beleg_senden.${ded}`;
       }
       case "beleg_aendern": {
         const docId = id.parse(i.id);
@@ -298,10 +316,22 @@ export async function runBookTool(name: string, i: Record<string, unknown>, ctx:
         return `Entwurf geändert: ${fmtEuroCents(d.netCents)} netto / ${fmtEuroCents(d.grossCents)} brutto · [ansehen](/buchhaltung/beleg/${d.id})`;
       }
       case "angebot_in_rechnung": {
-        const src = await db.salesDoc.findUnique({ where: { id: id.parse(i.id) }, select: { kind: true } });
+        const q = z.object({ id, art: z.enum(["normal", "abschlag", "schluss"]).default("normal"), prozent: z.number().optional(), betragNetto: z.number().optional() }).parse(i);
+        const src = await db.salesDoc.findUnique({ where: { id: q.id }, select: { kind: true } });
         if (src?.kind !== "ANGEBOT") return "Das ist kein Angebot.";
-        const d = await copyDoc(id.parse(i.id), "RECHNUNG", user);
-        return `Rechnungs-Entwurf aus dem Angebot angelegt: ${fmtEuroCents(d.grossCents)} brutto · id ${d.id} · [ansehen](/buchhaltung/beleg/${d.id}). Leistungsdatum prüfen, dann festschreiben.`;
+        if (q.art === "abschlag") {
+          if (q.prozent === undefined && q.betragNetto === undefined) return "Für den Abschlag Prozent oder Nettobetrag angeben (nachfragen).";
+          const d = await downPaymentFromQuote(q.id, { percent: q.prozent, netEuro: q.prozent === undefined ? q.betragNetto : undefined }, user);
+          return `Abschlagsrechnung als Entwurf angelegt: ${fmtEuroCents(d.netCents)} netto / ${fmtEuroCents(d.grossCents)} brutto · id ${d.id} · [ansehen](/buchhaltung/beleg/${d.id}).`;
+        }
+        const d = await copyDoc(q.id, "RECHNUNG", user, { invoiceType: q.art === "schluss" ? "SCHLUSS" : "NORMAL" });
+        const n = Array.isArray(d.deductions) ? d.deductions.length : 0;
+        return `${docLabel(d)}-Entwurf aus dem Angebot angelegt: ${fmtEuroCents(d.grossCents)} brutto${q.art === "schluss" ? `, ${n} Abschläge werden abgezogen` : ""} · id ${d.id} · [ansehen](/buchhaltung/beleg/${d.id}). Leistungsdatum und Positionen prüfen, dann festschreiben.`;
+      }
+      case "abschlaege": {
+        const q = z.object({ kundeId: id, angebotId: id.optional(), projektId: id.optional() }).parse(i);
+        const list = await openDownPayments(q.kundeId, { sourceId: q.angebotId, projectId: q.projektId });
+        return list.length ? list.map((x) => `- ${x.number} vom ${formatDate(x.date)} · ${x.title ?? ""} · ${fmtEuroCents(x.netCents)} netto / ${fmtEuroCents(x.grossCents)} brutto · ${x.status === "BEZAHLT" ? "bezahlt" : `offen ${fmtEuroCents(x.grossCents - x.paidCents)}`} · id ${x.id}`).join("\n") : "Keine offenen Abschlagsrechnungen.";
       }
       case "beleg_festschreiben":
         return await cardFor(ctx, "beleg_festschreiben", { docId: id.parse(i.id) });

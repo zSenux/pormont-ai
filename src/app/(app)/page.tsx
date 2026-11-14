@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowRight, Calendar, Camera, CheckSquare, Clock, FileTe
 import { db } from "@/lib/db";
 import { firstName, requireUser } from "@/lib/auth/user";
 import { berlinDateTime, berlinParts, formatDate, formatDateTime, formatEuro, todayYmd } from "@/lib/berlin";
-import { customerName, isOverdue, openInvoices, revenue } from "@/lib/buchhaltung/docs";
+import { customerName, isOverdue, openInvoices, revenue, openCentsOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { COMPANY } from "@/lib/company";
 import { timeHm, todayEvents } from "@/lib/calendar";
@@ -141,7 +141,7 @@ async function BookTiles() {
   const tiles = [
     { label: "Umsatz diesen Monat", value: fmtEuroCents(month.netCents), hint: `${month.count} Rechnungen (netto)`, icon: Wallet, href: "/buchhaltung", tone: "text-brand" },
     { label: "Überfällig", value: fmtEuroCents(open.overdueCents), hint: `${open.overdue.length} Rechnungen`, icon: AlertTriangle, href: "/buchhaltung/belege?art=rechnungen&status=ueberfaellig", tone: open.overdue.length ? "text-bad" : "text-ok" },
-    { label: "Offen (noch nicht fällig)", value: fmtEuroCents(notDue.reduce((s, d) => s + d.grossCents - d.paidCents, 0)), hint: `${notDue.length} Rechnungen · ${quotes} offene Angebote`, icon: FileText, href: "/buchhaltung/belege?art=rechnungen&status=offen", tone: "text-ink" },
+    { label: "Offen (noch nicht fällig)", value: fmtEuroCents(notDue.reduce((s, d) => s + openCentsOf(d), 0)), hint: `${notDue.length} Rechnungen · ${quotes} offene Angebote`, icon: FileText, href: "/buchhaltung/belege?art=rechnungen&status=offen", tone: "text-ink" },
   ];
   return (
     <div className="grid gap-4 md:grid-cols-3">
@@ -178,7 +178,7 @@ async function OverdueList() {
                   <span className="block truncate font-medium">{customerName(d)}</span>
                   <span className="text-xs text-steel">{d.number} · fällig {formatDate(d.dueDate)}</span>
                 </span>
-                <span className="shrink-0 font-semibold text-bad">{fmtEuroCents(d.grossCents - d.paidCents)}</span>
+                <span className="shrink-0 font-semibold text-bad">{fmtEuroCents(openCentsOf(d))}</span>
               </Link>
             </li>
           ))}

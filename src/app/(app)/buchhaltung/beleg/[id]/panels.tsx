@@ -4,7 +4,7 @@ import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Send } from "lucide-react";
 import { StateForm } from "@/components/state-form";
-import { paymentAction, sendDocAction, sendDunningAction } from "@/app/actions/buchhaltung";
+import { downPaymentAction, paymentAction, sendDocAction, sendDunningAction } from "@/app/actions/buchhaltung";
 
 type Result = { ok?: string; error?: string } | undefined | void;
 
@@ -84,6 +84,26 @@ export function SendDunningForm({ dunningId, d }: { dunningId: string; d: MailDe
     <StateForm action={sendDunningAction.bind(null, dunningId)} submit={<><Send className="size-4" /> Mahnung senden</>}>
       <MailFields d={d} />
       <p className="text-xs text-steel">Anhänge: Mahnung und Original-Rechnung als PDF.</p>
+    </StateForm>
+  );
+}
+
+/** Abschlagsrechnung aus dem Angebot: Anteil in % oder fester Nettobetrag */
+export function DownPaymentForm({ quoteId }: { quoteId: string }) {
+  const [mode, setMode] = useState<"prozent" | "betrag">("prozent");
+  return (
+    <StateForm action={downPaymentAction.bind(null, quoteId)} submit="Abschlagsrechnung anlegen" className="space-y-2">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-steel">Abschlag als
+          <select name="mode" value={mode} onChange={(e) => setMode(e.target.value as "prozent" | "betrag")} className="input mt-0.5">
+            <option value="prozent">% der Angebotssumme</option>
+            <option value="betrag">fester Betrag (netto €)</option>
+          </select>
+        </label>
+        <label className="text-xs text-steel">{mode === "prozent" ? "Prozent" : "Netto €"}
+          <input name="value" inputMode="decimal" required placeholder={mode === "prozent" ? "z. B. 30" : "z. B. 5000"} className="input mt-0.5 w-32" />
+        </label>
+      </div>
     </StateForm>
   );
 }

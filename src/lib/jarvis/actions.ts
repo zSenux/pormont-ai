@@ -10,10 +10,10 @@ import { receiptSummary, receiptData, uploadReceipt } from "@/lib/receipts";
 import { LEXWARE_APP } from "@/lib/lexware/client";
 import { sendRequest, SupplierError } from "@/lib/suppliers";
 import { contactBody, contactInput, invoiceBody, quotationBody, totals, voucherInput } from "@/lib/lexware/payloads";
-import { BookError, cancelInvoice, customerName, finalizeDoc } from "@/lib/buchhaltung/docs";
+import { BookError, cancelInvoice, customerName, finalizeDoc, openCentsOf } from "@/lib/buchhaltung/docs";
 import { createDunning, defaultDocMail, defaultDunningMail, sendDoc, sendDunning } from "@/lib/buchhaltung/send";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
-import { KIND_LABEL } from "@/lib/buchhaltung/types";
+import { docLabel } from "@/lib/buchhaltung/types";
 import { DUNNING_LABEL } from "@/lib/buchhaltung/pdf";
 
 // Festschreiben, Versand, Mahnung und Storno der Buchhaltung sowie Mails laufen NIE direkt aus dem Chat: Jarvis legt eine PendingAction an,
@@ -36,7 +36,7 @@ async function loadDoc(docId: string) {
   if (!d) throw new BookError("Beleg nicht gefunden.");
   return d;
 }
-const docTitle = (d: Awaited<ReturnType<typeof loadDoc>>) => `${KIND_LABEL[d.kind]} ${d.number ?? "(Entwurf)"} für ${customerName(d)} über ${fmtEuroCents(d.grossCents)} brutto`;
+const docTitle = (d: Awaited<ReturnType<typeof loadDoc>>) => `${docLabel(d)} ${d.number ?? "(Entwurf)"} für ${customerName(d)} über ${fmtEuroCents(d.grossCents)} brutto`;
 
 async function actorOf(userId: string) {
   const u = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, name: true } });
@@ -84,7 +84,7 @@ export async function describe(kind: ActionKind, input: unknown): Promise<{ summ
     const an = m.an || d.customer?.email;
     if (!an) throw new BookError("Keine E-Mail-Adresse beim Kunden – bitte Empfänger angeben.");
     const level = Math.min(d.dunningLevel + 1, 3);
-    return { summary: `${DUNNING_LABEL[level]} zu ${docTitle(d)} (offen ${fmtEuroCents(d.grossCents - d.paidCents)}) erstellen und an ${an} senden (Vorlagentext, Mahnung + Rechnung als PDF).`, payload: { docId: m.docId, an } };
+    return { summary: `${DUNNING_LABEL[level]} zu ${docTitle(d)} (offen ${fmtEuroCents(openCentsOf(d))}) erstellen und an ${an} senden (Vorlagentext, Mahnung + Rechnung als PDF).`, payload: { docId: m.docId, an } };
   }
   if (kind === "kunde_anlegen") {
     const c = contactInput.parse(input);
@@ -165,7 +165,7 @@ export async function executeAction(id: string, userId: string) {
     } else if (a.kind === "beleg_festschreiben") {
       const { docId } = docRef.parse(a.payload);
       const d = await finalizeDoc(docId, await actorOf(userId));
-      result = `${KIND_LABEL[d.kind]} ${d.number} festgeschrieben.`;
+      result = `${docLabel(d)} ${d.number} festgeschrieben.`;
       links = [{ label: "Beleg", url: `/buchhaltung/beleg/${docId}` }, { label: "PDF", url: `/api/buchhaltung/pdf/${docId}` }];
     } else if (a.kind === "beleg_stornieren") {
       const { docId } = docRef.parse(a.payload);
@@ -180,7 +180,7 @@ export async function executeAction(id: string, userId: string) {
       const def = await defaultDocMail(m.docId, user.name);
       await sendDoc(m.docId, { an: m.an ?? def.an, cc: m.cc, betreff: m.betreff || def.betreff, text: m.text || def.text, xml: m.xml }, user);
       const d = await loadDoc(m.docId);
-      result = `${KIND_LABEL[d.kind]} ${d.number} an ${m.an ?? def.an} gesendet.`;
+      result = `${docLabel(d)} ${d.number} an ${m.an ?? def.an} gesendet.`;
       links = [{ label: "Beleg", url: `/buchhaltung/beleg/${m.docId}` }, { label: "PDF", url: `/api/buchhaltung/pdf/${m.docId}` }];
     } else if (a.kind === "mahnung_senden") {
       const m = dunSend.parse(a.payload);
