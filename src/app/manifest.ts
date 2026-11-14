@@ -21,7 +21,7 @@ export default function manifest(): MetadataRoute.Manifest {
     shortcuts: [
       { name: "Jarvis fragen", url: "/jarvis" },
       { name: "Sprechen", url: "/jarvis?sprechen=1" },
-      { name: "Belege", url: "/belege" },
+      { name: "Buchhaltung", url: "/buchhaltung" },
       { name: "Aufgaben", url: "/aufgaben" },
     ],
   };

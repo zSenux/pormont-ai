@@ -16,7 +16,7 @@ const DESKTOP = [
   { href: "/akquise", label: "Akquise", icon: Target },
   { href: "/lieferanten", label: "Lieferanten", icon: Truck },
   { href: "/lager", label: "Lager", icon: Warehouse },
-  { href: "/belege", label: "Belege", icon: FileText },
+  { href: "/buchhaltung", label: "Buchhaltung", icon: FileText },
   { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
   { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
   { href: "/pc", label: "Computer", icon: Monitor },
@@ -29,7 +29,7 @@ const MOBILE = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/stunden", "/spesen", "/akquise", "/lieferanten", "/lager", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
+  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/projekte", "/stunden", "/spesen", "/akquise", "/lieferanten", "/lager", "/buchhaltung", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
 ];
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));

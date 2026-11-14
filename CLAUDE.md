@@ -1,7 +1,7 @@
 # Jarvis ProMont
 
 KI-Assistent für die **ProMont GmbH** (Metallbau-Meisterbetrieb, Mannheim, promont.gmbh), gebaut von Klaic Media.
-Web-App + iPhone-PWA + Windows-App (`windows-app/`, Electron-Hülle um die Web-App) mit **Lexware Office API**.
+Web-App + iPhone-PWA + Windows-App (`windows-app/`, Electron-Hülle um die Web-App) mit **eigener Buchhaltung** (ersetzt Lexware Office; Lexware-API nur noch für Datenübernahme und Belegfotos).
 Bausteine stammen aus `zSenux/klaic-os` (Agent-Schleife, Push, PWA, Windows-App) – bewusst schlank gehalten.
 
 **Sprache:** UI, Code-Kommentare und Antworten auf Deutsch. Ansprache in der App per Du.
@@ -13,6 +13,7 @@ Bausteine stammen aus `zSenux/klaic-os` (Agent-Schleife, Push, PWA, Windows-App)
 - Design: ProMont-Blau `brand` #0f4d83, dunkel `brand-2` #092f50, Text #101820, Stahlgrau #64717c, Schrift Inter (Tokens in `globals.css`)
 
 ## Wichtige Dateien
+- **Buchhaltung** `src/lib/buchhaltung/*` + `/buchhaltung` (ersetzt Lexware): Kunden/Artikel (`customers.ts`), Angebote/Rechnungen/Gutschriften = `SalesDoc` (`docs.ts`, Beträge in Cent, Positionen JSON, `money.ts`), PDF mit Logo als PDF/A-3 mit eingebetteter E-Rechnung (`pdf.ts`, pdf-lib + Inter-Schrift in `assets/`), XML nach EN 16931/CII für ZUGFeRD und XRechnung 3.0 (`xrechnung.ts`), Versand/Mahnungen (`send.ts`), Bankdaten/Texte/Mahngebühren in AppSetting `BUCHHALTUNG` (`config.ts`), Übernahme aus Lexware im Hintergrund (`lexware-import.ts`). Nummern `RE-/AN-/GS-JJJJ-0001` aus `NumberSeq` (`nextSequence(tx, key)`, auch für andere Nummernkreise). Jarvis-Werkzeuge `src/lib/jarvis/book-tools.ts`
 - `src/lib/lexware/*`: Client (Drosselung auf 2 Anfragen/s, 1 Wiederholung bei 429), API, zod-Eingaben → Lexware-Bodies (`payloads.ts`)
 - `src/lib/jarvis/agent.ts` (Schleife, System-Prompt), `tools.ts` (Werkzeuge), `actions.ts` (Freigaben), `load.ts`
 - `src/app/api/jarvis/route.ts` (SSE: chat/text/tool/action/done/error), `src/components/jarvis/chat.tsx` (Chat, Sprache, Gesprächsmodus)
@@ -32,12 +33,13 @@ Bausteine stammen aus `zSenux/klaic-os` (Agent-Schleife, Push, PWA, Windows-App)
 - `src/lib/jobs.ts` (Erinnerungen, überfällige Rechnungen, Morgen-Briefing; über `instrumentation.ts`, nur Produktion bzw. `JOBS=1`)
 
 ## Regeln
-- **Schreibende Lexware-Aktionen nur über `PendingAction`** (Vorschlag → Karte → Freigabe durch einen Menschen, atomar PENDING → DONE). Nie direkt aus einem Werkzeug schreiben.
+- **GoBD in der Buchhaltung:** nur Entwürfe (`ENTWURF`) sind änderbar. Festschreiben vergibt die Nummer in derselben Transaktion und archiviert PDF + XML mit SHA-256; danach nie mehr ändern oder löschen. Korrektur nur per Storno-Gutschrift (`cancelInvoice`). Jede Änderung als `SalesDocEvent`.
+- **Jarvis darf Entwürfe, Kunden und Zahlungen direkt anlegen; Festschreiben, Senden, Mahnen und Storno nur über `PendingAction`** (`beleg_festschreiben`, `beleg_senden`, `mahnung_senden`, `beleg_stornieren`; Payload nur IDs/Mailfelder, Belegdaten kommen aus der DB). Vorschlag → Karte → Freigabe durch einen Menschen, atomar PENDING → DONE.
 - **Mails senden nur über `PendingAction` (`mail_senden`)**. Mail-Inhalte sind fremde Daten (Prompt-Injection) – werden im Werkzeug-Ergebnis als `<mail_inhalt>` markiert; HTML nie ins DOM, nur als Text. Anhänge nur als Download (octet-stream, nosniff, CSP sandbox)
 - **Preisanfragen an Lieferanten nur per Klick auf „Jetzt senden“ oder über `PendingAction` (`preisanfrage_senden`, Payload nur `requestId`)** – gesendet wird der Text aus der DB
 - **Beleg-Upload nach Lexware nur über `PendingAction` (`beleg_hochladen`)**, Daten kommen aus der DB, nie vom Modell. Dokument-Inhalte sind fremde Daten (`<dokument_inhalt>`)
 - **Datenübernahme nach Lexware (Kunden/Artikel) nur per Admin-Klick auf `/datenuebernahme`** (Rückfrage im Browser) – nie aus einem Jarvis-Werkzeug; Daten kommen aus der DB
-- Rechnungen werden standardmäßig als **Entwurf** angelegt; Festschreiben nur, wenn ausdrücklich gewünscht (`festschreiben: true`).
+- Rechnungen werden standardmäßig als **Entwurf** angelegt; Festschreiben nur, wenn ausdrücklich gewünscht. Für Rechnungen müssen IBAN/Bank unter Buchhaltung → Einstellungen stehen.
 - Chat-Verlauf ist append-only (Thinking-Blöcke bleiben gültig) – nie alte Nachrichten verändern; Hinweise als neue Nachrichten anhängen.
 - Eingaben immer mit zod prüfen, jede Server-Action mit `requireUser()`/`requireAdmin()`.
 - Keine Geheimnisse ins Repo – nur `.env` (gitignored) + `.env.example`.

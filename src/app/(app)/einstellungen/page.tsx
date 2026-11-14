@@ -61,7 +61,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
           { href: "/kalender", label: "Kalender", icon: Calendar },
           { href: "/belege/foto", label: "Beleg-Foto", icon: Camera },
-          { href: "/belege", label: "Belege", icon: FileText },
+          { href: "/buchhaltung", label: "Buchhaltung", icon: FileText },
           { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
           { href: "/pc", label: "Computer", icon: Monitor },
           { href: "/datenuebernahme", label: "Daten­übernahme", icon: Database },

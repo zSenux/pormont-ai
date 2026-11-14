@@ -4,8 +4,8 @@ import { AlertTriangle, ArrowRight, Calendar, Camera, CheckSquare, Clock, FileTe
 import { db } from "@/lib/db";
 import { firstName, requireUser } from "@/lib/auth/user";
 import { berlinDateTime, berlinParts, formatDate, formatDateTime, formatEuro, todayYmd } from "@/lib/berlin";
-import { lexwareConfigured, LexwareError } from "@/lib/lexware/client";
-import { voucherList, voucherListAll, voucherLink } from "@/lib/lexware/api";
+import { customerName, isOverdue, openInvoices, revenue } from "@/lib/buchhaltung/docs";
+import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { COMPANY } from "@/lib/company";
 import { timeHm, todayEvents } from "@/lib/calendar";
 import { WindowsAppBanner } from "@/components/windows-app";
@@ -76,7 +76,7 @@ export default async function Home() {
       )}
 
       <Suspense fallback={<div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>}>
-        <LexwareTiles />
+        <BookTiles />
       </Suspense>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -129,72 +129,52 @@ export default async function Home() {
   );
 }
 
-async function LexwareTiles() {
-  if (!lexwareConfigured()) {
-    return (
-      <div className="card p-5 text-sm text-steel">
-        <strong className="text-ink">Lexware ist noch nicht verbunden.</strong> Sobald ein Administrator den API-Schlüssel unter <Link href="/einstellungen#verbindungen" className="font-medium text-brand">Einstellungen → Verbindungen</Link> einträgt, erscheinen hier offene Rechnungen, Angebote und Umsatz.
-      </div>
-    );
-  }
-  try {
-    const p = berlinParts();
-    const monthStart = `${p.y}-${String(p.m).padStart(2, "0")}-01`;
-    const [overdue, open, quotes, month] = await Promise.all([
-      voucherListAll({ type: "invoice", status: "overdue" }),
-      voucherListAll({ type: "invoice", status: "open" }),
-      voucherList({ type: "quotation", status: "open", size: 1 }),
-      voucherListAll({ type: "invoice", status: "open,overdue,paid,paidoff", from: monthStart, to: todayYmd() }),
-    ]);
-    const sum = (l: { openAmount?: number; totalAmount?: number }[]) => l.reduce((s, v) => s + (v.openAmount ?? v.totalAmount ?? 0), 0);
-    const tiles = [
-      { label: "Umsatz diesen Monat", value: formatEuro(month.reduce((s, v) => s + (v.totalAmount ?? 0), 0)), hint: `${month.length} Rechnungen (brutto)`, icon: Wallet, href: "/belege?art=rechnungen", tone: "text-brand" },
-      { label: "Überfällig", value: formatEuro(sum(overdue)), hint: `${overdue.length} Rechnungen`, icon: AlertTriangle, href: "/belege?art=rechnungen&status=ueberfaellig", tone: overdue.length ? "text-bad" : "text-ok" },
-      { label: "Offen (noch nicht fällig)", value: formatEuro(sum(open)), hint: `${open.length} Rechnungen · ${quotes.totalElements} offene Angebote`, icon: FileText, href: "/belege?art=rechnungen&status=offen", tone: "text-ink" },
-    ];
-    return (
-      <div className="grid gap-4 md:grid-cols-3">
-        {tiles.map((t) => (
-          <Link key={t.label} href={t.href} className="card p-5 transition hover:border-brand">
-            <div className="flex items-center gap-2 text-sm font-medium text-steel">
-              <t.icon className="size-4" /> {t.label}
-            </div>
-            <p className={`mt-2 text-3xl font-extrabold tracking-tight ${t.tone}`}>{t.value}</p>
-            <p className="mt-1 text-xs text-steel">{t.hint}</p>
-          </Link>
-        ))}
-      </div>
-    );
-  } catch (e) {
-    return <div className="card border-red-200 bg-red-50 p-5 text-sm text-bad">{e instanceof LexwareError ? e.message : "Lexware ist gerade nicht erreichbar."}</div>;
-  }
+async function BookTiles() {
+  const today = todayYmd();
+  const [open, month, quotes] = await Promise.all([openInvoices(), revenue(`${today.slice(0, 7)}-01`, today), db.salesDoc.count({ where: { kind: "ANGEBOT", status: "OFFEN" } })]);
+  const notDue = open.list.filter((d) => !isOverdue(d));
+  const tiles = [
+    { label: "Umsatz diesen Monat", value: fmtEuroCents(month.netCents), hint: `${month.count} Rechnungen (netto)`, icon: Wallet, href: "/buchhaltung", tone: "text-brand" },
+    { label: "Überfällig", value: fmtEuroCents(open.overdueCents), hint: `${open.overdue.length} Rechnungen`, icon: AlertTriangle, href: "/buchhaltung/belege?art=rechnungen&status=ueberfaellig", tone: open.overdue.length ? "text-bad" : "text-ok" },
+    { label: "Offen (noch nicht fällig)", value: fmtEuroCents(notDue.reduce((s, d) => s + d.grossCents - d.paidCents, 0)), hint: `${notDue.length} Rechnungen · ${quotes} offene Angebote`, icon: FileText, href: "/buchhaltung/belege?art=rechnungen&status=offen", tone: "text-ink" },
+  ];
+  return (
+    <div className="grid gap-4 md:grid-cols-3">
+      {tiles.map((t) => (
+        <Link key={t.label} href={t.href} className="card p-5 transition hover:border-brand">
+          <div className="flex items-center gap-2 text-sm font-medium text-steel">
+            <t.icon className="size-4" /> {t.label}
+          </div>
+          <p className={`mt-2 text-3xl font-extrabold tracking-tight ${t.tone}`}>{t.value}</p>
+          <p className="mt-1 text-xs text-steel">{t.hint}</p>
+        </Link>
+      ))}
+    </div>
+  );
 }
 
 async function OverdueList() {
-  if (!lexwareConfigured()) return <section className="card p-5 text-sm text-steel">Überfällige Rechnungen erscheinen hier, sobald Lexware verbunden ist.</section>;
-  const list = await voucherList({ type: "invoice", status: "overdue", size: 6 }).catch(() => null);
+  const { overdue } = await openInvoices();
   return (
     <section className="card min-w-0 p-5">
       <div className="mb-3 flex items-center gap-2">
         <AlertTriangle className="size-5 text-bad" />
         <h2 className="font-bold">Überfällige Rechnungen</h2>
-        <Link href="/belege?art=rechnungen&status=ueberfaellig" className="ml-auto text-sm font-medium text-brand">Alle</Link>
+        <Link href="/buchhaltung/belege?art=rechnungen&status=ueberfaellig" className="ml-auto text-sm font-medium text-brand">Alle</Link>
       </div>
-      {!list ? (
-        <p className="text-sm text-bad">Lexware ist gerade nicht erreichbar.</p>
-      ) : list.content.length === 0 ? (
+      {overdue.length === 0 ? (
         <p className="text-sm text-steel">Keine überfälligen Rechnungen. 🎉</p>
       ) : (
         <ul className="divide-y divide-line">
-          {list.content.map((v) => (
-            <li key={v.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <a href={voucherLink(v.voucherType, v.id) ?? "#"} target="_blank" rel="noreferrer" className="min-w-0">
-                <span className="block truncate font-medium">{v.contactName}</span>
-                <span className="text-xs text-steel">
-                  {v.voucherNumber} · fällig {formatDate(v.dueDate)}
+          {overdue.slice(0, 6).map((d) => (
+            <li key={d.id}>
+              <Link href={`/buchhaltung/beleg/${d.id}`} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{customerName(d)}</span>
+                  <span className="text-xs text-steel">{d.number} · fällig {formatDate(d.dueDate)}</span>
                 </span>
-              </a>
-              <span className="shrink-0 font-semibold text-bad">{formatEuro(v.openAmount ?? v.totalAmount)}</span>
+                <span className="shrink-0 font-semibold text-bad">{fmtEuroCents(d.grossCents - d.paidCents)}</span>
+              </Link>
             </li>
           ))}
         </ul>
