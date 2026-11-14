@@ -12,7 +12,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   if (await currentUser()) redirect("/");
   const { weiter } = await searchParams;
   // Noch kein Benutzer → Ersteinrichtung (außer der Administrator kommt per ADMIN_EMAIL/ADMIN_PASSWORD aus dem Hosting-Panel)
-  const setup = (await db.user.count()) === 0 && !process.env.ADMIN_EMAIL;
+  const setup = (await db.user.count()) === 0 && !process.env.ADMIN_EMAIL?.trim();
   return (
     <main className="grid min-h-dvh place-items-center bg-gradient-to-b from-brand-2 to-brand px-4 py-10">
       <div className="w-full max-w-sm">

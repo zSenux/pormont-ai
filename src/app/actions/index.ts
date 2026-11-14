@@ -22,7 +22,17 @@ async function ipKey() {
   return h.get("x-forwarded-for")?.split(",")[0].trim() || h.get("x-real-ip") || "lokal";
 }
 
-const loginInput = z.object({ email: z.email().transform((s) => s.toLowerCase()), password: z.string().min(1).max(200), weiter: z.string().optional() });
+/** Passen E-Mail und Passwort zu ADMIN_EMAIL/ADMIN_PASSWORD aus der Umgebung? (Leerzeichen am Rand zählen nicht) */
+function envAdminMatches(email: string, password: string) {
+  const envEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const envPassword = process.env.ADMIN_PASSWORD?.trim();
+  if (!envEmail || !envPassword || envEmail !== email) return false;
+  const a = createHash("sha256").update(envPassword).digest();
+  const b = createHash("sha256").update(password.trim()).digest();
+  return timingSafeEqual(a, b);
+}
+
+const loginInput = z.object({ email: z.string().trim().pipe(z.email()).transform((s) => s.toLowerCase()), password: z.string().min(1).max(200), weiter: z.string().optional() });
 
 export async function login(_prev: { error?: string } | undefined, form: FormData): Promise<{ error?: string }> {
   const key = await ipKey();
@@ -33,9 +43,14 @@ export async function login(_prev: { error?: string } | undefined, form: FormDat
   const { email, password, weiter } = parsed.data;
 
   let user = await db.user.findUnique({ where: { email } });
-  // Erster Start: Administrator aus ADMIN_EMAIL/ADMIN_PASSWORD anlegen, solange es noch niemanden gibt
-  if (!user && (await db.user.count()) === 0 && process.env.ADMIN_EMAIL?.toLowerCase() === email && process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD === password) {
-    user = await db.user.create({ data: { email, name: process.env.ADMIN_NAME || "Administrator", role: "ADMIN", passwordHash: await hashPassword(password) } });
+  // Zugang aus dem Hosting-Panel (ADMIN_EMAIL/ADMIN_PASSWORD): legt den Administrator an, wenn es ihn noch nicht gibt,
+  // und setzt sein Passwort zurück, wenn es nicht mehr passt (Notfall-Zugang, z. B. Passwort vergessen oder neue Datenbank)
+  if (envAdminMatches(email, password) && !(user && (await verifyPassword(password, user.passwordHash)))) {
+    const passwordHash = await hashPassword(password);
+    user = user
+      ? await db.user.update({ where: { id: user.id }, data: { passwordHash, role: "ADMIN" } })
+      : await db.user.create({ data: { email, name: process.env.ADMIN_NAME?.trim() || "Administrator", role: "ADMIN", passwordHash } });
+    console.log(`[Jarvis] Administrator-Zugang aus ADMIN_EMAIL/ADMIN_PASSWORD verwendet (${user.email})`);
   }
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     attempts.set(key, { n: (a && a.until > Date.now() ? a.n : 0) + 1, until: Date.now() + 15 * 60_000 });
