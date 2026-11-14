@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth/user";
+import { requireArea } from "@/lib/rights";
 import { berlinDateTime } from "@/lib/berlin";
 import { PlacesError, placeResultSchema, searchPlaces, type PlaceResult } from "@/lib/akquise/places";
 import { AkquiseError, checkLeadWebsite, writeLetter, writePitch } from "@/lib/akquise/leads";
@@ -24,7 +24,7 @@ function errorText(e: unknown) {
 
 // ---------- Google-Suche ----------
 export async function searchLeads(_prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("akquise");
   const p = z.object({ query: z.string().trim().min(2, "Bitte eine Branche angeben.").max(80), location: z.string().trim().min(2, "Bitte einen Ort angeben.").max(80) }).safeParse({ query: form.get("query"), location: form.get("location") });
   if (!p.success) return { error: p.error.issues[0]?.message };
   let res;
@@ -38,7 +38,7 @@ export async function searchLeads(_prev: Result, form: FormData): Promise<Result
 }
 
 export async function moreResults(searchId: string): Promise<Result> {
-  await requireUser();
+  await requireArea("akquise");
   const s = await db.leadSearch.findUnique({ where: { id: z.cuid().parse(searchId) } });
   if (!s?.nextPageToken) return { error: "Keine weiteren Treffer." };
   try {
@@ -54,7 +54,7 @@ export async function moreResults(searchId: string): Promise<Result> {
 
 /** Ausgewählte Treffer übernehmen – Daten kommen aus der gespeicherten Suche, nie vom Browser */
 export async function importLeads(form: FormData) {
-  const user = await requireUser();
+  const user = await requireArea("akquise");
   const searchId = z.cuid().parse(form.get("searchId"));
   const ids = new Set(form.getAll("placeId").map(String));
   const s = await db.leadSearch.findUniqueOrThrow({ where: { id: searchId } });
@@ -98,7 +98,7 @@ const readLead = (form: FormData) => {
 };
 
 export async function createLead(_prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("akquise");
   const p = readLead(form);
   if (!p.success) return { error: `Eingabe prüfen: ${p.error.issues[0]?.path.join(".")}` };
   const lead = await db.lead.create({ data: { ...p.data, source: p.data.source ?? "MANUELL", createdById: user.id, activities: { create: { kind: "NOTIZ", text: "Von Hand angelegt.", userName: user.name } } } });
@@ -106,7 +106,7 @@ export async function createLead(_prev: Result, form: FormData): Promise<Result>
 }
 
 export async function updateLead(id: string, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("akquise");
   const p = readLead(form);
   if (!p.success) return { error: `Eingabe prüfen: ${p.error.issues[0]?.path.join(".")}` };
   const d = p.data;
@@ -119,7 +119,7 @@ export async function updateLead(id: string, _prev: Result, form: FormData): Pro
 }
 
 export async function setLeadStage(id: string, stage: string) {
-  const user = await requireUser();
+  const user = await requireArea("akquise");
   const s = z.enum(STAGES).parse(stage);
   const lead = await db.lead.findUniqueOrThrow({ where: { id: z.cuid().parse(id) } });
   if (lead.stage === s) return;
@@ -130,7 +130,7 @@ export async function setLeadStage(id: string, stage: string) {
 }
 
 export async function addLeadActivity(id: string, form: FormData) {
-  const user = await requireUser();
+  const user = await requireArea("akquise");
   const p = z
     .object({ kind: z.enum(["NOTIZ", "ANRUF", "BRIEF", "MAIL", "TERMIN"]), text: z.string().trim().min(1).max(4000), followUp: ymd.optional() })
     .parse({ kind: form.get("kind"), text: form.get("text"), followUp: opt(form.get("followUp")) });
@@ -148,7 +148,7 @@ export async function addLeadActivity(id: string, form: FormData) {
 }
 
 export async function setFollowUp(id: string, day: string | null) {
-  await requireUser();
+  await requireArea("akquise");
   await db.lead.update({ where: { id: z.cuid().parse(id) }, data: { nextFollowUpAt: day ? berlinDateTime(ymd.parse(day), "09:00") : null } });
   revalidatePath(`/akquise/${id}`);
   revalidatePath("/akquise");
@@ -156,21 +156,21 @@ export async function setFollowUp(id: string, day: string | null) {
 
 /** Einwilligung für E-Mails festhalten (Anfrage vom Kunden oder ausdrückliches Ja am Telefon) */
 export async function setEmailConsent(id: string, on: boolean) {
-  const user = await requireUser();
+  const user = await requireArea("akquise");
   const lead = await db.lead.update({ where: { id: z.cuid().parse(id) }, data: { emailConsentAt: on ? new Date() : null } });
   await db.leadActivity.create({ data: { leadId: lead.id, kind: "NOTIZ", text: on ? "Einwilligung für E-Mails erhalten." : "Einwilligung für E-Mails zurückgenommen.", userName: user.name } });
   revalidatePath(`/akquise/${id}`);
 }
 
 export async function deleteLead(id: string) {
-  await requireUser();
+  await requireArea("akquise");
   await db.lead.delete({ where: { id: z.cuid().parse(id) } });
   revalidatePath("/akquise");
   redirect("/akquise");
 }
 
 export async function runLeadTool(id: string, what: "check" | "pitch" | "letter"): Promise<Result> {
-  await requireUser();
+  await requireArea("akquise");
   const leadId = z.cuid().parse(id);
   try {
     if (what === "check") await checkLeadWebsite(leadId);

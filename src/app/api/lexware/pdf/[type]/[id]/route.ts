@@ -1,3 +1,4 @@
+import { canArea } from "@/lib/rights-shared";
 import { currentUser } from "@/lib/auth/user";
 import { LexwareError } from "@/lib/lexware/client";
 import { voucherPdf } from "@/lib/lexware/api";
@@ -9,7 +10,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** PDF eines Belegs direkt aus Lexware durchreichen (nur angemeldet) */
 export async function GET(_req: Request, { params }: { params: Promise<{ type: string; id: string }> }) {
-  if (!(await currentUser())) return new Response("Nicht angemeldet.", { status: 401 });
+  const me = await currentUser();
+  if (!me) return new Response("Nicht angemeldet.", { status: 401 });
+  if (!canArea(me, "buchhaltung")) return new Response("Keine Berechtigung.", { status: 403 });
   const { type, id } = await params;
   if (!TYPES.has(type) || !UUID.test(id)) return new Response("Ungültig.", { status: 400 });
   try {

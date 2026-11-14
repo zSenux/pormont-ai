@@ -6,15 +6,15 @@ import { db } from "@/lib/db";
 import { license, lockReason } from "@/lib/license";
 import { SESSION_COOKIE, SESSION_DAYS, signSession, verifySession } from "./token";
 
-export type CurrentUser = { id: string; name: string; email: string; role: "ADMIN" | "MEMBER" };
+export type CurrentUser = { id: string; name: string; email: string; role: "ADMIN" | "MEMBER"; funktion: string | null };
 
 /** Angemeldeter Nutzer oder null (prüft auch die Sitzungs-Version → „überall abmelden“). Ansehen geht auch ohne Freischaltung. */
 export const currentUser = cache(async (): Promise<CurrentUser | null> => {
   const p = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
   if (!p) return null;
-  const u = await db.user.findUnique({ where: { id: p.u }, select: { id: true, name: true, email: true, role: true, sessionVersion: true } });
+  const u = await db.user.findUnique({ where: { id: p.u }, select: { id: true, name: true, email: true, role: true, funktion: true, sessionVersion: true } });
   if (!u || u.sessionVersion !== p.v) return null;
-  return { id: u.id, name: u.name, email: u.email, role: u.role };
+  return { id: u.id, name: u.name, email: u.email, role: u.role, funktion: u.funktion };
 });
 
 /** Für APIs, die etwas tun (Jarvis fragen, hochladen, PC steuern): Antwort 403, solange Klaic Media Jarvis nicht freigeschaltet hat */

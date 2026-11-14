@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth/user";
+import { requireArea } from "@/lib/rights";
 import { berlinDateTime } from "@/lib/berlin";
 import { createJob, setJobStatus } from "@/lib/production";
 import { PROD_STATUSES } from "@/lib/production-shared";
@@ -39,7 +39,7 @@ const refresh = (id?: string, projectId?: string) => {
 };
 
 export async function newJob(form: FormData) {
-  const user = await requireUser();
+  const user = await requireArea("fertigung");
   const projectId = z.cuid().parse(form.get("projectId"));
   const job = await createJob({ projectId, ...jobForm(form) }, user);
   refresh(job.id, projectId);
@@ -47,7 +47,7 @@ export async function newJob(form: FormData) {
 }
 
 export async function updateJob(id: string, form: FormData) {
-  await requireUser();
+  await requireArea("fertigung");
   const j = jobForm(form);
   const job = await db.productionJob.update({
     where: { id: z.cuid().parse(id) },
@@ -57,14 +57,14 @@ export async function updateJob(id: string, form: FormData) {
 }
 
 export async function moveJob(id: string, status: string) {
-  const user = await requireUser();
+  const user = await requireArea("fertigung");
   const jid = z.cuid().parse(id);
   await setJobStatus(jid, z.enum(PROD_STATUSES).parse(status), user);
   refresh(jid);
 }
 
 export async function reportJob(id: string, form: FormData) {
-  const user = await requireUser();
+  const user = await requireArea("fertigung");
   const jid = z.cuid().parse(id);
   const r = z.object({ status: z.enum(PROD_STATUSES), actualHours: hours, qcNote: z.string().trim().max(4000).optional(), materialNote: z.string().trim().max(2000).optional() }).parse({ status: form.get("status"), actualHours: opt(form.get("actualHours")), qcNote: opt(form.get("qcNote")), materialNote: opt(form.get("materialNote")) });
   if (r.materialNote !== undefined) await db.productionJob.update({ where: { id: jid }, data: { materialNote: r.materialNote } });
@@ -73,7 +73,7 @@ export async function reportJob(id: string, form: FormData) {
 }
 
 export async function deleteJob(id: string) {
-  await requireUser();
+  await requireArea("fertigung");
   const job = await db.productionJob.delete({ where: { id: z.cuid().parse(id) } }).catch(() => null);
   refresh(undefined, job?.projectId);
   redirect("/fertigung");

@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAdmin, requireUser } from "@/lib/auth/user";
+import { requireAdmin } from "@/lib/auth/user";
+import { requireArea } from "@/lib/rights";
 import { todayYmd } from "@/lib/berlin";
 import { bookConfig, bookConfigSchema, saveBookConfig } from "@/lib/buchhaltung/config";
 import { addPayment, BookError, cancelInvoice, copyDoc, downPaymentFromQuote, createDraft, deleteDraft, deletePayment, draftInput, finalizeDoc, setNextNumber, setQuoteStatus, updateDraft, type DraftInput } from "@/lib/buchhaltung/docs";
@@ -40,13 +41,13 @@ const refresh = (id?: string) => {
 // ---------- Belege ----------
 
 export async function newDocAction(kind: DocKind, opts: { customerId?: string; projectId?: string } = {}) {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   const doc = await createDraft(z.enum(["ANGEBOT", "RECHNUNG"]).parse(kind), { customerId: opts.customerId ? cuid.parse(opts.customerId) : null, projectId: opts.projectId ? cuid.parse(opts.projectId) : null }, user);
   redirect(`/buchhaltung/beleg/${doc.id}`);
 }
 
 export async function saveDraftAction(id: string, input: DraftInput): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   try {
     await updateDraft(cuid.parse(id), draftInput.parse(input), user);
     refresh(id);
@@ -57,7 +58,7 @@ export async function saveDraftAction(id: string, input: DraftInput): Promise<Re
 }
 
 export async function finalizeAction(id: string, input: DraftInput): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   try {
     await updateDraft(cuid.parse(id), draftInput.parse(input), user);
     const r = await finalizeDoc(id, user);
@@ -69,7 +70,7 @@ export async function finalizeAction(id: string, input: DraftInput): Promise<Res
 }
 
 export async function deleteDraftAction(id: string) {
-  await requireUser();
+  await requireArea("buchhaltung");
   const d = await db.salesDoc.findUnique({ where: { id: cuid.parse(id) }, select: { kind: true } });
   await deleteDraft(id);
   refresh();
@@ -77,7 +78,7 @@ export async function deleteDraftAction(id: string) {
 }
 
 export async function cancelAction(id: string): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   let creditId: string;
   try {
     creditId = (await cancelInvoice(cuid.parse(id), user)).creditId;
@@ -89,7 +90,7 @@ export async function cancelAction(id: string): Promise<Result> {
 }
 
 export async function copyAction(id: string, kind: DocKind, invoiceType?: "NORMAL" | "SCHLUSS"): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   let newId: string;
   try {
     newId = (await copyDoc(cuid.parse(id), z.enum(["ANGEBOT", "RECHNUNG"]).parse(kind), user, { invoiceType: z.enum(["NORMAL", "SCHLUSS"]).optional().parse(invoiceType) })).id;
@@ -102,7 +103,7 @@ export async function copyAction(id: string, kind: DocKind, invoiceType?: "NORMA
 
 /** Abschlagsrechnung aus einem Angebot (Formular: Prozent oder Nettobetrag) */
 export async function downPaymentAction(quoteId: string, _prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   const mode = form.get("mode") === "betrag" ? "betrag" : "prozent";
   const raw = String(form.get("value") ?? "").trim().replace(/\./g, "").replace(",", ".");
   const value = Number(raw);
@@ -118,7 +119,7 @@ export async function downPaymentAction(quoteId: string, _prev: Result, form: Fo
 }
 
 export async function quoteStatusAction(id: string, status: "OFFEN" | "ANGENOMMEN" | "ABGELEHNT"): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   try {
     await setQuoteStatus(cuid.parse(id), z.enum(["OFFEN", "ANGENOMMEN", "ABGELEHNT"]).parse(status), user);
     refresh(id);
@@ -131,7 +132,7 @@ export async function quoteStatusAction(id: string, status: "OFFEN" | "ANGENOMME
 // ---------- Zahlungen, Versand, Mahnungen ----------
 
 export async function paymentAction(docId: string, _prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   const amount = num(form.get("amount"));
   if (amount === null || Number.isNaN(amount) || amount === 0) return { error: "Bitte den Betrag eintragen." };
   try {
@@ -145,7 +146,7 @@ export async function paymentAction(docId: string, _prev: Result, form: FormData
 }
 
 export async function deletePaymentAction(paymentId: string) {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   const docId = await deletePayment(cuid.parse(paymentId), user);
   refresh(docId);
 }
@@ -155,7 +156,7 @@ function readMail(form: FormData) {
 }
 
 export async function sendDocAction(docId: string, _prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   try {
     const r = await sendDoc(cuid.parse(docId), readMail(form), user);
     refresh(docId);
@@ -166,7 +167,7 @@ export async function sendDocAction(docId: string, _prev: Result, form: FormData
 }
 
 export async function createDunningAction(docId: string): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   try {
     await createDunning(cuid.parse(docId), user);
     refresh(docId);
@@ -177,7 +178,7 @@ export async function createDunningAction(docId: string): Promise<Result> {
 }
 
 export async function sendDunningAction(dunningId: string, _prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("buchhaltung");
   try {
     const m = readMail(form);
     const r = await sendDunning(cuid.parse(dunningId), m, user);
@@ -213,7 +214,7 @@ function readCustomer(form: FormData) {
 }
 
 export async function createCustomerAction(_prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("buchhaltung");
   const p = readCustomer(form);
   if (!p.success) return { error: p.error.issues[0]?.message };
   const c = await createCustomer(p.data);
@@ -227,7 +228,7 @@ export async function createCustomerAction(_prev: Result, form: FormData): Promi
 }
 
 export async function updateCustomerAction(id: string, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("buchhaltung");
   const p = readCustomer(form);
   if (!p.success) return { error: p.error.issues[0]?.message };
   await updateCustomer(cuid.parse(id), p.data);
@@ -236,7 +237,7 @@ export async function updateCustomerAction(id: string, _prev: Result, form: Form
 }
 
 export async function archiveCustomerAction(id: string, archived: boolean) {
-  await requireUser();
+  await requireArea("buchhaltung");
   await db.customer.update({ where: { id: cuid.parse(id) }, data: { archived } });
   refresh();
 }
@@ -254,7 +255,7 @@ function readArticle(form: FormData) {
 }
 
 export async function saveArticleAction(id: string | null, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("buchhaltung");
   const p = readArticle(form);
   if (!p.success) return { error: p.error.issues[0]?.message };
   if (id) await db.article.update({ where: { id: cuid.parse(id) }, data: p.data });
@@ -264,7 +265,7 @@ export async function saveArticleAction(id: string | null, _prev: Result, form: 
 }
 
 export async function archiveArticleAction(id: string) {
-  await requireUser();
+  await requireArea("buchhaltung");
   await db.article.update({ where: { id: cuid.parse(id) }, data: { archived: true } });
   refresh();
 }

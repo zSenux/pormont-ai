@@ -22,6 +22,8 @@ model User {
   name           String
   passwordHash   String
   role           Role      @default(MEMBER)
+  /// Funktion im Betrieb (Rollen & Rechte, src/lib/rights-shared.ts) – leer = alles
+  funktion       String?
   /// Erhöhen = alle Sitzungen dieses Nutzers abmelden
   sessionVersion Int       @default(1)
   lastLoginAt    DateTime?

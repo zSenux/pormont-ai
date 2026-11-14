@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth/user";
+import { requireArea } from "@/lib/rights";
 import { berlinDateTime } from "@/lib/berlin";
 import { LexwareError, lexwareConfigured } from "@/lib/lexware/client";
 import { getVoucher } from "@/lib/lexware/api";
@@ -44,7 +44,7 @@ const readItem = (form: FormData) =>
   });
 
 export async function createStockItem(_prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("lager");
   const p = readItem(form);
   if (!p.success) return { error: p.error.issues[0]?.message ?? "Eingabe prüfen." };
   const { quantity, ...data } = p.data;
@@ -54,7 +54,7 @@ export async function createStockItem(_prev: Result, form: FormData): Promise<Re
 }
 
 export async function updateStockItem(id: string, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("lager");
   const p = readItem(form);
   if (!p.success) return { error: p.error.issues[0]?.message ?? "Eingabe prüfen." };
   const d = p.data;
@@ -67,14 +67,14 @@ export async function updateStockItem(id: string, _prev: Result, form: FormData)
 }
 
 export async function deleteStockItem(id: string) {
-  await requireUser();
+  await requireArea("lager");
   await db.stockItem.delete({ where: { id: z.cuid().parse(id) } });
   revalidatePath("/lager");
   redirect("/lager");
 }
 
 export async function bookStockAction(itemId: string, _prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("lager");
   const p = z
     .object({ kind: z.enum(["EINGANG", "AUSGANG", "INVENTUR"]), qty, projectId: z.cuid().optional(), price: z.number().finite().min(0).max(1_000_000).optional(), note: z.string().trim().max(500).optional() })
     .safeParse({ kind: form.get("kind"), qty: num(form.get("qty")), projectId: opt(form.get("projectId")), price: num(form.get("price")), note: opt(form.get("note")) });
@@ -92,7 +92,7 @@ export async function bookStockAction(itemId: string, _prev: Result, form: FormD
 }
 
 export async function reorderStock(itemId: string): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("lager");
   let id: string;
   try {
     id = (await reorderRequest(z.cuid().parse(itemId), user)).id;
@@ -105,7 +105,7 @@ export async function reorderStock(itemId: string): Promise<Result> {
 
 /** Artikel aus einem Lieferanten-Katalog ins Lager übernehmen (Preis je Einheit) */
 export async function stockFromCatalog(catalogItemId: string) {
-  await requireUser();
+  await requireArea("lager");
   const c = await db.catalogItem.findUniqueOrThrow({ where: { id: z.cuid().parse(catalogItemId) } });
   const exists = await db.stockItem.findFirst({ where: { supplierId: c.supplierId, articleNo: c.articleNo }, select: { id: true } });
   const id = exists?.id ?? (await db.stockItem.create({ data: { name: c.name, category: "BESCHLAG", unit: c.unit ?? "Stk", price: c.price !== null ? Math.round((c.price / (c.priceUnit || 1)) * 10000) / 10000 : null, supplierId: c.supplierId, articleNo: c.articleNo, notes: c.description } })).id;
@@ -115,7 +115,7 @@ export async function stockFromCatalog(catalogItemId: string) {
 // ---------- Nachkalkulation ----------
 
 export async function saveCalcBasics(projectId: string, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("lager");
   const p = z.object({ budgetNet: z.number().finite().min(0).max(100_000_000).optional(), hourlyRate: z.number().finite().min(0).max(1000).optional() }).safeParse({ budgetNet: num(form.get("budgetNet")), hourlyRate: num(form.get("hourlyRate")) });
   if (!p.success) return { error: "Beträge prüfen." };
   await db.project.update({ where: { id: z.cuid().parse(projectId) }, data: { budgetNet: p.data.budgetNet ?? null, hourlyRate: p.data.hourlyRate ?? null, ...(p.data.budgetNet === undefined ? { lexQuotationId: null, lexQuotationNo: null } : {}) } });
@@ -125,7 +125,7 @@ export async function saveCalcBasics(projectId: string, _prev: Result, form: For
 
 /** Lexware-Angebot verknüpfen: Nettosumme wird als Auftragswert übernommen */
 export async function linkQuotation(projectId: string, _prev: Result, form: FormData): Promise<Result> {
-  await requireUser();
+  await requireArea("lager");
   if (!lexwareConfigured()) return { error: "Lexware ist nicht verbunden." };
   const qid = z.uuid().safeParse(form.get("quotationId"));
   if (!qid.success) return { error: "Bitte ein Angebot wählen." };
@@ -142,7 +142,7 @@ export async function linkQuotation(projectId: string, _prev: Result, form: Form
 }
 
 export async function addProjectCost(projectId: string, _prev: Result, form: FormData): Promise<Result> {
-  const user = await requireUser();
+  const user = await requireArea("lager");
   const p = z
     .object({ kind: z.enum(COST_KINDS), label: z.string().trim().min(2).max(200), amount: z.number().finite().min(-1_000_000).max(10_000_000), day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() })
     .safeParse({ kind: form.get("kind"), label: opt(form.get("label")), amount: num(form.get("amount")), day: opt(form.get("day")) });
@@ -153,7 +153,7 @@ export async function addProjectCost(projectId: string, _prev: Result, form: For
 }
 
 export async function deleteProjectCost(id: string) {
-  await requireUser();
+  await requireArea("lager");
   const c = await db.projectCost.delete({ where: { id: z.cuid().parse(id) } });
   revalidatePath(`/projekte/${c.projectId}/nachkalkulation`);
 }
