@@ -7,6 +7,8 @@ import { formatDate } from "@/lib/berlin";
 import { formatHours } from "@/lib/hours";
 import { STATUS_LABEL, STATUS_TONE, type ProjectStatusKey } from "@/lib/projects";
 import { createProject } from "@/app/actions/work";
+import { currentPhase, phaseTitle, progressOf } from "@/lib/phases";
+import { ProgressBar } from "./[id]/plan";
 
 export const metadata = { title: "Projekte" };
 export const dynamic = "force-dynamic";
@@ -24,7 +26,7 @@ export default async function ProjektePage({ searchParams }: { searchParams: Pro
   const projects = await db.project.findMany({
     where,
     orderBy: [{ updatedAt: "desc" }],
-    include: { _count: { select: { notes: true, files: true } } },
+    include: { _count: { select: { notes: true, files: true } }, leader: { select: { name: true } }, phases: { select: { key: true, status: true, sort: true } } },
   });
   const minutes = await db.timeEntry.groupBy({ by: ["projectId"], _sum: { minutes: true }, where: { projectId: { in: projects.map((p) => p.id) } } });
   const mins = new Map(minutes.map((m) => [m.projectId, m._sum.minutes ?? 0]));
@@ -68,7 +70,17 @@ export default async function ProjektePage({ searchParams }: { searchParams: Pro
                 <h2 className="font-semibold leading-snug">{p.name}</h2>
                 <span className={clsx("chip shrink-0 px-2 py-0.5 text-[11px]", STATUS_TONE[p.status as ProjectStatusKey])}>{STATUS_LABEL[p.status as ProjectStatusKey]}</span>
               </div>
-              {p.customer && <p className="text-sm text-steel">{p.customer}</p>}
+              {(p.customer || p.leader) && <p className="text-sm text-steel">{[p.customer, p.leader && `PL ${p.leader.name}`].filter(Boolean).join(" · ")}</p>}
+              {p.phases.length > 0 && (() => {
+                const cur = currentPhase(p.phases);
+                const pct = progressOf(p.phases);
+                return (
+                  <div className="space-y-1">
+                    <ProgressBar pct={pct} />
+                    <p className="text-xs text-steel">{pct} % · {cur ? phaseTitle(cur.key) : "abgeschlossen"}</p>
+                  </div>
+                );
+              })()}
               {p.address && <p className="flex items-center gap-1 text-xs text-steel"><MapPin className="size-3" /> {p.address}</p>}
               <p className="text-xs text-steel">
                 {formatHours(mins.get(p.id) ?? 0)} · {p._count.notes} Einträge · {p._count.files} Dateien

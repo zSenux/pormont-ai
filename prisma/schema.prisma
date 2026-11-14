@@ -33,6 +33,10 @@ model User {
   times    TimeEntry[]
   pcs      PcDevice[]
   expenses Expense[]          @relation("ExpenseUser")
+  /// Projektmanagement: geleitete Projekte, Projekt-Teams, zugewiesene Aufgaben
+  leadProjects   Project[]       @relation("ProjectLeader")
+  projectMembers ProjectMember[]
+  assignedTasks  Task[]          @relation("TaskAssignee")
 
   /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt).
   /// Eindeutigkeit prüft die App beim Speichern – kein @unique, sonst bricht `prisma db push`
@@ -103,8 +107,17 @@ model Task {
   createdById    String?
   createdBy      User?     @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt      DateTime  @default(now())
+  /// Projektmanagement: Aufgabe gehört zu einem Projekt, ist einer Person zugewiesen, hat eine Priorität
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assigneeId     String?
+  assignee       User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  /// NIEDRIG | NORMAL | HOCH | DRINGEND
+  priority       String    @default("NORMAL")
 
   @@index([doneAt, dueAt])
+  @@index([projectId])
+  @@index([assigneeId])
 }
 
 /// Gedächtnis von Jarvis („Merk dir …“)
@@ -200,6 +213,9 @@ model Project {
   lexQuotationNo String?
   /// Kalkulierter Kosten-Stundensatz (€/Std.), sonst Standard aus KALK_STUNDENSATZ
   hourlyRate   Float?
+  /// Projektleiter (verantwortlich)
+  leaderId     String?
+  leader       User?         @relation("ProjectLeader", fields: [leaderId], references: [id], onDelete: SetNull)
   createdById  String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -212,6 +228,10 @@ model Project {
   requests SupplierRequest[]
   stockMoves StockMove[]
   costs    ProjectCost[]
+  phases     ProjectPhase[]
+  milestones ProjectMilestone[]
+  members    ProjectMember[]
+  tasks      Task[]
 
   @@index([status])
 }
@@ -720,4 +740,57 @@ model ErpRecord {
 
   @@index([importId, kind])
   @@index([kind, date])
+}
+
+// ---------- Projektmanagement (EPS) ----------
+
+/// Phase eines Projekts (feste Reihenfolge: Kundenanfrage … Projektabschluss, siehe src/lib/phases.ts)
+model ProjectPhase {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// ANFRAGE | ANGEBOT | AUFTRAG | PLANUNG | KONSTRUKTION | BESCHAFFUNG | FERTIGUNG | OBERFLAECHE | MONTAGE | ABNAHME | RECHNUNG | ABSCHLUSS
+  key        String
+  sort       Int
+  /// OFFEN | LAEUFT | ERLEDIGT | ENTFAELLT
+  status     String    @default("OFFEN")
+  /// Geplanter Zeitraum (Tag, 00:00 Berliner Zeit)
+  startDate  DateTime?
+  endDate    DateTime?
+  doneAt     DateTime?
+  doneByName String?
+  note       String?
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([projectId, key])
+  @@index([projectId, sort])
+}
+
+/// Meilenstein eines Projekts (z. B. „Freigabe Werkplanung“, „Montage fertig“)
+model ProjectMilestone {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  dueDate   DateTime?
+  doneAt    DateTime?
+  note      String?
+  createdAt DateTime  @default(now())
+
+  @@index([projectId, dueDate])
+}
+
+/// Team eines Projekts (Mitarbeiter mit optionaler Aufgabe im Projekt)
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// z. B. „Konstruktion“, „Werkstatt“, „Montage“
+  role      String?
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([userId])
 }
