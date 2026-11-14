@@ -103,6 +103,22 @@ await db.supplierRequest.create({ data: { supplierId: stahl.id, projectId: vorda
 await db.supplierRequest.create({ data: { supplierId: verzinkerei.id, projectId: treppe.id, subject: "Feuerverzinkung Treppe Käfertal", text: "Demo", positions: [{ menge: 1, einheit: "psch", text: "Treppe + Podest, ca. 1.850 kg" }], status: "BESTELLT", sentAt: day(-9), offerAmount: 1480 } });
 await db.supplierRequest.create({ data: { supplierId: schrauben.id, subject: "Nachbestellung Schrauben M12", text: "Demo", positions: [{ menge: 400, einheit: "Stk", text: "Sechskantschraube M12×40 8.8 fvz" }], status: "ANGEBOT", sentAt: day(-4), offerAmount: 118 } });
 
+// Bestellungen mit Wareneingang
+const stockId = async (name: string) => (await db.stockItem.findFirstOrThrow({ where: { name } })).id;
+const L = (text: string, qty: number, unit: string, price: number, stockItemId: string | null = null, received = 0) => ({ text, qty, unit, price, stockItemId, received });
+const orders = [
+  { number: "BE-DEMO-001", supplierId: stahl.id, projectId: vordach.id, status: "BESTELLT", orderedAt: day(-6), expectedAt: day(-1), supplierRef: "AB 24-118", lines: [L("HEA 200, S355J2, 6.000 mm", 8, "Stk", 348, null), L("IPE 160, S235JR, 6.000 mm", 4, "Stk", 162, null), L("Flachstahl 50×8", 60, "m", 6.4, await stockId("Flachstahl 50×8"))] },
+  { number: "BE-DEMO-002", supplierId: schrauben.id, projectId: null, status: "TEILGELIEFERT", orderedAt: day(-5), expectedAt: day(2), supplierRef: null, lines: [L("Sechskantschraube M12×40 8.8 verzinkt", 400, "Stk", 0.29, await stockId("Sechskantschraube M12×40 8.8 verzinkt"), 200), L("Schweißdraht SG2 1,0 mm", 6, "Rolle", 36.5, await stockId("Schweißdraht SG2 1,0 mm"), 6)] },
+  { number: "BE-DEMO-003", supplierId: verzinkerei.id, projectId: treppe.id, status: "GELIEFERT", orderedAt: day(-12), expectedAt: day(-3), supplierRef: "Los 4471", lines: [L("Feuerverzinkung Treppe + Podest, ca. 1.850 kg", 1, "psch", 1480, null, 1)] },
+];
+for (const o of orders) {
+  const totalNet = Math.round(o.lines.reduce((t, l) => t + l.price * l.qty, 0) * 100) / 100;
+  const done = o.lines.filter((l) => l.received > 0);
+  await db.supplierOrder.create({
+    data: { ...o, totalNet, deliveredAt: o.status === "GELIEFERT" ? day(-3) : null, createdBy: "Anna Weber", receipts: done.length ? { create: [{ lines: done.map((l) => ({ index: o.lines.indexOf(l), qty: l.received, stockItemId: l.stockItemId })), slipNo: `LS-${o.number.slice(-3)}`, userName: "Sven Müller" }] } : undefined },
+  });
+}
+
 // Termine
 await db.event.create({ data: { title: "Montage Treppe Käfertal", startAt: day(13), allDay: true, location: "Mannheimer Str. 112, Mannheim", projectId: treppe.id } });
 await db.event.create({ data: { title: "Aufmaß Carport Viernheim", startAt: new Date(day(2).getTime() + 9 * 3600_000), projectId: (await db.project.findFirstOrThrow({ where: { name: { contains: "Carport" } } })).id } });
@@ -214,5 +230,5 @@ for (const [off, net, paid] of [[-160, 18400, true], [-130, 26100, true], [-100,
   await db.salesDoc.create({ data: { kind: "RECHNUNG", status: paid ? "BEZAHLT" : "OFFEN", number: `DEMO-RE-${docNo++}`, customerId: firstCustomer.id, title: "Abschlagsrechnung", date: day(off), dueDate: day(off + 14), lines: line("Abschlag Stahlbauarbeiten", net), ...money(net), paidCents: paid ? Math.round(net * 119) : 0, finalizedAt: day(off) } });
 }
 
-console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten.`);
+console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten, ${orders.length} Bestellungen.`);
 await db.$disconnect();

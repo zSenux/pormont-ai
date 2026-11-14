@@ -17,6 +17,9 @@ import { ASM_STATUS_LABEL, readChecklist, readDefects } from "@/lib/assembly-sha
 import { lateItems } from "@/lib/automation";
 import { DrawingError, drawingLine, setDrawingStatus } from "@/lib/drawings";
 import { canRelease, DRAWING_STATUS_LABEL, DRAWING_STATUSES, indexLetter } from "@/lib/drawings-shared";
+import { createSupplierOrder, orderFromRequest, orderLine, OrderError as SupplierOrderError, receiveGoods } from "@/lib/bestellungen";
+import { BE_LABEL, BE_STATUSES, fmtNum, openQty, readLines, type BeStatus } from "@/lib/bestellungen-shared";
+import { canArea } from "@/lib/rights-shared";
 import type { ToolCtx } from "./tools";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
@@ -167,8 +170,30 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "bestellungen",
+    description:
+      "Bestellungen beim Lieferanten mit Wareneingang: liste (offene, je Projekt/Lieferant/Status), details (Positionen mit bestellt/geliefert, Lieferungen), anlegen (Lieferant + Positionen, eine je Zeile wie „12 Stk Flachstahl 40x5 à 8,50“), aus_anfrage (Bestellung aus einer Preisanfrage mit Angebot), wareneingang (gelieferte Mengen je Position oder komplett=true für alles Offene – Lagerartikel werden sofort ins Lager gebucht; braucht den Bereich Lager). Bestellungen sind intern, der Lieferant bekommt nichts automatisch.",
+    input_schema: {
+      type: "object",
+      properties: {
+        aktion: { type: "string", enum: ["liste", "details", "anlegen", "aus_anfrage", "wareneingang"] },
+        id: str("details/wareneingang: ID oder Nummer BE-…"),
+        lieferant: str("anlegen: Name oder ID des Lieferanten; liste: Filter"),
+        projekt_id: str("anlegen/liste: Projekt-ID (optional)"),
+        anfrage_id: str("aus_anfrage: ID der Preisanfrage"),
+        positionen: str("anlegen: eine Position je Zeile: Menge Einheit Text [à Preis]"),
+        liefertermin: str("anlegen: JJJJ-MM-TT"),
+        status: { type: "string", enum: BE_STATUSES, description: "liste: Filter" },
+        mengen: { type: "array", items: { type: "object", properties: { position: { type: "number", description: "Positionsnummer ab 1" }, menge: { type: "number" } }, required: ["position", "menge"] }, description: "wareneingang: gelieferte Mengen" },
+        komplett: { type: "boolean", description: "wareneingang: alles Offene ist gekommen" },
+        lieferschein: str("wareneingang: Lieferschein-Nr."),
+      },
+      required: ["aktion"],
+    },
+  },
+  {
     name: "fristen",
-    description: "Was ist überfällig? Listet alle überschrittenen Termine im Betrieb: Aufgaben, Meilensteine, Projektphasen, Fertigungsaufträge, Auftrags-Fertigstellung und nicht gestartete Montagen – jeweils mit Link. Die Verantwortlichen bekommen dazu automatisch eine Push-Nachricht.",
+    description: "Was ist überfällig? Listet alle überschrittenen Termine im Betrieb: Aufgaben, Meilensteine, Projektphasen, Fertigungsaufträge, Auftrags-Fertigstellung, nicht gestartete Montagen und überfällige Lieferungen – jeweils mit Link. Die Verantwortlichen bekommen dazu automatisch eine Push-Nachricht.",
     input_schema: { type: "object", properties: {} },
   },
 ];
@@ -181,6 +206,7 @@ export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: 
   if (name === "fertigung") return runProduction(i, ctx);
   if (name === "montage") return runAssembly(i, ctx);
   if (name === "zeichnungen") return runDrawings(i, ctx);
+  if (name === "bestellungen") return runSupplierOrders(i, ctx);
   if (name === "fristen") {
     const late = await lateItems();
     return late.length ? `${late.length} Termine überschritten:\n${late.slice(0, 40).map((l) => `- ${l.text} → [öffnen](${l.url})`).join("\n")}` : "Nichts überfällig – alle Termine im Plan.";
@@ -619,6 +645,72 @@ async function runDrawings(i: Record<string, unknown>, ctx: ToolCtx): Promise<st
   } catch (e) {
     if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
     if (e instanceof DrawingError) return e.message;
+    throw e;
+  }
+}
+
+async function runSupplierOrders(i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+  try {
+    const q = z
+      .object({
+        aktion: z.enum(["liste", "details", "anlegen", "aus_anfrage", "wareneingang"]),
+        id: z.string().trim().max(40).optional(),
+        lieferant: z.string().trim().max(120).optional(),
+        projekt_id: z.cuid().optional(),
+        anfrage_id: z.cuid().optional(),
+        positionen: z.string().trim().max(5000).optional(),
+        liefertermin: ymd.optional(),
+        status: z.enum(BE_STATUSES).optional(),
+        mengen: z.array(z.object({ position: z.number().int().min(1).max(500), menge: z.number().min(0).max(1_000_000) })).max(200).optional(),
+        komplett: z.boolean().optional(),
+        lieferschein: z.string().trim().max(60).optional(),
+      })
+      .parse(i);
+    const me = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true, role: true, funktion: true } });
+    const actor = { id: me.id, name: `${me.name} (über Jarvis)` };
+    const findSupplier = (ref: string) => db.supplier.findFirst({ where: { OR: [{ id: ref }, { name: { contains: ref, mode: "insensitive" } }] }, select: { id: true, name: true } });
+    if (q.aktion === "liste") {
+      const sup = q.lieferant ? await findSupplier(q.lieferant) : null;
+      if (q.lieferant && !sup) return `Lieferant „${q.lieferant}“ nicht gefunden.`;
+      const list = await db.supplierOrder.findMany({
+        where: { ...(q.status ? { status: q.status } : { status: { in: ["BESTELLT", "TEILGELIEFERT"] } }), ...(q.projekt_id ? { projectId: q.projekt_id } : {}), ...(sup ? { supplierId: sup.id } : {}) },
+        orderBy: { orderedAt: "desc" },
+        take: 60,
+        include: { supplier: { select: { name: true } }, project: { select: { name: true } } },
+      });
+      return list.length ? `${list.length} Bestellungen:\n${list.map(orderLine).join("\n")}\n[Bestellungen](/bestellungen)` : "Keine passenden Bestellungen. [Bestellungen](/bestellungen)";
+    }
+    if (q.aktion === "anlegen") {
+      if (!q.lieferant || !q.positionen) return "lieferant und positionen angeben.";
+      const sup = await findSupplier(q.lieferant);
+      if (!sup) return `Lieferant „${q.lieferant}“ nicht gefunden – erst unter Lieferanten anlegen.`;
+      const o = await createSupplierOrder({ supplierId: sup.id, projectId: q.projekt_id ?? null, positions: q.positionen, expectedAt: q.liefertermin ? berlinDateTime(q.liefertermin) : null }, actor);
+      return `Bestellung ${o.number} bei ${sup.name} angelegt (${readLines(o.lines).length} Positionen). Der Lieferant bekommt nichts automatisch – bitte wie gewohnt bestellen bzw. die Bestellung drucken. [Bestellung öffnen](/bestellungen/${o.id})`;
+    }
+    if (q.aktion === "aus_anfrage") {
+      if (!q.anfrage_id) return "anfrage_id angeben.";
+      const o = await orderFromRequest(q.anfrage_id, actor);
+      return `Bestellung ${o.number} aus der Preisanfrage angelegt. [Bestellung öffnen](/bestellungen/${o.id})`;
+    }
+    const o = q.id ? await db.supplierOrder.findFirst({ where: { OR: [{ id: q.id }, { number: { equals: q.id, mode: "insensitive" } }] }, include: { supplier: { select: { name: true } }, project: { select: { name: true } }, receipts: { orderBy: { createdAt: "desc" } } } }) : null;
+    if (!o) return "Bestellung nicht gefunden – id oder Nummer BE-… angeben (bestellungen liste).";
+    const lines = readLines(o.lines);
+    if (q.aktion === "details") {
+      return [
+        orderLine(o),
+        ...lines.map((l, n) => `  ${n + 1}. ${l.text}: ${fmtNum(l.qty)} ${l.unit ?? ""} bestellt, ${fmtNum(l.received)} geliefert${l.price !== null ? ` · ${l.price.toLocaleString("de-DE", { style: "currency", currency: "EUR" })}` : ""}${l.stockItemId ? " · Lagerartikel" : ""}`),
+        ...o.receipts.map((r) => `Lieferung ${formatDate(r.createdAt)}${r.slipNo ? `, Lieferschein ${r.slipNo}` : ""}${r.userName ? ` (${r.userName})` : ""}`),
+        `[Bestellung öffnen](/bestellungen/${o.id})`,
+      ].join("\n");
+    }
+    if (!canArea(me, "lager")) return "Wareneingang buchen darf nur, wer den Bereich Lager hat.";
+    const input = q.komplett ? lines.map((l, index) => ({ index, qty: openQty(l) })).filter((x) => x.qty > 0) : (q.mengen ?? []).map((m) => ({ index: m.position - 1, qty: m.menge }));
+    if (!input.length) return "Nichts zu buchen – mengen angeben oder komplett=true.";
+    const res = await receiveGoods(o.id, { lines: input, slipNo: q.lieferschein ?? null }, actor);
+    return `Wareneingang zu ${o.number} gebucht – ${res.done ? "alles geliefert" : "Rest noch offen"}${res.booked.some((b) => b.stockItemId) ? `, ${res.booked.filter((b) => b.stockItemId).length} Positionen ins Lager gebucht` : ""}. [Bestellung öffnen](/bestellungen/${o.id})`;
+  } catch (e) {
+    if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
+    if (e instanceof SupplierOrderError) return e.message;
     throw e;
   }
 }

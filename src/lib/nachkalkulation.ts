@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { readLines } from "@/lib/bestellungen-shared";
 
 // Nachkalkulation je Projekt: Auftragswert (Angebot aus der Buchhaltung bzw. von Hand) gegen die echten Kosten:
 // Stunden × Kosten-Stundensatz, Material aus dem Lager (Entnahmen zum EK), bestellte Lieferanten-Angebote,
@@ -17,17 +18,28 @@ export type Calc = Awaited<ReturnType<typeof calcProject>>;
 
 export async function calcProject(projectId: string) {
   const p = await db.project.findUniqueOrThrow({ where: { id: projectId } });
-  const [times, moves, allOrders, expenses, costs, purchases] = await Promise.all([
+  const [times, moves, allOrders, expenses, costs, purchases, supplierOrders] = await Promise.all([
     db.timeEntry.findMany({ where: { projectId, kind: { in: ["ARBEIT", "FAHRT"] } }, select: { minutes: true, user: { select: { name: true } } } }),
     db.stockMove.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, include: { item: { select: { name: true, unit: true } } } }),
     db.supplierRequest.findMany({ where: { projectId, status: "BESTELLT", offerAmount: { not: null } }, include: { supplier: { select: { name: true } } } }),
     db.expense.findMany({ where: { projectId, status: { not: "ABGELEHNT" } }, select: { amountCents: true, kind: true, description: true } }),
     db.projectCost.findMany({ where: { projectId }, orderBy: { day: "desc" } }),
     db.purchaseDoc.findMany({ where: { projectId }, orderBy: { date: "desc" }, select: { id: true, number: true, supplier: true, docNo: true, netCents: true, date: true } }),
+    db.supplierOrder.findMany({ where: { projectId, status: { not: "STORNIERT" } }, include: { supplier: { select: { name: true } } } }),
   ]);
   // Eingangsrechnungen (Ausgaben) sind echte Kosten – bestellte Angebote desselben Lieferanten nicht doppelt zählen
   const billed = new Set(purchases.map((x) => x.supplier.trim().toLowerCase()));
-  const orders = allOrders.filter((o) => !billed.has(o.supplier.name.trim().toLowerCase()));
+  const reqOrders = allOrders.filter((o) => !billed.has(o.supplier.name.trim().toLowerCase()));
+  const counted = new Set(reqOrders.map((o) => o.id));
+  // Bestellungen: nur Positionen direkt fürs Projekt (ohne Lagerartikel – die zählen erst bei der Entnahme),
+  // nicht doppelt zur schon gezählten Preisanfrage oder zur Eingangsrechnung desselben Lieferanten
+  const orders = [
+    ...reqOrders.map((o) => ({ id: o.id, href: `/lieferanten/anfrage/${o.id}`, supplier: o.supplier.name, subject: o.subject, amount: o.offerAmount ?? 0 })),
+    ...supplierOrders
+      .filter((o) => !(o.requestId && counted.has(o.requestId)) && !billed.has(o.supplier.name.trim().toLowerCase()))
+      .map((o) => ({ id: o.id, href: `/bestellungen/${o.id}`, supplier: o.supplier.name, subject: `Bestellung ${o.number}`, amount: Math.round(readLines(o.lines).filter((l) => !l.stockItemId).reduce((s, l) => s + (l.price ?? 0) * l.qty, 0) * 100) / 100 }))
+      .filter((o) => o.amount > 0),
+  ];
   const invoices = purchases.reduce((s, x) => s + x.netCents, 0) / 100;
   const rate = p.hourlyRate ?? defaultHourlyRate();
   const minutes = times.reduce((s, t) => s + t.minutes, 0);
@@ -36,7 +48,7 @@ export async function calcProject(projectId: string) {
   // Entnahme = negatives delta; Rückgabe aufs Lager (positiv mit Projekt) mindert die Kosten
   const materialLines = moves.map((m) => ({ id: m.id, name: m.item.name, qty: -m.delta, unit: m.item.unit, price: m.price, amount: Math.round(-m.delta * (m.price ?? 0) * 100) / 100, day: m.createdAt, missingPrice: m.price === null }));
   const material = materialLines.reduce((s, l) => s + l.amount, 0);
-  const supplier = orders.reduce((s, o) => s + (o.offerAmount ?? 0), 0);
+  const supplier = orders.reduce((s, o) => s + o.amount, 0);
   const spesen = expenses.reduce((s, e) => s + e.amountCents, 0) / 100;
   const extra = costs.reduce((s, c) => s + c.amount, 0);
   const total = labor + material + supplier + spesen + extra + invoices;
@@ -52,7 +64,7 @@ export async function calcProject(projectId: string) {
     material,
     materialLines,
     supplier,
-    orders: orders.map((o) => ({ id: o.id, supplier: o.supplier.name, subject: o.subject, amount: o.offerAmount ?? 0 })),
+    orders,
     invoices,
     purchases,
     spesen,

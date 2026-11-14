@@ -28,13 +28,14 @@ export async function lateItems(now = new Date()): Promise<Late[]> {
   const today = berlinDateTime(todayYmd());
   const ymd = (d: Date) => berlinParts(d).ymd;
   const open = { status: { not: "FERTIG" as const } };
-  const [tasks, milestones, phases, jobs, orders, assemblies] = await Promise.all([
+  const [tasks, milestones, phases, jobs, orders, assemblies, deliveries] = await Promise.all([
     db.task.findMany({ where: { doneAt: null, OR: [{ dueHasTime: true, dueAt: { lt: now } }, { dueHasTime: false, dueAt: { lt: today } }] }, take: 200, select: { id: true, title: true, dueAt: true, assigneeId: true, createdById: true, project: { select: { id: true, name: true, leaderId: true } } } }),
     db.projectMilestone.findMany({ where: { doneAt: null, dueDate: { lt: today }, project: open }, take: 200, include: { project: { select: { id: true, name: true, leaderId: true } } } }),
     db.projectPhase.findMany({ where: { status: { in: ["OFFEN", "LAEUFT"] }, endDate: { lt: today }, project: open }, take: 200, include: { project: { select: { id: true, name: true, leaderId: true } } } }),
     db.productionJob.findMany({ where: { status: { notIn: ["FERTIG", "MONTAGEBEREIT"] }, plannedEnd: { lt: today } }, take: 200, include: { project: { select: { name: true, leaderId: true } } } }),
     db.order.findMany({ where: { status: { in: ["NEU", "IN_ARBEIT"] }, dueDate: { lt: today } }, take: 200, include: { project: { select: { leaderId: true } } } }),
     db.assembly.findMany({ where: { status: "GEPLANT", startAt: { lt: today } }, take: 200, include: { project: { select: { name: true, leaderId: true } } } }),
+    db.supplierOrder.findMany({ where: { status: { in: ["BESTELLT", "TEILGELIEFERT"] }, expectedAt: { lt: today } }, take: 200, include: { supplier: { select: { name: true } }, project: { select: { name: true, leaderId: true } } } }),
   ]);
   return [
     ...tasks.map((t) => ({ key: `task:${t.id}:${ymd(t.dueAt!)}`, users: [t.assigneeId ?? t.project?.leaderId ?? t.createdById], text: `Aufgabe „${t.title}“${t.project ? ` (${t.project.name})` : ""} war fällig am ${formatDate(t.dueAt)}`, url: t.project ? `/projekte/${t.project.id}` : "/aufgaben" })),
@@ -43,6 +44,7 @@ export async function lateItems(now = new Date()): Promise<Late[]> {
     ...jobs.map((j) => ({ key: `fa:${j.id}:${ymd(j.plannedEnd!)}`, users: [j.assigneeId, j.project.leaderId], text: `Fertigung ${j.number} „${j.title}“ (${j.project.name}) sollte am ${formatDate(j.plannedEnd)} fertig sein`, url: `/fertigung/${j.id}` })),
     ...orders.map((o) => ({ key: `au:${o.id}:${ymd(o.dueDate!)}`, users: [o.project.leaderId], text: `Auftrag ${o.number} „${o.title}“ – Fertigstellung war am ${formatDate(o.dueDate)}`, url: `/auftraege/${o.id}` })),
     ...assemblies.map((a) => ({ key: `mo:${a.id}:${ymd(a.startAt)}`, users: [a.leaderId, a.project.leaderId], text: `Montage ${a.number} „${a.title}“ (${a.project.name}) war am ${formatDate(a.startAt)} geplant und ist nicht gestartet`, url: `/montage/${a.id}` })),
+    ...deliveries.map((o) => ({ key: `be:${o.id}:${ymd(o.expectedAt!)}`, users: [o.project?.leaderId], text: `Lieferung ${o.number} von ${o.supplier.name}${o.project ? ` (${o.project.name})` : ""} war für ${formatDate(o.expectedAt)} zugesagt`, url: `/bestellungen/${o.id}` })),
   ];
 }
 
