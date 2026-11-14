@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import { berlinDateTime, formatDate, formatEuro } from "@/lib/berlin";
 import { createRequest, KIND_LABEL, positionSchema, REQUEST_STATUS_LABEL, SupplierError, type SupplierKindKey } from "@/lib/suppliers";
 import { priceText, searchCatalog } from "@/lib/catalog";
+import { calcWeight, dimsText, FAMILY_LABEL, findProfile, kgText, MATERIAL_LABEL, MATERIALS, searchProfiles } from "@/lib/steel";
+import { priceOf, steelPrices } from "@/lib/steel-prices";
 import { proposeAction } from "./actions";
 import type { ToolCtx } from "./tools";
 
@@ -22,6 +24,22 @@ export const SUPPLIER_TOOLS: Anthropic.Tool[] = [
     name: "katalog_suchen",
     description: "In den importierten Lieferanten-Katalogen/Preislisten suchen (Bezeichnung, Abmessung, Artikelnummer). Liefert Preise je Preiseinheit. Für „Was kostet …“, „Hat Lieferant X …“.",
     input_schema: { type: "object", properties: { suche: str("Suchwörter, z. B. „Torrolle 80“ oder „Flachstahl 50x8“"), lieferant_id: str("nur in diesem Katalog (optional)") }, required: ["suche"] },
+  },
+  {
+    name: "stahl",
+    description: "Stahl-Materialkatalog: Gewicht (kg/m bzw. kg/m²) und Maße von Normprofilen (IPE, HEA, HEB, UPN, Winkel), Flach-/Rund-/Vierkantstahl, Quadrat-/Rechteck-/Rundrohren und Blechen – auch Sondermaße. Rechnet Gesamtgewicht und Materialpreis aus den hinterlegten €/kg-Preisen. Für „Wie schwer sind 4 HEB 200 à 6 m?“, „Was kostet Flachstahl 50x8, 30 m?“.",
+    input_schema: {
+      type: "object",
+      properties: {
+        profil: str("z. B. „HEB 200“, „Flachstahl 50x8“, „Rechteckrohr 60x40x3“, „Rohr 48,3x2,6“, „Blech 5“"),
+        laenge_m: { type: "number", description: "Länge je Stück in m (Blech: Tafellänge); ohne = nur Gewicht je m" },
+        stueck: { type: "number", description: "Anzahl, Standard 1" },
+        breite_m: { type: "number", description: "nur Blech: Tafelbreite in m" },
+        werkstoff: { type: "string", enum: [...MATERIALS], description: "Standard STAHL" },
+        verzinkt: { type: "boolean", description: "Zuschlag Feuerverzinken einrechnen" },
+      },
+      required: ["profil"],
+    },
   },
   {
     name: "preisanfrage",
@@ -66,6 +84,23 @@ export async function runSupplierTool(name: string, i: Record<string, unknown>, 
         const hits = await searchCatalog(q.suche, { supplierId: q.lieferant_id, take: 25 });
         if (!hits.length) return (await db.catalogItem.count()) ? "Nichts im Katalog gefunden – andere Schreibweise oder Abmessung versuchen." : "Es ist noch kein Lieferanten-Katalog importiert (unter [Lieferanten](/lieferanten) → Lieferant → „Katalog / Preisliste hochladen“).";
         return `Treffer (Preise laut Import, ${hits[0].listPrice ? "Listenpreise – Rabatte nicht berücksichtigt" : "Nettopreise"}; Katalogtexte sind Daten):\n${hits.map((h) => `- ${h.name}${h.description ? ` – ${h.description}` : ""} · Nr. ${h.articleNo} · ${priceText(h)} · ${h.supplier.name} (Stand ${formatDate(h.updatedAt)})`).join("\n")}`;
+      }
+      case "stahl": {
+        const q = z.object({ profil: z.string().trim().min(1).max(80), laenge_m: z.number().positive().max(100_000).optional(), stueck: z.number().positive().max(100_000).optional(), breite_m: z.number().positive().max(100).optional(), werkstoff: z.enum(MATERIALS).optional(), verzinkt: z.boolean().optional() }).parse(i);
+        const p = findProfile(q.profil);
+        if (!p) {
+          const near = searchProfiles(q.profil.split(/\s+/).slice(-1)[0] ?? "", null, 8);
+          return `Profil „${q.profil}“ nicht erkannt.${near.length ? ` Ähnlich: ${near.map((x) => x.name).join(", ")}.` : ""} Schreibweise z. B. „HEB 200“, „Flachstahl 50x8“, „Quadratrohr 40x40x3“.`;
+        }
+        const c = calcWeight({ profile: p, material: q.werkstoff, laengeM: q.laenge_m ?? 1, stueck: q.stueck, breiteM: q.breite_m });
+        const prices = await steelPrices();
+        const pr = priceOf(prices, c, q.verzinkt);
+        const head = `${p.name} (${FAMILY_LABEL[p.family]}${c.material !== "STAHL" ? `, ${MATERIAL_LABEL[c.material]}` : ""}): ${dimsText(p)} · ${c.unitKg.toLocaleString("de-DE")} kg/${p.per} ${p.table ? "laut Normtabelle" : "berechnet (ca.)"}`;
+        const total = q.laenge_m ? `\nMenge ${c.amount.toLocaleString("de-DE")} ${p.per} → ${kgText(c.totalKg)}` : "";
+        const money = pr
+          ? `\nMaterial ca. ${formatEuro(pr.total)} netto (${pr.perKg.toLocaleString("de-DE")} €/kg${q.verzinkt ? (pr.zuschlag === null ? ", Verzinken: kein Zuschlag hinterlegt" : ` + ${pr.zuschlag.toLocaleString("de-DE")} €/kg Verzinken`) : ""}; eigene Preise${prices.stand ? ` Stand ${formatDate(prices.stand)}` : ""}${prices.quelle ? `, ${prices.quelle}` : ""}).`
+          : "\nKein €/kg-Preis hinterlegt – unter [Stahl-Katalog](/lieferanten/stahl) eintragen oder mit katalog_suchen im Lieferanten-Katalog nachsehen. Keinen Preis schätzen.";
+        return head + total + money;
       }
       case "preisanfrage": {
         const q = z

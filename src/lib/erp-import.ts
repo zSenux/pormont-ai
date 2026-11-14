@@ -118,7 +118,8 @@ function colIndex(ref: string) {
   return n - 1;
 }
 
-function fromXlsx(buf: Buffer): Table[] {
+/** Alle Blätter einer .xlsx als Zeilen/Spalten (Text). Auch für Lieferanten-Preislisten (catalog.ts). */
+export function xlsxSheets(buf: Buffer): { name: string; matrix: string[][] }[] {
   const files = unzip(buf);
   const read = (n: string) => files.get(n)?.().toString("utf8") ?? "";
   const shared = [...read("xl/sharedStrings.xml").matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => tTexts(m[1]));
@@ -140,7 +141,7 @@ function fromXlsx(buf: Buffer): Table[] {
     return n % 1 ? `${day} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}` : day;
   };
   const sheets = [...read("xl/workbook.xml").matchAll(/<sheet\b[^>]*>/g)].map((m) => ({ name: xmlText(/name="([^"]*)"/.exec(m[0])?.[1] ?? "Blatt"), rid: /r:id="([^"]+)"/.exec(m[0])?.[1] ?? "" }));
-  const tables: Table[] = [];
+  const out: { name: string; matrix: string[][] }[] = [];
   for (const s of sheets) {
     const target = rels.get(s.rid);
     if (!target) continue;
@@ -169,8 +170,13 @@ function fromXlsx(buf: Buffer): Table[] {
       }
       if (cells.some((x) => x && x.trim())) matrix.push(Array.from(cells, (x) => x ?? ""));
     }
-    if (matrix.length >= 2) tables.push({ name: s.name, rows: rowsFromMatrix(matrix) });
+    out.push({ name: s.name, matrix });
   }
+  return out;
+}
+
+function fromXlsx(buf: Buffer): Table[] {
+  const tables: Table[] = xlsxSheets(buf).filter((s) => s.matrix.length >= 2).map((s) => ({ name: s.name, rows: rowsFromMatrix(s.matrix) }));
   if (!tables.length) throw new ErpImportError("In der Excel-Datei wurde kein Blatt mit Kopfzeile und Daten gefunden.");
   return tables;
 }

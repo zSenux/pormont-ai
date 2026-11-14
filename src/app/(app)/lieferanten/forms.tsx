@@ -154,9 +154,9 @@ export function CatalogUpload({ supplierId }: { supplierId: string }) {
       <label className={`btn-primary w-fit cursor-pointer ${busy ? "pointer-events-none opacity-60" : ""}`}>
         {busy ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
         {busy ? "Wird importiert …" : "Katalog / Preisliste hochladen"}
-        <input ref={input} type="file" className="sr-only" accept=".csv,.txt,.tsv,.pdf,.001,.002,.003,.004,.005,.006,.007,.008,.009,text/csv,application/pdf" onChange={(e) => send(e.target.files?.[0])} />
+        <input ref={input} type="file" className="sr-only" accept=".xlsx,.csv,.txt,.tsv,.pdf,.001,.002,.003,.004,.005,.006,.007,.008,.009,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => send(e.target.files?.[0])} />
       </label>
-      <p className="text-xs text-steel">CSV (aus Excel: Speichern unter → CSV UTF-8), DATANORM 4 (Datei *.001 vom Großhändler) oder PDF-Preisliste. Gleiche Artikelnummern werden aktualisiert.</p>
+      <p className="text-xs text-steel">Excel (.xlsx), CSV, DATANORM 4 (Datei *.001 vom Großhändler) oder PDF-Preisliste. Gleiche Artikelnummern werden aktualisiert.</p>
       {msg?.error && <p className="text-sm text-bad" role="alert">{msg.error}</p>}
       {msg?.ok && <p className="flex items-center gap-1 text-sm text-ok"><Check className="size-4" /> {msg.ok}</p>}
     </div>
