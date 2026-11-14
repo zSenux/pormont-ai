@@ -217,6 +217,8 @@ model Project {
   budgetNet    Float?
   lexQuotationId String?
   lexQuotationNo String?
+  /// Nachkalkulation: verknüpftes Angebot aus der eigenen Buchhaltung (SalesDoc)
+  quoteId        String?
   /// Kalkulierter Kosten-Stundensatz (€/Std.), sonst Standard aus KALK_STUNDENSATZ
   hourlyRate   Float?
   /// Kunde aus dem Kundenstamm (Buchhaltung); `customer` bleibt als Anzeigename
@@ -242,6 +244,7 @@ model Project {
   members    ProjectMember[]
   tasks      Task[]
   docs       SalesDoc[]
+  purchases  PurchaseDoc[]
   order      Order?
   production ProductionJob[]
   assemblies Assembly[]
@@ -1178,4 +1181,70 @@ model AssemblyMember {
 
   @@unique([assemblyId, userId])
   @@index([userId])
+}
+
+// ---------- Buchhaltung: Ausgaben (Eingangsrechnungen/Belege) und Bankabgleich ----------
+
+/// Eingangsbeleg (Lieferantenrechnung, Kassenbon). Belegnummer E-JJJJ-0001 aus NumberSeq „EINGANG-<Jahr>“.
+model PurchaseDoc {
+  id          String    @id @default(cuid())
+  number      String
+  /// Lieferant (Name aus dem Beleg; optional verknüpft mit Lieferanten-Stamm)
+  supplier    String
+  supplierId  String?
+  /// Rechnungsnummer des Lieferanten
+  docNo       String?
+  date        DateTime
+  dueDate     DateTime?
+  /// MATERIAL | FREMDLEISTUNG | WERKZEUG | FAHRZEUG | TANKEN | BUERO | BEWIRTUNG | MIETE | VERSICHERUNG | SONSTIGES
+  category    String    @default("MATERIAL")
+  netCents    Int
+  taxCents    Int
+  grossCents  Int
+  /// 19 | 7 | 0 (bei gemischten Sätzen der überwiegende)
+  taxRate     Int       @default(19)
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  /// Beleg-Datei (Foto/PDF)
+  fileId      String?
+  /// OFFEN | BEZAHLT
+  status      String    @default("OFFEN")
+  paidAt      DateTime?
+  /// UEBERWEISUNG | BAR | KARTE | LASTSCHRIFT
+  payMethod   String?
+  note        String?
+  /// Im DATEV-Export ausgegeben (danach nur mit Hinweis ändern)
+  exportedAt  DateTime?
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@index([projectId])
+  @@index([fileId])
+}
+
+/// Umsatz vom Kontoauszug (CAMT.053 oder CSV). hash verhindert doppelten Import.
+model BankTx {
+  id         String    @id @default(cuid())
+  hash       String    @unique
+  day        DateTime
+  /// Eingang positiv, Ausgang negativ
+  amountCents Int
+  name       String?
+  iban       String?
+  purpose    String?
+  /// Zugeordnet: Rechnung (Zahlung) oder Ausgabe
+  docId      String?
+  paymentId  String?
+  purchaseId String?
+  ignored    Boolean   @default(false)
+  fileName   String?
+  importedBy String?
+  createdAt  DateTime  @default(now())
+
+  @@index([day])
+  @@index([docId])
+  @@index([purchaseId])
 }

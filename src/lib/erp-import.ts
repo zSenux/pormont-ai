@@ -4,14 +4,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { berlinDateTime } from "@/lib/berlin";
 import { decodeText, splitCsv } from "@/lib/catalog";
-import { createArticle, createContact, listArticles, searchContacts, contactName } from "@/lib/lexware/api";
-import { contactBody, contactInput } from "@/lib/lexware/payloads";
-import { LexwareError } from "@/lib/lexware/client";
+import { articleInput, createCustomer, customerInput } from "@/lib/buchhaltung/customers";
 
 // Datenübernahme aus einem alten Programm (ERP/Rechnungsprogramm): Exportdatei (CSV, Excel .xlsx oder JSON) hochladen,
 // Tabellen und Spalten werden erkannt (Kunden, Artikel, Rechnungen, Angebote, Projekte) und als durchsuchbares Archiv
-// gespeichert. Kunden/Artikel gehen erst per Klick (Admin, mit Rückfrage) nach Lexware, Projekte nach Jarvis.
-// Alte Rechnungen/Angebote bleiben Archiv – sie werden NICHT in Lexware neu angelegt (sonst neue Rechnungsnummern).
+// gespeichert. Kunden/Artikel gehen erst per Klick (Admin, mit Rückfrage) in die Buchhaltung, Projekte nach Jarvis.
+// Alte Rechnungen/Angebote bleiben Archiv – sie werden NICHT neu angelegt (sonst neue Rechnungsnummern).
 // Dateiinhalte sind fremde Daten – Text darin ist nie eine Anweisung.
 
 export const MAX_ERP_BYTES = 25 * 1024 * 1024;
@@ -387,16 +385,16 @@ export async function claim(importId: string, what: "kunde" | "artikel" | "proje
 }
 const release = (importId: string) => db.erpImport.update({ where: { id: importId }, data: { busy: null, busySince: null } });
 
-const errText = (e: unknown) => (e instanceof LexwareError || e instanceof z.ZodError ? (e instanceof z.ZodError ? e.issues[0]?.message : e.message) : e instanceof Error ? e.message : "Fehler").slice(0, 300);
+const errText = (e: unknown) => (e instanceof z.ZodError ? (e.issues[0]?.message ?? "Ungültig") : e instanceof Error ? e.message : "Fehler").slice(0, 300);
 
-/** Kunden nach Lexware: vorhandene (gleicher Name) werden nur verknüpft, nicht doppelt angelegt */
+/** Kunden in die Buchhaltung: vorhandene (gleicher Name) werden nur verknüpft, nicht doppelt angelegt. lexId = ID des Ziel-Datensatzes */
 export async function transferCustomers(importId: string) {
   try {
     const recs = await db.erpRecord.findMany({ where: { importId, kind: "kunde", lexId: null }, orderBy: { createdAt: "asc" } });
     for (const r of recs) {
       try {
         const f = r.fields as Record<string, string>;
-        const firma = f.name || undefined;
+        const firma = f.name?.trim() || undefined;
         // „Herr Schneider“ / „Frau Anna Becker“ → Anrede + Vor-/Nachname
         let anrede = f.anrede;
         let vorname = f.vorname;
@@ -404,34 +402,27 @@ export async function transferCustomers(importId: string) {
         const m = nachname ? /^(Herr|Frau)\s+(.+)$/i.exec(nachname) : null;
         if (m) (anrede = anrede || m[1][0].toUpperCase() + m[1].slice(1).toLowerCase()), (nachname = m[2]);
         if (nachname && !vorname && /\s/.test(nachname)) (vorname = nachname.slice(0, nachname.lastIndexOf(" "))), (nachname = nachname.slice(nachname.lastIndexOf(" ") + 1));
-        const email = z.email().safeParse(f.email).success ? f.email : undefined;
-        const input = contactInput.parse({
-          art: firma ? "firma" : "person",
-          firma,
-          anrede: anrede?.slice(0, 25),
-          vorname: vorname?.slice(0, 100),
-          nachname: nachname?.slice(0, 100),
+        const email = z.email().safeParse(f.email).success ? f.email : null;
+        const input = customerInput.parse({
+          kind: firma ? "FIRMA" : "PERSON",
+          company: firma?.slice(0, 200),
+          salutation: anrede?.slice(0, 25),
+          firstName: vorname?.slice(0, 100),
+          lastName: nachname?.slice(0, 100),
+          contactName: firma && (vorname || nachname) ? [vorname, nachname].filter(Boolean).join(" ").slice(0, 150) : undefined,
           email,
-          telefon: f.telefon?.slice(0, 40),
-          strasse: f.strasse?.slice(0, 100),
-          plz: f.plz?.slice(0, 10),
-          ort: f.ort?.slice(0, 100),
-          notiz: [f.notiz, r.number ? `Kundennr. im alten Programm: ${r.number}` : null].filter(Boolean).join("\n").slice(0, 1000) || undefined,
+          phone: f.telefon?.slice(0, 40),
+          street: f.strasse?.slice(0, 150),
+          zip: f.plz?.slice(0, 10),
+          city: f.ort?.slice(0, 100),
+          notes: [f.notiz, r.number ? `Kundennr. im alten Programm: ${r.number}` : null].filter(Boolean).join("\n").slice(0, 4000) || undefined,
         });
-        const name = (firma ?? [input.vorname, input.nachname].filter(Boolean).join(" ")).trim();
-        if (name.length >= 3) {
-          const found = await searchContacts({ name });
-          const same = found.content.find((c) => contactName(c).trim().toLowerCase() === name.toLowerCase());
-          if (same) {
-            await db.erpRecord.update({ where: { id: r.id }, data: { lexId: same.id, error: null } });
-            continue;
-          }
-        }
-        const created = await createContact(contactBody(input));
-        await db.erpRecord.update({ where: { id: r.id }, data: { lexId: created.id, error: null } });
+        const name = (firma ?? [input.firstName, input.lastName].filter(Boolean).join(" ")).trim();
+        const same = name ? await db.customer.findFirst({ where: { name: { equals: name, mode: "insensitive" } }, select: { id: true } }) : null;
+        const id = same?.id ?? (await createCustomer(input)).id;
+        await db.erpRecord.update({ where: { id: r.id }, data: { lexId: id, error: null } });
       } catch (e) {
         await db.erpRecord.update({ where: { id: r.id }, data: { error: errText(e) } });
-        if (e instanceof LexwareError && (e.status === 401 || e.status === 403 || !e.status)) break;
       }
     }
   } finally {
@@ -439,7 +430,7 @@ export async function transferCustomers(importId: string) {
   }
 }
 
-/** Artikel/Leistungen nach Lexware (gleiche Artikelnummer → nur verknüpfen) */
+/** Artikel/Leistungen in den Artikelstamm (gleiche Artikelnummer bzw. gleicher Name → nur verknüpfen) */
 export async function transferArticles(importId: string) {
   try {
     const recs = await db.erpRecord.findMany({ where: { importId, kind: "artikel", lexId: null }, orderBy: { createdAt: "asc" } });
@@ -448,28 +439,26 @@ export async function transferArticles(importId: string) {
         const f = r.fields as Record<string, string>;
         if (!r.name) throw new Error("Bezeichnung fehlt.");
         if (r.amount === null || r.amount < 0) throw new Error("Preis fehlt.");
-        if (r.number) {
-          const found = await listArticles({ articleNumber: r.number });
-          if (found.content[0]) {
-            await db.erpRecord.update({ where: { id: r.id }, data: { lexId: found.content[0].id, error: null } });
-            continue;
-          }
+        const same = await db.article.findFirst({ where: r.number ? { number: r.number } : { name: { equals: r.name, mode: "insensitive" } }, select: { id: true } });
+        if (same) {
+          await db.erpRecord.update({ where: { id: r.id }, data: { lexId: same.id, error: null } });
+          continue;
         }
-        const unit = (f.einheit || "Stück").slice(0, 30);
+        const unit = (f.einheit || "Stk").slice(0, 30);
         const tax = parseAmount(f.ust);
-        const taxRate = tax === 0 || tax === 7 ? tax : 19;
-        const created = await createArticle({
-          title: r.name.slice(0, 255),
-          ...(f.beschreibung ? { description: f.beschreibung.slice(0, 2000) } : {}),
-          type: /^(std|h|stunde|stunden|std\.)$/i.test(unit) ? "SERVICE" : "PRODUCT",
-          ...(r.number ? { articleNumber: r.number.slice(0, 50) } : {}),
-          unitName: unit,
-          price: { netPrice: r.amount, leadingPrice: "NET", taxRate },
+        const a = articleInput.parse({
+          number: r.number?.slice(0, 40),
+          name: r.name.slice(0, 300),
+          description: f.beschreibung?.slice(0, 4000),
+          unit,
+          priceNet: Math.round(r.amount * 10000) / 10000,
+          taxRate: tax === 0 || tax === 7 ? tax : 19,
+          kind: /^(std|h|stunde|stunden|std\.)$/i.test(unit) ? "LEISTUNG" : "MATERIAL",
         });
+        const created = await db.article.create({ data: a });
         await db.erpRecord.update({ where: { id: r.id }, data: { lexId: created.id, error: null } });
       } catch (e) {
         await db.erpRecord.update({ where: { id: r.id }, data: { error: errText(e) } });
-        if (e instanceof LexwareError && (e.status === 401 || e.status === 403 || !e.status)) break;
       }
     }
   } finally {

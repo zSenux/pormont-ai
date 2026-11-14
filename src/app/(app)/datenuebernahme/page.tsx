@@ -60,8 +60,8 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
           <ol className="list-decimal space-y-1 pl-5 text-sm text-steel">
             <li>Im alten Programm die Daten exportieren (Excel, CSV oder JSON) – Kunden, Artikel, Rechnungen, Angebote, Projekte.</li>
             <li>Hier hochladen. Jarvis erkennt Tabellen und Spalten selbst, du prüfst unten die Zuordnung.</li>
-            <li>Kunden und Artikel per Knopf nach Lexware, Projekte nach Jarvis übernehmen. Doppelte werden erkannt und nur verknüpft.</li>
-            <li>Alte Rechnungen und Angebote bleiben als Archiv – sie bekommen in Lexware keine neue Nummer. Jarvis findet sie trotzdem („Was hat Müller 2025 bezahlt?“).</li>
+            <li>Kunden und Artikel per Knopf in die Buchhaltung, Projekte nach Jarvis übernehmen. Doppelte werden erkannt und nur verknüpft.</li>
+            <li>Alte Rechnungen und Angebote bleiben als Archiv – sie bekommen keine neue Rechnungsnummer. Jarvis findet sie trotzdem („Was hat Müller 2025 bezahlt?“).</li>
           </ol>
           <ExportUpload />
         </section>
@@ -89,7 +89,7 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
                     <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                       <span className="font-medium">{[r.number, r.party ?? r.name].filter(Boolean).join(" · ") || "(ohne Namen)"}</span>
                       {r.party && r.name ? <span className="text-steel"> · {r.name}</span> : null}
-                      <span className="block text-xs text-steel">{ERP_KIND_LABEL[r.kind as ErpKind]}{r.date ? ` · ${formatDate(r.date)}` : ""}{r.status ? ` · ${r.status}` : ""}{r.lexId ? " · in Lexware" : ""}{r.projectId ? " · als Projekt" : ""}</span>
+                      <span className="block text-xs text-steel">{ERP_KIND_LABEL[r.kind as ErpKind]}{r.date ? ` · ${formatDate(r.date)}` : ""}{r.status ? ` · ${r.status}` : ""}{r.lexId ? (r.lexId.includes("-") ? " · in Lexware" : " · übernommen") : ""}{r.projectId ? " · als Projekt" : ""}</span>
                     </span>
                     {r.amount !== null && <span className="shrink-0 font-semibold">{formatEuro(r.amount)}</span>}
                   </Link>
@@ -114,7 +114,7 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
                 </div>
                 {imp.busy && <span className="chip bg-amber-50 px-2 py-0.5 text-[11px] text-warn">Übernahme läuft …</span>}
                 {admin && (
-                  <ActionButton action={deleteImport.bind(null, imp.id)} confirm={`„${imp.fileName}“ mit allen Datensätzen aus dem Archiv löschen? Bereits in Lexware/Jarvis übernommene Kunden, Artikel und Projekte bleiben dort.`} className="btn-secondary px-2 py-1.5" title="Import löschen">
+                  <ActionButton action={deleteImport.bind(null, imp.id)} confirm={`„${imp.fileName}“ mit allen Datensätzen aus dem Archiv löschen? Bereits übernommene Kunden, Artikel und Projekte bleiben dort.`} className="btn-secondary px-2 py-1.5" title="Import löschen">
                     <Trash2 className="size-4" />
                   </ActionButton>
                 )}
@@ -144,10 +144,10 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
                           <span className="text-steel">{moved.toLocaleString("de-DE")} von {total.toLocaleString("de-DE")} übernommen{errors ? <span className="text-bad"> · {errors} mit Fehler</span> : null}</span>
                         )}
                         {admin && !imp.busy && moved < total && t.kind === "kunde" && (
-                          <TransferButton importId={imp.id} what="kunde" label="Kunden nach Lexware" confirm={`${total - moved} Kunden in Lexware anlegen? Kunden mit gleichem Namen, die es in Lexware schon gibt, werden nur verknüpft.`} />
+                          <TransferButton importId={imp.id} what="kunde" label="Kunden übernehmen" confirm={`${total - moved} Kunden in der Buchhaltung anlegen? Kunden mit gleichem Namen, die es schon gibt, werden nur verknüpft.`} />
                         )}
                         {admin && !imp.busy && moved < total && t.kind === "artikel" && (
-                          <TransferButton importId={imp.id} what="artikel" label="Artikel nach Lexware" confirm={`${total - moved} Artikel/Leistungen in Lexware anlegen? Gleiche Artikelnummern werden nur verknüpft.`} />
+                          <TransferButton importId={imp.id} what="artikel" label="Artikel übernehmen" confirm={`${total - moved} Artikel/Leistungen in den Artikelstamm übernehmen? Gleiche Artikelnummern werden nur verknüpft.`} />
                         )}
                         {admin && !imp.busy && moved < total && t.kind === "projekt" && (
                           <TransferButton importId={imp.id} what="projekt" label="Als Projekte anlegen" confirm={`${total - moved} Projekte in Jarvis anlegen? Gleichnamige Projekte werden nur verknüpft.`} />

@@ -34,6 +34,11 @@ export const bookConfigSchema = z.object({
   dunningDays: z.number().int().min(1).max(60).default(7),
   /** Name im Absender der E-Rechnung (Ansprechpartner) */
   contactName: z.string().trim().max(100).default("Buchhaltung"),
+  /** DATEV: Beraternummer (vom Steuerberater), Mandantennummer, Kontenrahmen, Beginn Wirtschaftsjahr (Monat) */
+  datevBerater: z.string().trim().regex(/^\d{0,7}$/, "Beraternummer: bis zu 7 Ziffern").default(""),
+  datevMandant: z.string().trim().regex(/^\d{0,5}$/, "Mandantennummer: bis zu 5 Ziffern").default(""),
+  datevSkr: z.enum(["03", "04"]).default("03"),
+  datevWjMonth: z.number().int().min(1).max(12).default(1),
 });
 export type BookConfig = z.infer<typeof bookConfigSchema>;
 

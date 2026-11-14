@@ -8,8 +8,7 @@ import { fileUrl, searchFiles } from "@/lib/files";
 import { formatHours, parseHours } from "@/lib/hours";
 import { STATUS_LABEL } from "@/lib/projects";
 import { receiptData, receiptSummary } from "@/lib/receipts";
-import { lexwareConfigured } from "@/lib/lexware/client";
-import { proposeAction, receiptActionInput } from "./actions";
+import { createPurchase, PURCHASE_CATEGORIES, purchaseFromReceipt, unbookedReceiptsWhere, type PurchaseCategory } from "@/lib/buchhaltung/purchases";
 import type { ToolCtx } from "./tools";
 
 // Kalender, Projekte/Baustellen, Stunden, Dokumente und Belegfotos.
@@ -91,13 +90,13 @@ export const WORK_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "belegfotos",
-    description: "Fotografierte Belege (Kassenbons, Eingangsrechnungen) mit den erkannten Daten; zeigt, welche noch nicht in Lexware sind.",
-    input_schema: { type: "object", properties: { nur_offen: { type: "boolean", description: "nur die noch nicht in Lexware" } } },
+    description: "Fotografierte Belege (Kassenbons, Eingangsrechnungen) mit den erkannten Daten; zeigt, welche noch nicht als Ausgabe gebucht sind.",
+    input_schema: { type: "object", properties: { nur_offen: { type: "boolean", description: "nur die noch nicht gebuchten" } } },
   },
   {
     name: "beleg_hochladen",
-    description: "Ein Belegfoto an Lexware übergeben (dort unter Belege zum Verbuchen) – wird NUR als Freigabe-Karte vorgeschlagen.",
-    input_schema: { type: "object", properties: { id: str("Belegfoto-ID aus belegfotos") }, required: ["id"] },
+    description: "Ein Belegfoto als Ausgabe in der Buchhaltung buchen (sofort, änderbar). Betrag/Datum/Lieferant kommen aus dem ausgelesenen Foto; optional Projekt und Kategorie. Danach Link nennen, damit jemand kurz prüft.",
+    input_schema: { type: "object", properties: { id: str("Belegfoto-ID aus belegfotos"), projektId: str("Projekt-ID (optional, für die Nachkalkulation)"), kategorie: { type: "string", enum: ["MATERIAL", "FREMDLEISTUNG", "WERKZEUG", "FAHRZEUG", "TANKEN", "BUERO", "BEWIRTUNG", "MIETE", "VERSICHERUNG", "SONSTIGES"] }, bezahlt: { type: "boolean", description: "schon bezahlt (Standard: aus dem Beleg, z. B. bar/Karte)" } }, required: ["id"] },
   },
 ];
 
@@ -287,22 +286,31 @@ export async function runWorkTool(name: string, i: Record<string, unknown>, ctx:
 
     case "belegfotos": {
       const onlyOpen = i.nur_offen === true;
-      const rows = await db.storedFile.findMany({ where: { kind: "beleg", ...(onlyOpen ? { lexFileId: null } : {}) }, orderBy: { createdAt: "desc" }, take: 25, select: { id: true, meta: true, lexFileId: true, createdAt: true, name: true } });
-      if (!rows.length) return onlyOpen ? "Alle fotografierten Belege sind in Lexware." : "Noch keine Belege fotografiert. [Beleg fotografieren](/belege/foto)";
+      const rows = await db.storedFile.findMany({ where: onlyOpen ? await unbookedReceiptsWhere() : { kind: "beleg" }, orderBy: { createdAt: "desc" }, take: 25, select: { id: true, meta: true, lexFileId: true, createdAt: true, name: true } });
+      if (!rows.length) return onlyOpen ? "Alle fotografierten Belege sind gebucht." : "Noch keine Belege fotografiert. [Beleg fotografieren](/belege/foto)";
+      const booked = new Map((await db.purchaseDoc.findMany({ where: { fileId: { in: rows.map((r) => r.id) } }, select: { fileId: true, number: true, id: true } })).map((p) => [p.fileId, p]));
       return `Belegfotos:\n${rows
         .map((r) => {
           const d = receiptData.safeParse(r.meta);
-          return `- id ${r.id} · ${receiptSummary(d.success ? d.data : null)} · ${formatDate(r.createdAt)} · ${r.lexFileId ? "in Lexware" : "noch nicht in Lexware"}`;
+          return `- id ${r.id} · ${receiptSummary(d.success ? d.data : null)} · ${formatDate(r.createdAt)} · ${booked.get(r.id) ? `gebucht als [${booked.get(r.id)!.number}](/buchhaltung/ausgaben/${booked.get(r.id)!.id})` : r.lexFileId ? "früher an Lexware übergeben" : "noch nicht gebucht"}`;
         })
         .join("\n")}\n[Belegfotos](/belege/foto)`;
     }
 
     case "beleg_hochladen": {
-      if (!lexwareConfigured()) return "Lexware ist noch nicht verbunden – ein Administrator trägt den API-Schlüssel unter Einstellungen → Verbindungen ein.";
-      const input = await receiptActionInput(id.parse(i.id));
-      const a = await proposeAction(ctx.chatId, ctx.userId, "beleg_hochladen", input);
-      ctx.proposed.push(a.id);
-      return "Freigabe-Karte angelegt (noch NICHT hochgeladen). Sag dem Nutzer kurz, dass er unten auf „Freigeben“ tippen muss.";
+      // Daten kommen aus dem ausgelesenen Foto in der Datenbank, nie vom Modell (nur Projekt/Kategorie/bezahlt)
+      const q = z.object({ id, projektId: z.string().max(40).optional(), kategorie: z.string().optional(), bezahlt: z.boolean().optional() }).parse(i);
+      const f = await db.storedFile.findUnique({ where: { id: q.id }, select: { kind: true } });
+      if (f?.kind !== "beleg") return "Belegfoto nicht gefunden.";
+      const pre = await purchaseFromReceipt(q.id);
+      if (!pre.grossEuro || !pre.supplier) return `Der Beleg ist nicht vollständig lesbar (Betrag oder Lieferant fehlt). Bitte von Hand buchen: [Ausgabe erfassen](/buchhaltung/ausgaben/neu?foto=${q.id})`;
+      const user = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true } });
+      try {
+        const p = await createPurchase({ supplier: pre.supplier, docNo: pre.docNo || null, date: pre.date, category: (q.kategorie && q.kategorie in PURCHASE_CATEGORIES ? q.kategorie : pre.category) as PurchaseCategory, grossCents: Math.round(pre.grossEuro * 100), taxCents: pre.taxEuro !== null ? Math.round(pre.taxEuro * 100) : null, taxRate: pre.taxRate, projectId: q.projektId ?? pre.projectId, fileId: q.id, paid: q.bezahlt ?? pre.paid, payMethod: (pre.payMethod as "BAR" | "KARTE" | null) ?? null }, user);
+        return `Als Ausgabe ${p.number} gebucht: ${p.supplier}, ${(p.grossCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })} brutto · [prüfen](/buchhaltung/ausgaben/${p.id})`;
+      } catch (e) {
+        return e instanceof Error ? e.message : "Buchen fehlgeschlagen.";
+      }
     }
   }
   return `Unbekanntes Werkzeug ${name}.`;

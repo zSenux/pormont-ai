@@ -11,7 +11,7 @@ export const ERP_TOOLS: Anthropic.Tool[] = [
   {
     name: "altdaten",
     description:
-      "Im Archiv des alten ERP/Rechnungsprogramms suchen (übernommene Kunden, Artikel/Preise, alte Rechnungen und Angebote, Projekte). Für Fragen zu Vorgängen vor Lexware/Jarvis: „Was haben wir Müller 2025 berechnet?“, „Welche alten Rechnungen sind noch offen?“, „Alter Preis für Geländer pro Meter?“.",
+      "Im Archiv des alten ERP/Rechnungsprogramms suchen (übernommene Kunden, Artikel/Preise, alte Rechnungen und Angebote, Projekte). Für Fragen zu Vorgängen vor Jarvis: „Was haben wir Müller 2025 berechnet?“, „Welche alten Rechnungen sind noch offen?“, „Alter Preis für Geländer pro Meter?“.",
     input_schema: {
       type: "object",
       properties: {
@@ -41,7 +41,7 @@ export async function runErpTool(_name: string, i: Record<string, unknown>): Pro
   if (!list.length) return "Im Archiv nichts gefunden.";
   const sum = list.reduce((s, r) => s + (r.amount ?? 0), 0);
   const lines = list.slice(0, 40).map((r) =>
-    `- ${ERP_KIND_LABEL[r.kind as ErpKind]}: ${[r.number, r.party ?? r.name].filter(Boolean).join(" · ") || "(ohne Namen)"}${r.party && r.name ? ` (${r.name})` : ""}${r.date ? ` · ${formatDate(r.date)}` : ""}${r.amount !== null ? ` · ${formatEuro(r.amount)}` : ""}${r.status ? ` · ${r.status}` : ""}${r.lexId ? " · in Lexware" : ""} · id ${r.id}`,
+    `- ${ERP_KIND_LABEL[r.kind as ErpKind]}: ${[r.number, r.party ?? r.name].filter(Boolean).join(" · ") || "(ohne Namen)"}${r.party && r.name ? ` (${r.name})` : ""}${r.date ? ` · ${formatDate(r.date)}` : ""}${r.amount !== null ? ` · ${formatEuro(r.amount)}` : ""}${r.status ? ` · ${r.status}` : ""}${r.lexId ? " · übernommen" : ""} · id ${r.id}`,
   );
   return `${list.length}${list.length >= 40 ? "+" : ""} Treffer${q.offen ? `, zusammen ${formatEuro(sum)}` : ""} ([Archiv](/datenuebernahme)):\n${WRAP(lines.join("\n"))}`;
 }

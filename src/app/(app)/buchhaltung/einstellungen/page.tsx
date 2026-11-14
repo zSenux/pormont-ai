@@ -61,8 +61,10 @@ export default async function BookSettings() {
           <label className="text-xs text-steel">Von<input type="date" name="von" defaultValue={`${today.slice(0, 7)}-01`} className="input mt-0.5" /></label>
           <label className="text-xs text-steel">Bis<input type="date" name="bis" defaultValue={today} className="input mt-0.5" /></label>
           <button className="btn-secondary"><Download className="size-4" /> Rechnungsausgangsbuch (CSV)</button>
+          <button formAction="/api/buchhaltung/datev" className="btn-primary"><Download className="size-4" /> DATEV-Export</button>
         </form>
-        <p className="text-xs text-steel">Alle festgeschriebenen Rechnungen und Gutschriften im Zeitraum mit Netto, USt. und Zahlungsstand – öffnet sich in Excel.</p>
+        <p className="text-xs text-steel">CSV: alle festgeschriebenen Rechnungen und Gutschriften mit Netto, USt. und Zahlungsstand – öffnet sich in Excel.</p>
+        <p className="text-xs text-steel">DATEV: Buchungsstapel (EXTF) mit Rechnungen, Zahlungseingängen, Ausgaben und deren Bezahlung – der Steuerberater liest die Datei direkt in DATEV ein. Ein Stapel je Kalenderjahr, am besten monatlich. {cfg.datevBerater && cfg.datevMandant ? `Berater ${cfg.datevBerater}, Mandant ${cfg.datevMandant}, SKR ${cfg.datevSkr}.` : "Vorher oben Berater- und Mandantennummer eintragen."} Belegbilder (Fotos/PDFs) gibt es zusätzlich unter Ausgaben.</p>
       </section>
     </main>
   );
