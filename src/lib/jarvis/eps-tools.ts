@@ -15,6 +15,8 @@ import { addDaysYmd, todayYmd } from "@/lib/berlin";
 import { addDefect, AssemblyError, assemblyLine, createAssembly, setAssemblyStatus, toggleCheck } from "@/lib/assembly";
 import { ASM_STATUS_LABEL, readChecklist, readDefects } from "@/lib/assembly-shared";
 import { lateItems } from "@/lib/automation";
+import { DrawingError, drawingLine, setDrawingStatus } from "@/lib/drawings";
+import { canRelease, DRAWING_STATUS_LABEL, DRAWING_STATUSES, indexLetter } from "@/lib/drawings-shared";
 import type { ToolCtx } from "./tools";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
@@ -150,6 +152,21 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "zeichnungen",
+    description:
+      "Zeichnungen/CAD mit Index (A, B, C …) und Freigabe: liste (je Projekt oder Status, z. B. alle zur Prüfung), details (Indexstände mit Änderungen, welcher Index freigegeben ist, Links), status (PRUEFUNG = zur Prüfung geben, FREIGEGEBEN = aktuellen Index für Werkstatt/Montage freigeben – nur Projektleitung/GF/Admin, UNGUELTIG). Hochladen geht in der Projektakte bzw. auf der Zeichnungsseite (Link geben).",
+    input_schema: {
+      type: "object",
+      properties: {
+        aktion: { type: "string", enum: ["liste", "details", "status"] },
+        id: str("details/status: ID oder Nummer ZG-…"),
+        projekt_id: str("liste: Projekt-ID"),
+        status: { type: "string", enum: DRAWING_STATUSES, description: "liste: Filter; status: neuer Status" },
+      },
+      required: ["aktion"],
+    },
+  },
+  {
     name: "fristen",
     description: "Was ist überfällig? Listet alle überschrittenen Termine im Betrieb: Aufgaben, Meilensteine, Projektphasen, Fertigungsaufträge, Auftrags-Fertigstellung und nicht gestartete Montagen – jeweils mit Link. Die Verantwortlichen bekommen dazu automatisch eine Push-Nachricht.",
     input_schema: { type: "object", properties: {} },
@@ -163,6 +180,7 @@ export async function runEpsTool(name: string, i: Record<string, unknown>, ctx: 
   if (name === "kundenakte") return runCrm(i, ctx);
   if (name === "fertigung") return runProduction(i, ctx);
   if (name === "montage") return runAssembly(i, ctx);
+  if (name === "zeichnungen") return runDrawings(i, ctx);
   if (name === "fristen") {
     const late = await lateItems();
     return late.length ? `${late.length} Termine überschritten:\n${late.slice(0, 40).map((l) => `- ${l.text} → [öffnen](${l.url})`).join("\n")}` : "Nichts überfällig – alle Termine im Plan.";
@@ -578,4 +596,29 @@ async function runAssembly(i: Record<string, unknown>, ctx: ToolCtx): Promise<st
     throw e;
   }
   return "Unbekannte Aktion.";
+}
+
+async function runDrawings(i: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+  try {
+    const q = z.object({ aktion: z.enum(["liste", "details", "status"]), id: z.string().trim().max(40).optional(), projekt_id: z.cuid().optional(), status: z.enum(DRAWING_STATUSES).optional() }).parse(i);
+    const find = (ref: string) => db.drawing.findFirst({ where: { OR: [{ id: ref.trim() }, { number: { equals: ref.trim(), mode: "insensitive" } }] }, include: { project: { select: { name: true } }, versions: { orderBy: { version: "desc" } } } });
+    if (q.aktion === "liste") {
+      const list = await db.drawing.findMany({ where: { ...(q.projekt_id ? { projectId: q.projekt_id } : {}), ...(q.status ? { status: q.status } : { status: { not: "UNGUELTIG" } }) }, orderBy: { updatedAt: "desc" }, take: 60, include: { project: { select: { name: true } } } });
+      return list.length ? `${list.length} Zeichnungen:\n${list.map(drawingLine).join("\n")}\n[Zeichnungen](/zeichnungen)` : "Keine passenden Zeichnungen. [Zeichnungen](/zeichnungen)";
+    }
+    const d = q.id ? await find(q.id) : null;
+    if (!d) return "Zeichnung nicht gefunden – id oder Nummer ZG-… angeben (zeichnungen liste).";
+    if (q.aktion === "details") {
+      return [drawingLine(d), ...d.versions.map((v) => `Index ${indexLetter(v.version)}: ${v.note ?? "–"} (${formatDate(v.createdAt)}${v.uploadedBy ? `, ${v.uploadedBy}` : ""})${v.version === d.releasedVersion ? " – freigegeben" : ""}`), `[Zeichnung öffnen](/zeichnungen/${d.id})`].join("\n");
+    }
+    if (!q.status) return "status angeben.";
+    const me = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true, role: true, funktion: true } });
+    if (q.status === "FREIGEGEBEN" && !canRelease(me)) return "Freigeben dürfen nur Projektleitung, Geschäftsführung oder Administratoren.";
+    await setDrawingStatus(d.id, q.status, { id: me.id, name: `${me.name} (über Jarvis)` });
+    return `${d.number} „${d.title}“ Index ${indexLetter(d.currentVersion)} ist jetzt „${DRAWING_STATUS_LABEL[q.status]}“. [Zeichnung öffnen](/zeichnungen/${d.id})`;
+  } catch (e) {
+    if (e instanceof z.ZodError) return `Eingabe ungültig: ${e.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; ")}`;
+    if (e instanceof DrawingError) return e.message;
+    throw e;
+  }
 }

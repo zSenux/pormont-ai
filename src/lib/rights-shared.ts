@@ -62,6 +62,7 @@ export const PATH_AREA: Record<string, Area> = {
   "/mail": "mail",
   "/auftraege": "auftraege",
   "/projekte": "projekte",
+  "/zeichnungen": "projekte",
   "/fertigung": "fertigung",
   "/montage": "montage",
   "/lager": "lager",
@@ -83,7 +84,7 @@ export const TOOL_AREA: Record<string, Area> = {
   mails: "mail", mail_lesen: "mail", mail_entwurf: "mail", mail_senden: "mail",
   lieferanten: "einkauf", katalog_suchen: "einkauf", preisanfrage: "einkauf",
   lager: "lager",
-  nachkalkulation: "projekte", projekte: "projekte", projekt_notiz: "projekte", projekt_planung: "projekte",
+  nachkalkulation: "projekte", projekte: "projekte", projekt_notiz: "projekte", projekt_planung: "projekte", zeichnungen: "projekte",
   auftraege: "auftraege", fertigung: "fertigung", montage: "montage", akquise: "akquise", am_pc: "pc",
 };
 

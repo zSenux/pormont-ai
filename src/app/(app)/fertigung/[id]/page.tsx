@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { berlinParts, formatDate, formatDateTime } from "@/lib/berlin";
 import { fileUrl } from "@/lib/files";
+import { indexLetter } from "@/lib/drawings-shared";
 import { MACHINES, PROD_LABEL, PROD_STATUS, PROD_TONE, type ProdStatus } from "@/lib/production-shared";
 import { PRIORITY_LABEL, type Priority } from "@/lib/phases-shared";
 import { deleteJob, moveJob, reportJob, updateJob } from "@/app/actions/fertigung";
@@ -28,7 +29,7 @@ export default async function Fertigungskarte({ params }: { params: Promise<{ id
     where: { id },
     include: {
       assignee: { select: { name: true } },
-      project: { include: { order: { select: { id: true, number: true, material: true, production: true, dueDate: true } }, files: { where: { kind: { not: "foto" } }, orderBy: { createdAt: "desc" }, take: 15, select: { id: true, name: true } } } },
+      project: { include: { order: { select: { id: true, number: true, material: true, production: true, dueDate: true } }, files: { where: { kind: { notIn: ["foto", "zeichnung"] } }, orderBy: { createdAt: "desc" }, take: 15, select: { id: true, name: true } }, drawings: { where: { status: { not: "UNGUELTIG" } }, orderBy: { number: "asc" }, include: { versions: { select: { version: true, fileId: true } } } } } },
     },
   });
   if (!j) notFound();
@@ -80,7 +81,16 @@ export default async function Fertigungskarte({ params }: { params: Promise<{ id
         <section>
           <h2 className="mb-1 flex items-center gap-1 text-sm font-semibold"><FileText className="size-4 text-brand" /> Zeichnungen & Dokumente</h2>
           <ul className="text-sm">
-            {j.project.files.length === 0 && <li className="text-steel">Keine Dokumente in der Projektakte.</li>}
+            {j.project.drawings.map((d) => {
+              const rel = d.versions.find((v) => v.version === d.releasedVersion);
+              return (
+                <li key={d.id}>
+                  {rel ? <a href={fileUrl(rel.fileId)} target="_blank" rel="noreferrer" className="text-brand">{d.number} {d.title} – Index {indexLetter(rel.version)}</a> : <span className="font-semibold text-bad">{d.number} {d.title} – noch nicht freigegeben, nicht danach fertigen!</span>}
+                  {rel && d.currentVersion !== rel.version && <span className="text-xs text-warn"> (Index {indexLetter(d.currentVersion)} in Arbeit)</span>}
+                </li>
+              );
+            })}
+            {j.project.files.length === 0 && j.project.drawings.length === 0 && <li className="text-steel">Keine Dokumente in der Projektakte.</li>}
             {j.project.files.map((f) => <li key={f.id}><a href={fileUrl(f.id)} target="_blank" rel="noreferrer" className="text-brand">{f.name}</a></li>)}
           </ul>
         </section>

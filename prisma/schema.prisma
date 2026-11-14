@@ -248,6 +248,7 @@ model Project {
   order      Order?
   production ProductionJob[]
   assemblies Assembly[]
+  drawings   Drawing[]
 
   @@index([status])
   @@index([customerId])
@@ -416,7 +417,7 @@ model StoredFile {
   size       Int
   sha256     String
   data       Bytes
-  /// "dokument" | "foto" | "beleg" | "spesen" (Beleg zu Mitarbeiter-Spesen)
+  /// "dokument" | "foto" | "beleg" | "spesen" (Beleg zu Mitarbeiter-Spesen) | "zeichnung" (Index einer Zeichnung)
   kind       String   @default("dokument")
   projectId  String?
   project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
@@ -434,6 +435,8 @@ model StoredFile {
   assembly   Assembly? @relation(fields: [assemblyId], references: [id], onDelete: SetNull)
 
   notes ProjectNote[]
+  /// Zeichnung: diese Datei ist ein Index (Version) einer Zeichnung
+  drawingVersions DrawingVersion[]
 
   @@index([kind, createdAt])
   @@index([projectId])
@@ -1085,6 +1088,49 @@ model CustomerNote {
 
   @@index([customerId, createdAt])
   @@index([followUpDone, followUpAt])
+}
+
+/// Zeichnung/CAD (Werkplanung, Statik, Montageplan …) mit Index-Versionen und Freigabe
+model Drawing {
+  id              String           @id @default(cuid())
+  /// ZG-<Jahr>-0001 (NumberSeq „ZEICHNUNG-<Jahr>“)
+  number          String           @unique
+  projectId       String
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  /// WERKPLAN | DETAIL | STATIK | MONTAGEPLAN | AUFMASS | KUNDE | SONSTIGES
+  kind            String           @default("WERKPLAN")
+  /// ENTWURF | PRUEFUNG | FREIGEGEBEN | UNGUELTIG (bezieht sich auf den aktuellen Index)
+  status          String           @default("ENTWURF")
+  /// höchster Index (1 = A, 2 = B …)
+  currentVersion  Int              @default(1)
+  /// zuletzt freigegebener Index – gilt für Werkstatt/Montage, auch wenn ein neuer Index in Arbeit ist
+  releasedVersion Int?
+  releasedAt      DateTime?
+  releasedBy      String?
+  note            String?
+  createdBy       String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  versions        DrawingVersion[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model DrawingVersion {
+  id         String     @id @default(cuid())
+  drawingId  String
+  drawing    Drawing    @relation(fields: [drawingId], references: [id], onDelete: Cascade)
+  version    Int
+  fileId     String
+  file       StoredFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  /// Was hat sich geändert?
+  note       String?
+  uploadedBy String?
+  createdAt  DateTime   @default(now())
+
+  @@unique([drawingId, version])
 }
 
 /// Fertigungsauftrag (Werkstatt) – digitale Fertigungskarte zu einem Projekt/Auftrag
