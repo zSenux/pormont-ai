@@ -12,6 +12,7 @@ import { TONE } from "@/lib/buchhaltung/ui";
 import { archiveCustomerAction, newDocAction } from "@/app/actions/buchhaltung";
 import { ActionButton } from "@/components/confirm-button";
 import { CustomerForm } from "../form";
+import { CustomerFile } from "@/components/customer-file";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,8 @@ export default async function KundePage({ params }: { params: Promise<{ id: stri
           )}
         </section>
       </div>
+      {/* EPS-Kundenakte: Aufträge, Anfragen, Kontakthistorie, Wiedervorlagen, Dokumente */}
+      <CustomerFile customerId={c.id} />
     </main>
   );
 }

@@ -37,6 +37,7 @@ model User {
   leadProjects   Project[]       @relation("ProjectLeader")
   projectMembers ProjectMember[]
   assignedTasks  Task[]          @relation("TaskAssignee")
+  crmFollowUps   CustomerNote[]  @relation("CrmAssignee")
 
   /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt).
   /// Eindeutigkeit prüft die App beim Speichern – kein @unique, sonst bricht `prisma db push`
@@ -842,6 +843,7 @@ model Customer {
   /// EPS: Projekte und Aufträge des Kunden
   projects Project[]
   orders   Order[]
+  crmNotes CustomerNote[]
 
   @@index([name])
   @@index([lexId])
@@ -1038,4 +1040,26 @@ model Order {
   @@index([status, dueDate])
   @@index([customerId])
   @@index([quoteId])
+}
+
+/// Kundenakte (CRM): Kontakthistorie, interne Notizen und Wiedervorlagen zu einem Kunden
+model CustomerNote {
+  id           String    @id @default(cuid())
+  customerId   String
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// NOTIZ | ANRUF | MAIL | TERMIN | BESUCH
+  kind         String    @default("NOTIZ")
+  text         String
+  /// Wiedervorlage: an diesem Tag wieder melden (null = keine)
+  followUpAt   DateTime?
+  followUpDone DateTime?
+  /// Wer sich um die Wiedervorlage kümmert
+  assigneeId   String?
+  assignee     User?     @relation("CrmAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reminderSentAt DateTime?
+  authorName   String?
+  createdAt    DateTime  @default(now())
+
+  @@index([customerId, createdAt])
+  @@index([followUpDone, followUpAt])
 }
