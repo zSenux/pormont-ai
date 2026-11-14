@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { Calendar, Camera, CheckSquare, Clock, Database, Download, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
+import { Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -10,6 +10,8 @@ import { profile } from "@/lib/lexware/api";
 import { logout, logoutEverywhere, savePhoneAccess } from "@/app/actions";
 import { StateForm } from "@/components/state-form";
 import { PushToggle } from "@/components/pwa";
+import { WindowsAppDownload } from "@/components/windows-app";
+import { latestWindowsRelease } from "@/lib/windows-app";
 import { AddUserForm, DeleteButton, PasswordForm } from "./forms";
 import { ConnectionsForm } from "./connections";
 import { settingState } from "@/lib/settings";
@@ -31,6 +33,7 @@ async function lexwareState() {
 export default async function EinstellungenPage({ searchParams }: { searchParams: Promise<{ willkommen?: string }> }) {
   const { willkommen } = await searchParams;
   const me = await requireUser();
+  const winApp = await latestWindowsRelease();
   const [lex, mail, users, memories, devices] = await Promise.all([
     lexwareState(),
     mailStatus(),
@@ -150,10 +153,8 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
       <section className="card space-y-3 p-5">
         <h2 className="flex items-center gap-2 font-semibold"><MonitorSmartphone className="size-4" /> Apps</h2>
         <p className="text-sm text-steel"><b>iPhone/iPad:</b> In Safari öffnen → Teilen → „Zum Home-Bildschirm“. Jarvis startet dann wie eine App im Vollbild.</p>
-        <p className="text-sm text-steel"><b>Windows:</b> Installer „Jarvis ProMont Setup.exe“ installieren, Server-Adresse eintragen. <kbd className="chip border-line bg-mist">Strg + Leertaste</kbd> öffnet Jarvis von überall.</p>
-        {process.env.WINDOWS_APP_URL && (
-          <a href={process.env.WINDOWS_APP_URL} className="btn-secondary w-fit"><Download className="size-4" /> Windows-App herunterladen</a>
-        )}
+        <p className="text-sm text-steel"><b>Windows:</b> Installer herunterladen und öffnen, Server-Adresse eintragen. <kbd className="chip border-line bg-mist">Strg + Leertaste</kbd> öffnet Jarvis von überall. Falls Windows „Der Computer wurde geschützt“ meldet: „Weitere Informationen“ → „Trotzdem ausführen“.</p>
+        <WindowsAppDownload version={winApp?.version ?? null} size={winApp?.size ?? null} />
       </section>
 
       <section className="card space-y-3 p-5">

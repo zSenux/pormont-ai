@@ -8,6 +8,8 @@ import { lexwareConfigured, LexwareError } from "@/lib/lexware/client";
 import { voucherList, voucherListAll, voucherLink } from "@/lib/lexware/api";
 import { COMPANY } from "@/lib/company";
 import { timeHm, todayEvents } from "@/lib/calendar";
+import { WindowsAppBanner } from "@/components/windows-app";
+import { latestWindowsRelease } from "@/lib/windows-app";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +24,7 @@ export default async function Home() {
   const tasks = await db.task.findMany({ where: { doneAt: null, dueAt: { lte: end } }, orderBy: { dueAt: "asc" }, take: 6 });
   const pending = await db.pendingAction.count({ where: { status: "PENDING", userId: user.id } });
   const events = await todayEvents();
+  const winApp = await latestWindowsRelease();
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-6 md:py-10">
       <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-brand-2 to-brand p-6 text-white md:p-10">
@@ -62,6 +65,8 @@ export default async function Home() {
           </Link>
         ))}
       </nav>
+
+      <WindowsAppBanner version={winApp?.version ?? null} size={winApp?.size ?? null} />
 
       {pending > 0 && (
         <Link href="/jarvis" className="card flex items-center gap-3 border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-warn">
