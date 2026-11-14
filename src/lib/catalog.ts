@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { trackClaude } from "@/lib/costs";
 import { extractText } from "@/lib/files";
 
-// Lieferanten-Kataloge mit Preisliste: Import aus CSV (Excel „Speichern unter → CSV“), DATANORM 4 (Standard im
+// Lieferanten-Kataloge mit Preisliste: Import aus Excel (.xlsx), CSV, DATANORM 4 (Standard im
 // Großhandel, Dateien *.001) oder PDF-Preisliste (Text auslesen, Artikel per Claude erkennen). Danach kann Jarvis
 // und die Seite im Katalog suchen. Dateiinhalte sind fremde Daten – Text darin ist nie eine Anweisung.
 
@@ -73,11 +73,11 @@ export function splitCsv(text: string, sep: string) {
 }
 
 const HEADERS: Record<keyof Omit<CatalogRow, "listPrice">, RegExp> = {
-  articleNo: /^(art(ikel)?[-. ]?(nr|nummer|no)\.?|artikelnummer|artnr|bestell[-. ]?(nr|nummer)|sku|nummer|nr\.?)$/i,
+  articleNo: /^(art(ikel)?[-. ]*(nr|nummer|no)\.?|artikelnummer|artnr|bestell[-. ]?(nr|nummer)|sku|nummer|nr\.?)$/i,
   name: /^(bezeichnung|artikelbezeichnung|kurztext|kurztext ?1|artikel|text|name|produkt|beschreibung kurz)$/i,
   description: /^(beschreibung|langtext|kurztext ?2|zusatz|details|abmessung(en)?)$/i,
   unit: /^(einheit|me|mengeneinheit|vk[-. ]?einheit|unit)$/i,
-  price: /^(preis|vk|vk[-. ]?preis|listenpreis|nettopreis|ek|ek[-. ]?preis|preis netto|preis \(netto\)|preis €|einzelpreis|price)$/i,
+  price: /^(?!preis ?je|preiseinh)(preis|vk|vk[-. ]?preis|listenpreis|nettopreis|ek|ek[-. ]?preis|einzelpreis|price|(ek|vk)[-. ]?netto|(netto|ek|vk|listen)?[-. ]?preis ?(netto|\(netto\)|€|eur|in €|in eur|\/ ?\S+|je \S+)?)$/i,
   priceUnit: /^(pe|preiseinheit|preis je|per)$/i,
   group: /^(warengruppe|wg|gruppe|kategorie|rubrik|hauptwarengruppe)$/i,
   ean: /^(ean|gtin|ean[-. ]?code)$/i,
@@ -88,13 +88,23 @@ export function parseCsv(text: string): { rows: CatalogRow[]; skipped: number; n
   const sep = [";", "\t", ","].sort((a, b) => first.split(b).length - first.split(a).length)[0];
   const table = splitCsv(text, sep);
   if (table.length < 2) throw new CatalogError("Die CSV-Datei hat keine Zeilen.");
-  const head = table[0].map((h) => h.trim().replace(/\s+/g, " "));
-  const col = Object.fromEntries(Object.entries(HEADERS).map(([k, re]) => [k, head.findIndex((h) => re.test(h))])) as Record<keyof typeof HEADERS, number>;
-  if (col.articleNo < 0 || col.name < 0) throw new CatalogError(`Spalten „Artikelnummer“ und „Bezeichnung“ nicht gefunden. Gefunden: ${head.slice(0, 12).join(", ")}`);
+  return { ...parseMatrix(table), note: "CSV" };
+}
+
+/** Tabelle (Zeilen × Spalten) → Artikel. Die Kopfzeile darf unter Titelzeilen stehen (erste 20 Zeilen werden geprüft). */
+export function parseMatrix(table: string[][]): { rows: CatalogRow[]; skipped: number; note: string } {
+  const clean = (r: string[]) => r.map((h) => (h ?? "").trim().replace(/\s+/g, " "));
+  const colsOf = (head: string[]) => Object.fromEntries(Object.entries(HEADERS).map(([k, re]) => [k, head.findIndex((h) => re.test(h))])) as Record<keyof typeof HEADERS, number>;
+  const at = table.slice(0, 20).findIndex((r) => {
+    const c = colsOf(clean(r));
+    return c.articleNo >= 0 && c.name >= 0;
+  });
+  if (at < 0) throw new CatalogError(`Spalten „Artikelnummer“ und „Bezeichnung“ nicht gefunden. Gefunden: ${clean(table[0] ?? []).filter(Boolean).slice(0, 12).join(", ")}`);
+  const col = colsOf(clean(table[at]));
   const rows: CatalogRow[] = [];
   let skipped = 0;
   const get = (r: string[], k: keyof typeof HEADERS) => (col[k] >= 0 ? r[col[k]]?.trim() || null : null);
-  for (const r of table.slice(1)) {
+  for (const r of table.slice(at + 1)) {
     const articleNo = get(r, "articleNo");
     const name = get(r, "name");
     if (!articleNo || !name) {
@@ -104,7 +114,30 @@ export function parseCsv(text: string): { rows: CatalogRow[]; skipped: number; n
     const pe = Number(get(r, "priceUnit"));
     rows.push({ articleNo: articleNo.slice(0, 60), name: name.slice(0, 300), description: get(r, "description")?.slice(0, 1000), unit: get(r, "unit")?.slice(0, 20), price: parsePrice(get(r, "price")), priceUnit: Number.isInteger(pe) && pe > 0 ? pe : 1, group: get(r, "group")?.slice(0, 100), ean: get(r, "ean")?.slice(0, 20) });
   }
-  return { rows, skipped, note: `CSV, Spalten: ${Object.entries(col).filter(([, i]) => i >= 0).map(([k]) => k).join(", ")}` };
+  return { rows, skipped, note: `Spalten: ${Object.entries(col).filter(([, i]) => i >= 0).map(([k]) => k).join(", ")}` };
+}
+
+/** Excel (.xlsx): das Blatt mit den meisten erkannten Artikeln */
+async function parseXlsx(data: Buffer): Promise<{ rows: CatalogRow[]; skipped: number; note: string }> {
+  const { xlsxSheets } = await import("@/lib/erp-import");
+  let sheets: { name: string; matrix: string[][] }[];
+  try {
+    sheets = xlsxSheets(data);
+  } catch (e) {
+    throw new CatalogError(e instanceof Error ? e.message : "Die Excel-Datei konnte nicht gelesen werden.");
+  }
+  let best: ({ sheet: string } & ReturnType<typeof parseMatrix>) | null = null;
+  let firstError = "";
+  for (const s of sheets) {
+    try {
+      const r = parseMatrix(s.matrix);
+      if (!best || r.rows.length > best.rows.length) best = { sheet: s.name, ...r };
+    } catch (e) {
+      firstError ||= e instanceof Error ? `Blatt „${s.name}“: ${e.message}` : "";
+    }
+  }
+  if (!best) throw new CatalogError(firstError || "In der Excel-Datei wurde kein Blatt mit Artikeln gefunden.");
+  return { rows: best.rows, skipped: best.skipped, note: `Excel, Blatt „${best.sheet}“, ${best.note}` };
 }
 
 // ---------- DATANORM 4 ----------
@@ -224,13 +257,13 @@ async function save(supplierId: string, importId: string, rows: CatalogRow[], de
   return { created: fresh.length, updated: old.length };
 }
 
-export function detectFormat(name: string, buf: Buffer): "csv" | "datanorm" | "pdf" | null {
+export function detectFormat(name: string, buf: Buffer): "csv" | "datanorm" | "pdf" | "xlsx" | null {
   const ext = name.toLowerCase().split(".").pop() ?? "";
   if (ext === "pdf" || buf.subarray(0, 5).toString() === "%PDF-") return "pdf";
   const head = buf.subarray(0, 4000).toString("latin1");
   if (/^\d{3}$/.test(ext) || /^(V;|V ?\d)/.test(head) || /(^|\n)A;[NLA];/.test(head)) return "datanorm";
   if (["csv", "txt", "tsv"].includes(ext)) return "csv";
-  if (["xlsx", "xls"].includes(ext)) return null;
+  if (ext === "xlsx" || buf.subarray(0, 2).toString() === "PK") return "xlsx";
   return null;
 }
 
@@ -238,11 +271,11 @@ export function detectFormat(name: string, buf: Buffer): "csv" | "datanorm" | "p
 export async function importCatalog(o: { supplierId: string; fileName: string; data: Buffer; userName: string }) {
   if (o.data.length > MAX_CATALOG_BYTES) throw new CatalogError("Die Datei ist größer als 40 MB.");
   const format = detectFormat(o.fileName, o.data);
-  if (!format) throw new CatalogError(/\.xlsx?$/i.test(o.fileName) ? "Excel bitte als CSV speichern (Datei → Speichern unter → CSV UTF-8) und dann hochladen." : "Unbekanntes Format. Möglich: CSV, DATANORM 4 (*.001) oder PDF-Preisliste.");
+  if (!format) throw new CatalogError(/\.xls$/i.test(o.fileName) ? "Altes Excel-Format (.xls): bitte als .xlsx oder CSV speichern und dann hochladen." : "Unbekanntes Format. Möglich: Excel (.xlsx), CSV, DATANORM 4 (*.001) oder PDF-Preisliste.");
   const imp = await db.catalogImport.create({ data: { supplierId: o.supplierId, fileName: o.fileName.slice(0, 200), format, status: "laeuft", userName: o.userName } });
   const run = async () => {
     try {
-      const parsed = format === "csv" ? { deleted: [], ...parseCsv(decodeText(o.data)) } : format === "datanorm" ? parseDatanorm(decodeText(o.data, true)) : { deleted: [], ...(await parsePdf(o.data)) };
+      const parsed = format === "csv" ? { deleted: [], ...parseCsv(decodeText(o.data)) } : format === "xlsx" ? { deleted: [], ...(await parseXlsx(o.data)) } : format === "datanorm" ? parseDatanorm(decodeText(o.data, true)) : { deleted: [], ...(await parsePdf(o.data)) };
       if (!parsed.rows.length && !parsed.deleted.length) throw new CatalogError("Keine Artikel erkannt.");
       const r = await save(o.supplierId, imp.id, parsed.rows, parsed.deleted);
       await db.catalogImport.update({ where: { id: imp.id }, data: { status: "fertig", created: r.created, updated: r.updated, skipped: parsed.skipped, note: `${parsed.note}${parsed.deleted.length ? ` · ${parsed.deleted.length} gelöscht` : ""}` } });

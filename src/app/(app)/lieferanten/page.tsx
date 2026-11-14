@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen, ClipboardList, Mail, Plus, Search, Sparkles, Truck } from "lucide-react";
+import { BookOpen, ClipboardList, Mail, Plus, Search, Sparkles, Truck, Weight } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -26,9 +26,12 @@ export default async function LieferantenPage({ searchParams }: { searchParams: 
 
   return (
     <main className="mx-auto max-w-5xl space-y-5 px-4 py-6 md:py-10">
-      <div>
-        <h1 className="page-title">Lieferanten</h1>
-        <p className="mt-1 text-sm text-steel">Stahl, Verzinkerei und Schlosserteile: Preisanfragen schicken, Angebote vergleichen, im Katalog nachschlagen.</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="page-title">Lieferanten</h1>
+          <p className="mt-1 text-sm text-steel">Stahl, Verzinkerei und Schlosserteile: Preisanfragen schicken, Angebote vergleichen, im Katalog nachschlagen.</p>
+        </div>
+        <Link href="/lieferanten/stahl" className="btn-secondary"><Weight className="size-4" /> Stahl-Katalog</Link>
       </div>
 
       <section className="grid grid-cols-3 gap-3">

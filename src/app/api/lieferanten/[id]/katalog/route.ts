@@ -5,7 +5,7 @@ import { canArea } from "@/lib/rights-shared";
 import { currentUser, lockedResponse } from "@/lib/auth/user";
 import { CatalogError, importCatalog, MAX_CATALOG_BYTES } from "@/lib/catalog";
 
-// Katalog/Preisliste eines Lieferanten hochladen (multipart: file). CSV/DATANORM sofort, PDF im Hintergrund.
+// Katalog/Preisliste eines Lieferanten hochladen (multipart: file). Excel/CSV/DATANORM sofort, PDF im Hintergrund.
 export const maxDuration = 300;
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
