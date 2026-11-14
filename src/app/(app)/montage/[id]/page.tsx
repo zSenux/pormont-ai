@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { absencesBetween } from "@/lib/abwesenheit";
 import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, ClipboardCheck, FileSignature, ListChecks, MapPin, NotebookPen, Pencil, Play, Trash2, Truck, Users, XCircle } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
-import { formatDate, formatDateTime } from "@/lib/berlin";
+import { berlinParts, formatDate, formatDateTime } from "@/lib/berlin";
 import { timeHm } from "@/lib/calendar";
 import { fileUrl } from "@/lib/files";
 import { ASM_STATUS_LABEL, ASM_TONE, readChecklist, readDefects, type AsmStatus } from "@/lib/assembly-shared";
@@ -42,6 +43,9 @@ export default async function MontageDetail({ params }: { params: Promise<{ id: 
   const defects = readDefects(a.defects);
   const photo = (phase: string) => a.files.filter((f) => ((f.meta as { phase?: string } | null)?.phase ?? "nachher") === phase && f.mime.startsWith("image/"));
   const open = st === "GEPLANT" || st === "LAEUFT";
+  // Urlaub & Krank: fehlt jemand aus dem Team am Montagetermin? (ohne Grund – Gesundheitsdaten)
+  const teamIds = [a.leaderId, ...a.crew.map((c) => c.userId)].filter((x): x is string => Boolean(x));
+  const away = open && teamIds.length ? (await absencesBetween(berlinParts(a.startAt).ymd, berlinParts(a.endAt ?? a.startAt).ymd, { approvedOnly: true })).filter((x) => teamIds.includes(x.userId)) : [];
 
   return (
     <main className="mx-auto max-w-3xl space-y-4 px-4 py-6 md:py-10">
@@ -60,6 +64,11 @@ export default async function MontageDetail({ params }: { params: Promise<{ id: 
           </div>
           <span className={clsx("chip shrink-0 px-3 py-1 text-xs", ASM_TONE[st])}>{ASM_STATUS_LABEL[st] ?? st}</span>
         </div>
+        {away.length > 0 && (
+          <p className="rounded-lg border border-warn/30 bg-amber-50 px-3 py-2 text-sm text-warn">
+            ⚠️ Am Termin nicht da: {[...new Set(away.map((x) => x.user.name))].join(", ")} – <Link href="/abwesenheiten" className="underline">Urlaub & Krank</Link>
+          </p>
+        )}
         <div className="space-y-1 text-sm">
           {a.address && <a href={`https://maps.google.com/?q=${encodeURIComponent(a.address)}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-brand"><MapPin className="size-4" /> {a.address}</a>}
           <p className="flex items-center gap-1.5"><Users className="size-4 text-steel" /> {[a.leader && `${a.leader.name} (Leitung)`, ...a.crew.map((c) => c.user.name).filter((n) => n !== a.leader?.name)].filter(Boolean).join(", ") || "Noch kein Team"}</p>

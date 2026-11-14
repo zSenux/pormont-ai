@@ -2,7 +2,7 @@ import Link from "next/link";
 import { areasOf, AREA_LABEL, canPath, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
 import { setUserFunktion } from "@/app/actions";
 import { headers } from "next/headers";
-import { Factory, Wrench, PenTool, ShoppingCart, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
+import { Factory, Wrench, PenTool, ShoppingCart, Palmtree, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -55,6 +55,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
       <nav className="grid grid-cols-3 gap-3 md:hidden" aria-label="Bereiche">
         {[
           { href: "/stunden", label: "Stunden", icon: Clock },
+          { href: "/abwesenheiten", label: "Urlaub & Krank", icon: Palmtree },
           { href: "/spesen", label: "Spesen", icon: Receipt },
           { href: "/akquise", label: "Akquise", icon: Target },
           { href: "/lieferanten", label: "Lieferanten", icon: Truck },

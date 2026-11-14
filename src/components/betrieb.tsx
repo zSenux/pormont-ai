@@ -12,13 +12,15 @@ import { revenue } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { todayYmd } from "@/lib/berlin";
 import { lateItems } from "@/lib/automation";
+import { absencesBetween } from "@/lib/abwesenheit";
+import { ABS_KIND_SHORT, type AbsKind } from "@/lib/abwesenheit-shared";
 
 // Betriebs-Übersicht (EPS-Dashboard): laufende Projekte mit Fortschritt, Projekte je Phase, Fristen,
 // überfällige Aufgaben, Lager unter Mindestbestand, offene Bestellungen/Anfragen, wer heute eingestempelt ist.
 
 const DAY = 86400_000;
 
-export async function BetriebOverview({ money = true }: { money?: boolean }) {
+export async function BetriebOverview({ money = true, admin = false }: { money?: boolean; admin?: boolean }) {
   const now = new Date();
   const in14 = new Date(now.getTime() + 14 * DAY);
   const [projects, low, requests, milestones, phaseEnds, clockedIn, users] = await Promise.all([
@@ -41,6 +43,7 @@ export async function BetriebOverview({ money = true }: { money?: boolean }) {
   const late = await lateItems(now);
   const in7 = new Date(now.getTime() + 7 * DAY);
   const assemblies = await db.assembly.findMany({ where: { status: { in: ["GEPLANT", "LAEUFT"] }, startAt: { lte: in14 } }, orderBy: { startAt: "asc" }, take: 20, include: { project: { select: { name: true } }, leader: { select: { name: true } } } });
+  const away = await absencesBetween(todayYmd(), todayYmd(), { approvedOnly: true });
   const toSign = await db.assembly.count({ where: { status: "ERLEDIGT", signedAt: null } });
   const openOrders = await db.supplierOrder.findMany({ where: { status: { in: ["BESTELLT", "TEILGELIEFERT"] } }, select: { expectedAt: true } });
   const lateDeliveries = openOrders.filter((o) => o.expectedAt && o.expectedAt < now).length;
@@ -184,6 +187,15 @@ export async function BetriebOverview({ money = true }: { money?: boolean }) {
           <p className="text-sm">
             <strong className="text-2xl font-extrabold text-brand">{new Set(clockedIn.map((c) => c.userId)).size}</strong>
             <span className="text-steel"> von {users} gerade eingestempelt</span>
+          </p>
+          <p className="mt-2 text-sm">
+            {away.length ? (
+              <Link href="/abwesenheiten" className="hover:text-brand">
+                <span className="font-semibold">Heute nicht da:</span> {away.map((a) => `${a.user.name} (${ABS_KIND_SHORT[(a.kind === "KRANK" && !admin ? "SONSTIGES" : a.kind) as AbsKind]})`).join(", ")}
+              </Link>
+            ) : (
+              <Link href="/abwesenheiten" className="text-steel hover:text-brand">Heute sind alle da.</Link>
+            )}
           </p>
           {low.length > 0 && (
             <>

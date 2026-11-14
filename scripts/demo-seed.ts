@@ -8,6 +8,8 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/lib/auth/password";
 import { PHASES } from "../src/lib/phases-shared";
 import { createOrderFromQuote } from "../src/lib/orders";
+import { requestAbsence } from "../src/lib/abwesenheit";
+import { addDaysYmd, todayYmd } from "../src/lib/berlin";
 
 if (process.env.NODE_ENV === "production") {
   console.error("Abbruch: Demo-Daten nie in Produktion.");
@@ -223,6 +225,15 @@ for (const [part, title, kind, notes, release] of drawDemo) {
   const rel = release ? last : last > 1 ? last - 1 : null;
   await db.drawing.create({ data: { number: `ZG-DEMO-${String(zgNo++).padStart(3, "0")}`, projectId, title, kind, status: release ? "FREIGEGEBEN" : "PRUEFUNG", currentVersion: last, releasedVersion: rel, releasedAt: rel ? day(-5) : null, releasedBy: rel ? "Dirk Linke" : null, createdBy: "Josip Cabraja", versions: { create: versions } } });
 }
+
+// Urlaub & Krank: Montag nächster Woche als Bezug
+const t0 = todayYmd();
+const nextMon = addDaysYmd(t0, 7 - ((new Date(`${t0}T00:00:00Z`).getUTCDay() + 6) % 7));
+const gf = { id: users["Dirk Linke"], name: "Dirk Linke", role: "ADMIN" };
+await requestAbsence({ userId: users["Mehmet Yılmaz"], kind: "URLAUB", from: nextMon, to: addDaysYmd(nextMon, 4), note: "Familienbesuch" }, gf);
+await requestAbsence({ userId: users["Tobias Kern"], kind: "KRANK", from: addDaysYmd(t0, -2), to: addDaysYmd(t0, 2), certificate: true }, gf);
+await requestAbsence({ userId: users["Anna Weber"], kind: "URLAUB", from: addDaysYmd(nextMon, 14), to: addDaysYmd(nextMon, 18), note: "Vertretung: Josip" }, { id: users["Anna Weber"], name: "Anna Weber", role: "MEMBER" });
+await requestAbsence({ userId: users["Sven Müller"], kind: "SONSTIGES", from: addDaysYmd(nextMon, 9), to: addDaysYmd(nextMon, 9), note: "Schweißer-Prüfung DVS" }, gf);
 
 // Umsatz der letzten Monate (Abschlags- und Schlussrechnungen)
 const firstCustomer = await db.customer.findFirstOrThrow();

@@ -92,7 +92,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
       )}
 
       <Suspense fallback={<div className="card h-48 animate-pulse" />}>
-        <BetriebOverview money={money} />
+        <BetriebOverview money={money} admin={user.role === "ADMIN"} />
       </Suspense>
 
       <div className="grid gap-6 md:grid-cols-2">

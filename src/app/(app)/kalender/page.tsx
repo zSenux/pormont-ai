@@ -9,6 +9,8 @@ import { deleteEvent, saveEvent } from "@/app/actions/work";
 import { ActionButton } from "@/components/confirm-button";
 import { icsUrl } from "@/lib/ics";
 import { CopyLink } from "./copy-link";
+import { absenceCovers, absencesBetween } from "@/lib/abwesenheit";
+import { ABS_KIND_SHORT, holidayName, type AbsKind } from "@/lib/abwesenheit-shared";
 
 export const metadata = { title: "Kalender" };
 export const dynamic = "force-dynamic";
@@ -23,13 +25,19 @@ function monday(ymd: string) {
 }
 
 export default async function KalenderPage({ searchParams }: { searchParams: Promise<{ woche?: string }> }) {
-  await requireUser();
+  const me = await requireUser();
   const sp = await searchParams;
   const today = todayYmd();
   const start = monday(/^\d{4}-\d{2}-\d{2}$/.test(sp.woche ?? "") ? sp.woche! : today);
   const end = addDaysYmd(start, 6);
   const [events, projects] = await Promise.all([eventsBetween(start, end), db.project.findMany({ where: { status: { not: "FERTIG" } }, orderBy: { name: "asc" }, select: { id: true, name: true } })]);
   const days = Array.from({ length: 7 }, (_, i) => addDaysYmd(start, i));
+  // Urlaub & Krank (genehmigt); Krankheit sehen nur Admin und Betroffene als „Krank“
+  const absences = await absencesBetween(start, end, { approvedOnly: true });
+  const awayOn = (d: string) => absences.filter((a) => absenceCovers(a, d)).map((a) => {
+    const k = (a.kind === "KRANK" && me.role !== "ADMIN" && a.userId !== me.id ? "SONSTIGES" : a.kind) as AbsKind;
+    return { id: a.id, name: a.user.name, icon: k === "URLAUB" ? "🏖️" : k === "KRANK" ? "🤒" : "📌", title: `${a.user.name}: ${ABS_KIND_SHORT[k]}` };
+  });
   const byDay = new Map(days.map((d) => [d, events.filter((e) => berlinParts(e.startAt).ymd === d)]));
   const kw = (() => {
     const [y, m, d] = addDaysYmd(start, 3).split("-").map(Number);
@@ -87,16 +95,24 @@ export default async function KalenderPage({ searchParams }: { searchParams: Pro
       <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
         {days.map((d) => {
           const list = byDay.get(d) ?? [];
+          const away = awayOn(d);
+          const holiday = holidayName(d);
           const isToday = d === today;
           const [y, m, dd] = d.split("-").map(Number);
           return (
-            <section key={d} className={clsx("card min-h-28 p-3", isToday && "border-brand ring-1 ring-brand", list.length === 0 && "max-md:hidden")}>
+            <section key={d} className={clsx("card min-h-28 p-3", isToday && "border-brand ring-1 ring-brand", list.length === 0 && !away.length && !holiday && "max-md:hidden")}>
               <h2 className={clsx("mb-2 text-xs font-semibold uppercase tracking-wide", isToday ? "text-brand" : "text-steel")}>
                 {DAY.format(new Date(Date.UTC(y, m - 1, dd)))}
                 {isToday && " · heute"}
               </h2>
+              {holiday && <p className="mb-2 rounded-md bg-mist px-1.5 py-0.5 text-[11px] font-semibold text-steel">🎉 {holiday}</p>}
+              {away.length > 0 && (
+                <Link href="/abwesenheiten" className="mb-2 block space-y-0.5">
+                  {away.map((a) => <span key={a.id} title={a.title} className="block truncate rounded-md bg-brand-soft px-1.5 py-0.5 text-[11px] font-medium text-brand">{a.icon} {a.name}</span>)}
+                </Link>
+              )}
               <ul className="space-y-2">
-                {list.length === 0 && <li className="text-xs text-steel/70">frei</li>}
+                {list.length === 0 && <li className="text-xs text-steel/70">{holiday ? "Feiertag" : "frei"}</li>}
                 {list.map((e) => (
                   <li key={e.id} className="group rounded-xl border border-line bg-mist/60 p-2 text-sm">
                     <div className="flex items-start justify-between gap-1">
