@@ -1,77 +1,146 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { BookOpen, Gavel, ShieldAlert, Calendar, ClipboardList, Factory, Wrench, PenTool, ShoppingCart, Palmtree, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck, Warehouse, IdCard } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Calendar, CheckSquare, ChevronDown, Home, LogOut, Mail, Menu, Search, Sparkles, X } from "lucide-react";
 import { clsx } from "clsx";
-import { PATH_AREA, type Area } from "@/lib/rights-shared";
+import type { Area } from "@/lib/rights-shared";
+import { activeHref, navFor, type NavGroup } from "@/lib/nav-shared";
 
-/** Rollen & Rechte: Menüpunkt nur, wenn der Bereich freigegeben ist */
-const allowed = (areas: readonly Area[], href: string) => {
-  const a = Object.entries(PATH_AREA).find(([p]) => href === p || href.startsWith(`${p}/`))?.[1];
-  return !a || areas.includes(a);
-};
+const STORE = "pm-nav-zu";
 
-const DESKTOP = [
-  { href: "/", label: "Übersicht", icon: Home },
-  { href: "/jarvis", label: "Jarvis", icon: Sparkles },
-  { href: "/mail", label: "Mail", icon: Mail },
-  { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/auftraege", label: "Aufträge", icon: ClipboardList },
-  { href: "/projekte", label: "Projekte", icon: HardHat },
-  { href: "/zeichnungen", label: "Zeichnungen", icon: PenTool },
-  { href: "/fertigung", label: "Fertigung", icon: Factory },
-  { href: "/montage", label: "Montage", icon: Wrench },
-  { href: "/bautagebuch", label: "Bautagebuch", icon: BookOpen },
-  { href: "/maengel", label: "Mängel", icon: ShieldAlert },
-  { href: "/stunden", label: "Stunden", icon: Clock },
-  { href: "/abwesenheiten", label: "Urlaub", icon: Palmtree },
-  { href: "/personal", label: "Personal", icon: IdCard },
-  { href: "/spesen", label: "Spesen", icon: Receipt },
-  { href: "/akquise", label: "Akquise", icon: Target },
-  { href: "/ausschreibungen", label: "Ausschreibungen", icon: Gavel },
-  { href: "/lieferanten", label: "Lieferanten", icon: Truck },
-  { href: "/bestellungen", label: "Bestellungen", icon: ShoppingCart },
-  { href: "/lager", label: "Lager", icon: Warehouse },
-  { href: "/buchhaltung", label: "Buchhaltung", icon: FileText },
-  { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
-  { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
-  { href: "/pc", label: "Computer", icon: Monitor },
-  { href: "/einstellungen", label: "Einstellungen", icon: Settings },
-];
+/** Treffer der Schnellsuche (Bezeichnung, Gruppe oder Stichwort) */
+function search(groups: NavGroup[], q: string) {
+  const s = q.trim().toLowerCase();
+  if (!s) return [];
+  return groups.flatMap((g) => g.items.filter((i) => `${i.label} ${g.title} ${i.keywords ?? ""}`.toLowerCase().includes(s)).map((i) => ({ ...i, group: g.title })));
+}
 
-// Handy: 5 Tabs, der Rest liegt unter „Mehr“ (Kacheln auf der Einstellungsseite)
-const MOBILE = [
-  { href: "/", label: "Übersicht", icon: Home },
-  { href: "/mail", label: "Mail", icon: Mail },
-  { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
-  { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/bautagebuch", "/maengel", "/ausschreibungen", "/auftraege", "/zeichnungen", "/fertigung", "/montage", "/projekte", "/stunden", "/abwesenheiten", "/spesen", "/akquise", "/lieferanten", "/bestellungen", "/lager", "/buchhaltung", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme", "/personal", "/nachunternehmer", "/auswertung"] },
-];
-
-const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
-
-export function TopNav({ name, areas }: { name: string; areas: readonly Area[] }) {
+/** PC + Windows-App: Seitenleiste mit Bereichen (einklappbar), Schnellsuche mit Strg+K */
+export function SideNav({ name, funktion, areas, admin, logout }: { name: string; funktion: string | null; areas: readonly Area[]; admin: boolean; logout: () => Promise<void> }) {
   const path = usePathname();
+  const router = useRouter();
+  const groups = useMemo(() => navFor(areas, admin), [areas, admin]);
+  const current = activeHref(path);
+  const [closed, setClosed] = useState<string[]>([]);
+  const [q, setQ] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const hits = search(groups, q);
+  const list = useRef<HTMLElement>(null);
+
+  // Aktiven Punkt sichtbar halten (lange Leiste im kleinen Fenster der Windows-App)
+  useEffect(() => {
+    list.current?.querySelector("[aria-current=page]")?.scrollIntoView({ block: "nearest" });
+  }, [current]);
+
+  useEffect(() => {
+    try {
+      setClosed(JSON.parse(localStorage.getItem(STORE) ?? "[]"));
+    } catch {}
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        input.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const toggle = (key: string) => {
+    const next = closed.includes(key) ? closed.filter((k) => k !== key) : [...closed, key];
+    setClosed(next);
+    try {
+      localStorage.setItem(STORE, JSON.stringify(next));
+    } catch {}
+  };
+
+  const link = (i: NavGroup["items"][number]) => (
+    <Link
+      key={i.href}
+      href={i.href}
+      onClick={() => setQ("")}
+      aria-current={current === i.href ? "page" : undefined}
+      className={clsx("flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition", current === i.href ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}
+    >
+      <i.icon className="size-4 shrink-0" />
+      <span className="truncate">{i.label}</span>
+    </Link>
+  );
+
   return (
-    <header className="sticky top-0 z-30 hidden border-b print:hidden border-line bg-white/90 backdrop-blur md:block">
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-6">
-        <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="Startseite">
-          <img src="/logo.svg" alt="ProMont GmbH" className="h-11 w-auto" />
-          <span className="chip hidden border-brand/20 bg-brand-soft text-brand 2xl:inline-flex">Jarvis</span>
-        </Link>
-        <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
-          {DESKTOP.filter((i) => allowed(areas, i.href)).map((i) => (
-            <Link key={i.href} href={i.href} title={i.label} className={clsx("flex shrink-0 items-center gap-2 rounded-full px-2.5 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
-              <i.icon className="size-4" />
-              {/* 15 Bereiche: Beschriftung nur am aktiven Punkt (sonst Tooltip), damit die Leiste nicht überläuft */}
-              <span className={i.href !== "/einstellungen" && active(path, i.href) ? "hidden lg:inline" : "sr-only"}>{i.label}</span>
-            </Link>
-          ))}
-        </nav>
-        <span className="hidden text-sm text-steel 2xl:inline">{name}</span>
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-white print:hidden md:flex" aria-label="Hauptnavigation">
+      <Link href="/" className="flex h-16 shrink-0 items-center gap-2 px-4" aria-label="Startseite">
+        <img src="/logo.svg" alt="ProMont GmbH" className="h-10 w-auto" />
+        <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
+      </Link>
+      <div className="px-3 pb-2">
+        <label className="flex items-center gap-2 rounded-lg border border-line bg-mist/60 px-2.5 py-1.5 text-sm focus-within:border-brand">
+          <Search className="size-4 shrink-0 text-steel" />
+          <input
+            ref={input}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && hits[0]) {
+                router.push(hits[0].href);
+                setQ("");
+                input.current?.blur();
+              }
+              if (e.key === "Escape") setQ("");
+            }}
+            placeholder="Bereich suchen"
+            aria-label="Bereich suchen"
+            className="w-full min-w-0 bg-transparent outline-none placeholder:text-steel"
+          />
+          {q ? (
+            <button type="button" onClick={() => setQ("")} aria-label="Suche leeren"><X className="size-3.5 text-steel" /></button>
+          ) : (
+            <kbd className="hidden shrink-0 rounded border border-line bg-white px-1 text-[10px] text-steel lg:inline">Strg K</kbd>
+          )}
+        </label>
       </div>
-    </header>
+
+      <nav ref={list} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-4 [scrollbar-width:thin]">
+        {q ? (
+          hits.length ? (
+            <div className="space-y-0.5">{hits.map(link)}</div>
+          ) : (
+            <p className="px-2.5 py-2 text-sm text-steel">Nichts gefunden. Frag Jarvis!</p>
+          )
+        ) : (
+          groups.map((g) => {
+            // Die Gruppe der aktuellen Seite ist immer offen
+            const open = g.key === "start" || !closed.includes(g.key) || g.items.some((i) => i.href === current);
+            return (
+              <div key={g.key} className="pt-1">
+                {g.key !== "start" && (
+                  <button type="button" onClick={() => toggle(g.key)} aria-expanded={open} className="flex w-full items-center justify-between px-2.5 pt-2 pb-1 text-[11px] font-semibold tracking-wider text-steel uppercase hover:text-ink">
+                    {g.title}
+                    <ChevronDown className={clsx("size-3.5 transition", !open && "-rotate-90")} />
+                  </button>
+                )}
+                {open && <div className="space-y-0.5">{g.items.map(link)}</div>}
+              </div>
+            );
+          })
+        )}
+      </nav>
+
+      <div className="flex shrink-0 items-center gap-2 border-t border-line px-4 py-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-soft text-xs font-bold text-brand">{name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase()}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{name}</span>
+          {funktion && <span className="block truncate text-xs text-steel">{funktion}</span>}
+        </span>
+        <form action={logout}>
+          <button className="grid size-8 place-items-center rounded-lg text-steel hover:bg-mist hover:text-ink" title="Abmelden" aria-label="Abmelden">
+            <LogOut className="size-4" />
+          </button>
+        </form>
+      </div>
+    </aside>
   );
 }
 
@@ -88,28 +157,40 @@ export function MobileHeader() {
   );
 }
 
+// Handy: 5 Tabs, alles andere liegt gruppiert unter „Mehr“ (/einstellungen)
 export function MobileNav({ areas }: { areas: readonly Area[] }) {
   const path = usePathname();
-  // Ohne Postfach-Recht: Aufgaben statt Mail
-  const items = MOBILE.map((i) => (i.href === "/mail" && !areas.includes("mail") ? { ...i, href: "/aufgaben", label: "Aufgaben", icon: CheckSquare } : i));
+  const mail = areas.includes("mail");
+  const tabs = [
+    { href: "/", label: "Übersicht", icon: Home },
+    mail ? { href: "/mail", label: "Mail", icon: Mail } : { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
+    { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
+    { href: "/kalender", label: "Kalender", icon: Calendar },
+  ];
+  const on = (href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`));
+  const more = !tabs.some((t) => on(t.href));
   return (
     <nav className="safe-bottom fixed print:hidden inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 backdrop-blur md:hidden" aria-label="Hauptnavigation">
       <div className="grid h-16 grid-cols-5">
-        {items.map((i) =>
+        {tabs.map((i) =>
           i.center ? (
             <Link key={i.href} href={i.href} className="flex flex-col items-center justify-center" aria-label="Jarvis">
-              <span className={clsx("-mt-6 grid size-14 place-items-center rounded-full border-4 border-white shadow-lg", active(path, i.href) ? "bg-brand-2" : "bg-brand")}>
+              <span className={clsx("-mt-6 grid size-14 place-items-center rounded-full border-4 border-white shadow-lg", on(i.href) ? "bg-brand-2" : "bg-brand")}>
                 <i.icon className="size-6 text-white" />
               </span>
               <span className="mt-0.5 text-[10px] font-semibold text-brand">Jarvis</span>
             </Link>
           ) : (
-            <Link key={i.href} href={i.href} className={clsx("flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium", active(path, i.href) || i.also?.some((h) => path.startsWith(h)) ? "text-brand" : "text-steel")}>
+            <Link key={i.href} href={i.href} className={clsx("flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium", on(i.href) ? "text-brand" : "text-steel")}>
               <i.icon className="size-5" />
               {i.label}
             </Link>
           ),
         )}
+        <Link href="/einstellungen" className={clsx("flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium", more ? "text-brand" : "text-steel")}>
+          <Menu className="size-5" />
+          Mehr
+        </Link>
       </div>
     </nav>
   );

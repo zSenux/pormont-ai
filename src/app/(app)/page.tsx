@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Calendar, Camera, CheckSquare, Clock, FileText, FolderSearch, HardHat, Mic, Sparkles, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowRight, Calendar, Camera, CheckSquare, Clock, FileText, FolderSearch, Mic, Receipt, ShieldAlert, Sparkles, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { firstName, requireUser } from "@/lib/auth/user";
 import { AREA_LABEL, canArea, type Area } from "@/lib/rights-shared";
@@ -11,7 +11,7 @@ import { COMPANY } from "@/lib/company";
 import { timeHm, todayEvents } from "@/lib/calendar";
 import { WindowsAppBanner } from "@/components/windows-app";
 import { latestWindowsRelease } from "@/lib/windows-app";
-import { BetriebOverview } from "@/components/betrieb";
+import { BetriebOverview, SalesRow } from "@/components/betrieb";
 
 export const dynamic = "force-dynamic";
 
@@ -31,11 +31,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
   const winApp = await latestWindowsRelease();
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 md:px-6 md:py-10">
-      <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-brand-2 to-brand p-6 text-white md:p-10">
+      <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-brand-2 to-brand p-6 text-white md:p-8">
         <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(125,211,252,.3)_1px,transparent_1px),linear-gradient(90deg,rgba(125,211,252,.3)_1px,transparent_1px)] [background-size:40px_40px]" />
         <div className="relative">
           <p className="text-xs font-semibold tracking-[0.2em] text-sky-200 uppercase">{COMPANY.name} · Jarvis</p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-[-0.03em] md:text-5xl">
+          <h1 className="mt-2 text-3xl font-extrabold tracking-[-0.03em] md:text-4xl">
             {greeting()}, {firstName(user.name)}.
           </h1>
           <p className="mt-2 max-w-xl text-sky-100">Frag Jarvis nach Rechnungen, Mails, Terminen, Baustellen und Dokumenten – per Text oder Sprache.</p>
@@ -56,12 +56,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
         </div>
       </section>
 
+      {/* Schnellzugriff: die häufigsten Handgriffe, je nach Funktion */}
       <nav className="grid grid-cols-4 gap-3" aria-label="Schnellzugriff">
         {[
-          { href: money ? "/belege/foto" : "/spesen", label: money ? "Beleg fotografieren" : "Spesen erfassen", icon: Camera },
-          { href: "/projekte", label: "Stunden & Baustellen", icon: HardHat },
+          money ? { href: "/belege/foto", label: "Beleg fotografieren", icon: Camera } : { href: "/spesen", label: "Spesen erfassen", icon: Receipt },
+          { href: "/stunden", label: "Stunden stempeln", icon: Clock },
           { href: "/kalender", label: "Termin eintragen", icon: Calendar },
-          { href: "/dokumente", label: "Dokument suchen", icon: FolderSearch },
+          money ? { href: "/buchhaltung/angebot-sprache", label: "Angebot sprechen", icon: Mic } : canArea(user, "projekte") ? { href: "/maengel", label: "Mangel melden", icon: ShieldAlert } : { href: "/dokumente", label: "Dokument suchen", icon: FolderSearch },
         ].map((q) => (
           <Link key={q.href} href={q.href} className="card flex flex-col items-center gap-2 p-3 text-center text-xs font-medium transition hover:border-brand md:flex-row md:p-4 md:text-left md:text-sm">
             <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-soft text-brand"><q.icon className="size-5" /></span>
@@ -85,21 +86,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
         </p>
       )}
 
-      {money && (
-        <Suspense fallback={<div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>}>
-          <BookTiles />
-        </Suspense>
-      )}
-
-      <Suspense fallback={<div className="card h-48 animate-pulse" />}>
-        <BetriebOverview money={money} admin={user.role === "ADMIN"} />
-      </Suspense>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <section className="card min-w-0 p-5 md:col-span-2">
+      <h2 className="text-lg font-bold">Heute</h2>
+      <div className="grid gap-4 md:grid-cols-2">
+        <section className="card min-w-0 p-5">
           <div className="mb-3 flex items-center gap-2">
             <Calendar className="size-5 text-brand" />
-            <h2 className="font-bold">Termine heute</h2>
+            <h3 className="font-bold">Termine</h3>
             <Link href="/kalender" className="ml-auto text-sm font-medium text-brand">Kalender</Link>
           </div>
           {events.length === 0 ? (
@@ -121,7 +113,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
         <section className="card min-w-0 p-5">
           <div className="mb-3 flex items-center gap-2">
             <CheckSquare className="size-5 text-brand" />
-            <h2 className="font-bold">Aufgaben heute</h2>
+            <h3 className="font-bold">Fällige Aufgaben</h3>
             <Link href="/aufgaben" className="ml-auto text-sm font-medium text-brand">Alle</Link>
           </div>
           {tasks.length === 0 ? (
@@ -137,12 +129,26 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
             </ul>
           )}
         </section>
-        {money && (
+      </div>
+
+      <Suspense fallback={<div className="card h-48 animate-pulse" />}>
+        <BetriebOverview admin={user.role === "ADMIN"} />
+      </Suspense>
+
+      {money && (
+        <section className="space-y-4" aria-labelledby="finanzen">
+          <h2 id="finanzen" className="text-lg font-bold">Finanzen</h2>
+          <Suspense fallback={<div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>}>
+            <BookTiles />
+          </Suspense>
+          <Suspense fallback={<div className="card h-48 animate-pulse" />}>
+            <SalesRow />
+          </Suspense>
           <Suspense fallback={<div className="card h-48 animate-pulse" />}>
             <OverdueList />
           </Suspense>
-        )}
-      </div>
+        </section>
+      )}
     </main>
   );
 }
@@ -177,7 +183,7 @@ async function OverdueList() {
     <section className="card min-w-0 p-5">
       <div className="mb-3 flex items-center gap-2">
         <AlertTriangle className="size-5 text-bad" />
-        <h2 className="font-bold">Überfällige Rechnungen</h2>
+        <h3 className="font-bold">Überfällige Rechnungen</h3>
         <Link href="/buchhaltung/belege?art=rechnungen&status=ueberfaellig" className="ml-auto text-sm font-medium text-brand">Alle</Link>
       </div>
       {overdue.length === 0 ? (

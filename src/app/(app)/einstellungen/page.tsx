@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { areasOf, AREA_LABEL, canPath, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
+import { areasOf, AREA_LABEL, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
+import { navFor, type NavGroup } from "@/lib/nav-shared";
 import { setUserFunktion } from "@/app/actions";
 import { headers } from "next/headers";
-import { BookOpen, Gavel, Mic, ShieldAlert, Factory, Wrench, PenTool, ShoppingCart, Palmtree, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse, BarChart3, Gauge, Handshake, IdCard, Route } from "lucide-react";
+import { Database, LogOut, MonitorSmartphone, PhoneCall } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -20,6 +21,16 @@ import { settingState } from "@/lib/settings";
 import { license, lockReason } from "@/lib/license";
 
 export const metadata = { title: "Einstellungen" };
+
+/** Handy-„Mehr“: ohne die Punkte der unteren Leiste; Aufgaben wandern zu „Werkzeuge“ (ohne Mail-Recht sind sie selbst ein Tab) */
+function mobileGroups(groups: NavGroup[]): NavGroup[] {
+  const start = groups.find((g) => g.key === "start")?.items ?? [];
+  const tabs = ["/", "/jarvis", "/kalender", "/mail", "/einstellungen", ...(start.some((i) => i.href === "/mail") ? [] : ["/aufgaben"])];
+  return groups
+    .filter((g) => g.key !== "start")
+    .map((g) => ({ ...g, items: (g.key === "system" ? [...start, ...g.items] : g.items).filter((i) => !tabs.includes(i.href)) }))
+    .filter((g) => g.items.length > 0);
+}
 export const dynamic = "force-dynamic";
 
 async function lexwareState() {
@@ -52,42 +63,21 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
   return (
     <main className="mx-auto max-w-3xl space-y-5 px-4 py-6 md:py-10">
       <h1 className="page-title"><span className="md:hidden">Mehr</span><span className="hidden md:inline">Einstellungen</span></h1>
-      <nav className="grid grid-cols-3 gap-3 md:hidden" aria-label="Bereiche">
-        {[
-          { href: "/buchhaltung/angebot-sprache", label: "Angebot sprechen", icon: Mic },
-          { href: "/bautagebuch", label: "Bautagebuch", icon: BookOpen },
-          { href: "/maengel", label: "Mängel", icon: ShieldAlert },
-          { href: "/stunden", label: "Stunden", icon: Clock },
-          { href: "/abwesenheiten", label: "Urlaub & Krank", icon: Palmtree },
-          { href: "/personal", label: "Personal", icon: IdCard },
-          { href: "/spesen", label: "Spesen", icon: Receipt },
-          { href: "/akquise", label: "Akquise", icon: Target },
-          { href: "/ausschreibungen", label: "Ausschreibungen", icon: Gavel },
-          { href: "/lieferanten", label: "Lieferanten", icon: Truck },
-          { href: "/bestellungen", label: "Bestellungen", icon: ShoppingCart },
-          { href: "/nachunternehmer", label: "Nach­unternehmer", icon: Handshake },
-          { href: "/lager", label: "Lager", icon: Warehouse },
-          { href: "/auftraege", label: "Aufträge", icon: ClipboardList },
-          { href: "/projekte", label: "Projekte", icon: HardHat },
-          { href: "/zeichnungen", label: "Zeichnungen", icon: PenTool },
-          { href: "/fertigung", label: "Fertigung", icon: Factory },
-          { href: "/fertigung/kapazitaet", label: "Kapazität", icon: Gauge },
-          { href: "/montage", label: "Montage", icon: Wrench },
-          { href: "/montage/route", label: "Route", icon: Route },
-          { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
-          { href: "/kalender", label: "Kalender", icon: Calendar },
-          { href: "/belege/foto", label: "Beleg-Foto", icon: Camera },
-          { href: "/buchhaltung", label: "Buchhaltung", icon: FileText },
-          { href: "/auswertung", label: "Auswertung", icon: BarChart3 },
-          { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
-          { href: "/pc", label: "Computer", icon: Monitor },
-          { href: "/datenuebernahme", label: "Daten­übernahme", icon: Database },
-        ].filter((t) => canPath(me, t.href) && (t.href !== "/datenuebernahme" || me.role === "ADMIN")).map((t) => (
-          <Link key={t.href} href={t.href} className="card flex flex-col items-center gap-2 p-4 text-center text-sm font-medium">
-            <t.icon className="size-6 text-brand" /> {t.label}
-          </Link>
+      {/* Handy: alle Bereiche gruppiert wie die Seitenleiste am PC */}
+      <div className="space-y-5 md:hidden">
+        {mobileGroups(navFor(areasOf(me), me.role === "ADMIN")).map((g) => (
+          <nav key={g.key} aria-label={g.title}>
+            <h2 className="mb-2 text-xs font-semibold tracking-wider text-steel uppercase">{g.title}</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {g.items.map((t) => (
+                <Link key={t.href} href={t.href} className="card flex min-h-20 flex-col items-center justify-center gap-1.5 p-2 text-center text-xs leading-tight font-medium">
+                  <t.icon className="size-5 text-brand" /> {t.label}
+                </Link>
+              ))}
+            </div>
+          </nav>
         ))}
-      </nav>
+      </div>
       <h2 className="pt-2 text-lg font-semibold md:hidden">Einstellungen</h2>
 
       {willkommen && me.role === "ADMIN" && (

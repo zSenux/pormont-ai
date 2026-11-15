@@ -53,6 +53,7 @@ Bausteine stammen aus `zSenux/klaic-os` (Agent-Schleife, Push, PWA, Windows-App)
 - Jahresauswertung `src/lib/auswertung.ts` + `/auswertung` (Bereich buchhaltung; Kunden, Produktgruppen per Stichwort `PRODUCT_GROUPS` mit DB aus `calcProject`, Positionen ohne Abschläge; Monteure nur Admin/GF), Werkzeug `auswertung`
 - Kapazität Werkstatt `src/lib/kapazitaet.ts` + `/fertigung/kapazitaet` (AppSetting `KAPAZITAET`: Team, Std./Tag, produktiv %; Abwesenheiten/Feiertage abgezogen; Karten über Plan-Zeitraum verteilt; `fitCheck` für neue Aufträge, Stunden auch aus Angebot), Werkzeug `kapazitaet`
 - Mahnwesen `src/lib/buchhaltung/mahnwesen.ts` + `/buchhaltung/mahnwesen` (Vorschläge nach `reminderAfterDays`/`nextLevelAfterDays`, `SalesDoc.dunningPausedUntil`, `Customer.noDunning`; Freigeben/Senden nur Admin – auch die Karte `mahnung_senden`; Job `dunningReminder` pusht nur), Werkzeug `mahnvorschlaege`
+- Navigation `src/lib/nav-shared.ts` (eine Liste `NAV_GROUPS` für Seitenleiste am PC/Windows-App `components/nav.tsx` mit Schnellsuche Strg+K, Handy-„Mehr“ auf `/einstellungen` und Rechte über `PATH_AREA`). **Neue Seiten dort eintragen**, nicht in einzelne Menüs
 - `src/lib/jobs.ts` (Erinnerungen, überfällige Rechnungen, Morgen-Briefing; über `instrumentation.ts`, nur Produktion bzw. `JOBS=1`)
 
 ## Regeln
