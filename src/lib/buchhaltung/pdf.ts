@@ -391,6 +391,29 @@ export async function renderDocPdf(d: DocData, xml: string | null = null): Promi
   L.para("Mit freundlichen Grüßen", { gap: 0 });
   L.para(COMPANY.name, { bold: true });
 
+  // Angebotsvorlage: 3D-Ansicht als eigene Seite (Bild aus der Vorschau, Link zur interaktiven Ansicht)
+  for (const v of d.views ?? []) {
+    let img: PDFImage;
+    try {
+      img = await doc.embedJpg(v.jpg);
+    } catch {
+      continue;
+    }
+    L.newPage(false);
+    L.text(`Ansicht: ${v.title}`, LEFT, L.y - 14, { size: 13, bold: true, color: BRAND });
+    L.y -= 24;
+    const maxW = RIGHT - LEFT;
+    const maxH = L.y - FOOTER_TOP - 40 * MM;
+    const scale = Math.min(maxW / img.width, maxH / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    L.page.drawRectangle({ x: LEFT, y: L.y - h, width: maxW, height: h, color: rgb(1, 1, 1), borderColor: LINE, borderWidth: 0.5 });
+    L.page.drawImage(img, { x: LEFT + (maxW - w) / 2, y: L.y - h, width: w, height: h });
+    L.y -= h + 6 * MM;
+    L.para("Unverbindliche 3D-Darstellung zur Veranschaulichung. Maßgeblich sind die Angaben in den Positionen und das gemeinsame Aufmaß vor der Fertigung.", { size: 8.5, color: STEEL, gap: 4 });
+    if (v.url) L.para(`Interaktiv ansehen (drehen und zoomen): ${v.url}`, { size: 9, color: BRAND });
+  }
+
   L.finishPageNumbers();
   if (d.number) await pdfA(doc, title, xml);
   return doc.save({ useObjectStreams: false });

@@ -14,6 +14,9 @@ import { docLabel } from "@/lib/buchhaltung/types";
 import { TONE } from "@/lib/buchhaltung/ui";
 import { cancelAction, copyAction, createDunningAction, deletePaymentAction, quoteStatusAction } from "@/app/actions/buchhaltung";
 import { ActionButton } from "@/components/confirm-button";
+import { headers } from "next/headers";
+import { DocConfigPanel, type DocConfig } from "@/components/vorlagen/doc-panel";
+import type { Product } from "@/lib/vorlagen/model";
 import { DocEditor } from "./editor";
 import { DownPaymentForm, PaymentForm, ResultButton, SendDocForm, SendDunningForm } from "./panels";
 
@@ -31,6 +34,10 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
   const cfg = await bookConfig();
   const label = docLabel(d);
   const back = d.kind === "ANGEBOT" ? "angebote" : d.kind === "GUTSCHRIFT" ? "gutschriften" : "rechnungen";
+  // Angebotsvorlage mit 3D-Ansicht
+  const configs: DocConfig[] = (await db.productConfig.findMany({ where: { docId: d.id }, orderBy: { createdAt: "asc" }, select: { id: true, title: true, product: true, params: true, token: true, image: true } })).map((c) => ({ id: c.id, title: c.title, product: c.product as Product, params: c.params, token: c.token, hasImage: Boolean(c.image) }));
+  const h = await headers();
+  const origin = process.env.PUBLIC_URL?.replace(/\/$/, "") || `${h.get("x-forwarded-proto")?.split(",")[0] || "https"}://${h.get("x-forwarded-host") || h.get("host")}`;
   const related = await db.salesDoc.findMany({ where: { OR: [{ sourceId: d.id }, ...(d.sourceId ? [{ id: d.sourceId }] : [])] }, select: { id: true, kind: true, invoiceType: true, number: true, status: true } });
 
   if (d.status === "ENTWURF") {
@@ -62,6 +69,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
           articles={articles.map((a) => ({ id: a.id, name: a.name, number: a.number, unit: a.unit, priceNet: a.priceNet, taxRate: a.taxRate, description: a.description }))}
           defaultPaymentDays={d.customer?.paymentDays ?? cfg.paymentDays}
         />
+        {configs.map((c) => <DocConfigPanel key={c.id} config={c} draft origin={origin} />)}
       </main>
     );
   }
@@ -135,6 +143,8 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
               {d.kind === "RECHNUNG" && d.status === "OFFEN" && <div className="flex justify-between font-semibold text-warn"><dt>offen</dt><dd>{fmtEuroCents(open)}</dd></div>}
             </dl>
           </section>
+
+          {configs.map((c) => <DocConfigPanel key={c.id} config={c} draft={false} origin={origin} />)}
 
           {d.status !== "STORNIERT" && d.pdf && (
             <details className="card p-4" open={!d.sentAt}>

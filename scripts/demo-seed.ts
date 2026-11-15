@@ -300,5 +300,21 @@ for (const [supplier, net, off, docNo] of [["Stahlhandel Haug GmbH", 8420, 9, "R
   await db.purchaseDoc.create({ data: { number: `E-DEMO-${String(eNo++).padStart(3, "0")}`, supplier, docNo, date: day(off - 14), dueDate: day(off), category: "MATERIAL", netCents: net * 100, taxCents: Math.round(net * 19), grossCents: Math.round(net * 119), status: "OFFEN", createdBy: "Demo" } });
 }
 
+// Angebotsvorlagen: Demo-Preise und -Sätze (nur wenn noch nichts eingetragen ist – echte Werte trägt der Betrieb selbst ein)
+const demoSetting = async (key: string, value: object) => {
+  if (!(await db.appSetting.findUnique({ where: { key } }))) await db.appSetting.create({ data: { key, value: JSON.stringify(value) } });
+};
+await demoSetting("STAHLPREISE", { STAHL: 1.45, EDELSTAHL: 5.9, ALU: 6.2, verzinken: 0.68, familien: {}, quelle: "Demo-Werte", stand: todayYmd() });
+await demoSetting("VORLAGEN_KALK", {
+  stundensatzWerkstatt: 64, stundensatzMontage: 59, pulverM2: 19, verschnitt: 10, materialZuschlag: 15, gewinnZuschlag: 18, anfahrt: 85, glasM2: 260, gitterrostStufe: 78, beschlagFluegel: 190, torantrieb: 1450,
+  zeiten: {
+    GELAENDER: { fertigungFix: 2, fertigungJe: 2.2, montageFix: 2, montageJe: 0.9 },
+    TREPPE: { fertigungFix: 8, fertigungJe: 1.2, montageFix: 4, montageJe: 0.4 },
+    VORDACH: { fertigungFix: 4, fertigungJe: 2.5, montageFix: 4, montageJe: 1 },
+    TOR: { fertigungFix: 6, fertigungJe: 2, montageFix: 6, montageJe: 0.6 },
+  },
+  stand: todayYmd(),
+});
+
 console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten, ${orders.length} Bestellungen.`);
 await db.$disconnect();

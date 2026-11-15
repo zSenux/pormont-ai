@@ -18,6 +18,7 @@ import { fmtQty, lowStock } from "@/lib/stock";
 import { ERP_TOOLS, ERP_TOOL_NAMES, runErpTool } from "./erp-tools";
 import { EPS_TOOLS, EPS_TOOL_NAMES, runEpsTool } from "./eps-tools";
 import { BAU_TOOLS, BAU_TOOL_NAMES, runBauTool } from "./bau-tools";
+import { VORLAGEN_TOOLS, VORLAGEN_TOOL_NAMES, runVorlagenTool } from "./vorlagen-tools";
 
 // Werkzeuge von Jarvis. Lesen läuft sofort; Festschreiben, Senden, Mahnen, Storno und Mails nur als Freigabe-Karte.
 // Interne Aufgaben/Gedächtnis darf Jarvis direkt ändern (harmlos, sichtbar).
@@ -60,6 +61,7 @@ export const TOOLS: Def[] = [
   ...WORK_TOOLS,
   ...TEAM_TOOLS,
   ...SUPPLIER_TOOLS,
+  ...VORLAGEN_TOOLS,
   ...STOCK_TOOLS,
   ...ERP_TOOLS,
   ...EPS_TOOLS,
@@ -136,6 +138,7 @@ export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promi
   if (need && !(await userAreas(ctx.userId)).includes(need)) return `Keine Berechtigung: ${AREA_LABEL[need]} ist für deine Funktion nicht freigegeben. Bitte einen Administrator fragen.`;
   if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
   if (SUPPLIER_TOOL_NAMES.has(name)) return runSupplierTool(name, i, ctx);
+  if (VORLAGEN_TOOL_NAMES.has(name)) return runVorlagenTool(name, i, ctx);
   if (STOCK_TOOL_NAMES.has(name)) return runStockTool(name, i, ctx);
   if (EPS_TOOL_NAMES.has(name)) return runEpsTool(name, i, ctx);
   if (BAU_TOOL_NAMES.has(name)) return runBauTool(name, i, ctx).catch((e) => (console.error(`[jarvis] Werkzeug ${name}:`, e), "Fehler beim Ausführen."));

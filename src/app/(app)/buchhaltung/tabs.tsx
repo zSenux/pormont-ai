@@ -13,6 +13,7 @@ export function BookTabs({ admin }: { admin: boolean }) {
     { href: "/buchhaltung/angebot-sprache", label: "🎙️ Angebot sprechen", on: path.startsWith("/buchhaltung/angebot-sprache") },
     { href: "/buchhaltung/belege?art=rechnungen", label: "Rechnungen", on: path.startsWith("/buchhaltung/belege") && art !== "angebote" && art !== "gutschriften" },
     { href: "/buchhaltung/belege?art=gutschriften", label: "Gutschriften", on: path.startsWith("/buchhaltung/belege") && art === "gutschriften" },
+    { href: "/buchhaltung/vorlagen", label: "Vorlagen", on: path.startsWith("/buchhaltung/vorlagen") },
     { href: "/buchhaltung/ausgaben", label: "Ausgaben", on: path.startsWith("/buchhaltung/ausgaben") },
     { href: "/buchhaltung/bank", label: "Bank", on: path.startsWith("/buchhaltung/bank") },
     { href: "/buchhaltung/liquiditaet", label: "Liquidität", on: path.startsWith("/buchhaltung/liquiditaet") },
