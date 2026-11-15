@@ -20,7 +20,7 @@ import { ABS_KIND_SHORT, type AbsKind } from "@/lib/abwesenheit-shared";
 
 const DAY = 86400_000;
 
-export async function BetriebOverview({ money = true, admin = false }: { money?: boolean; admin?: boolean }) {
+export async function BetriebOverview({ admin = false }: { admin?: boolean }) {
   const now = new Date();
   const in14 = new Date(now.getTime() + 14 * DAY);
   const [projects, low, requests, milestones, phaseEnds, clockedIn, users] = await Promise.all([
@@ -79,60 +79,6 @@ export async function BetriebOverview({ money = true, admin = false }: { money?:
             <p className="mt-0.5 text-xs text-steel">{t.hint}</p>
           </Link>
         ))}
-      </div>
-
-      {money && <SalesRow />}
-
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <section className="card min-w-0 p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <HardHat className="size-5 text-brand" />
-            <h3 className="font-bold">Projektfortschritt</h3>
-            <Link href="/projekte" className="ml-auto text-sm font-medium text-brand">Alle</Link>
-          </div>
-          {withPhase.length === 0 ? (
-            <p className="text-sm text-steel">Keine laufenden Projekte.</p>
-          ) : (
-            <ul className="space-y-3">
-              {withPhase.slice(0, 8).map((p) => {
-                const late = p.endDate && p.endDate < now;
-                return (
-                  <li key={p.id}>
-                    <Link href={`/projekte/${p.id}`} className="block space-y-1 rounded-xl p-1 hover:bg-mist">
-                      <div className="flex items-baseline justify-between gap-2 text-sm">
-                        <span className="min-w-0 truncate font-medium">{p.name}</span>
-                        <span className="shrink-0 text-xs text-steel">{p.pct !== null ? `${p.pct} %` : "–"}</span>
-                      </div>
-                      {p.pct !== null && <ProgressBar pct={p.pct} />}
-                      <p className={clsx("truncate text-xs", late ? "text-bad" : "text-steel")}>
-                        {[p.cur ? PHASES.find((x) => x.key === p.cur!.key)?.title : "alle Phasen erledigt", p.leader?.name && `PL ${p.leader.name}`, p.customer, p.endDate && `${late ? "Ende überschritten: " : "bis "}${formatDate(p.endDate)}`].filter(Boolean).join(" · ")}
-                      </p>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        <section className="card min-w-0 p-5">
-          <div className="mb-3 flex items-center gap-2">
-            <ClipboardList className="size-5 text-brand" />
-            <h3 className="font-bold">Projekte je Phase</h3>
-          </div>
-          {/* Ein Wert je Phase → eine Farbe (Markenblau), Zahl steht als Text daneben */}
-          <ul className="space-y-1.5" aria-label="Anzahl laufender Projekte je aktueller Phase">
-            {perPhase.map((ph) => (
-              <li key={ph.key} className="grid grid-cols-[9.5rem_1fr_1.5rem] items-center gap-2 text-xs" title={`${ph.title}: ${ph.n} ${ph.n === 1 ? "Projekt" : "Projekte"}`}>
-                <span className="truncate text-steel">{ph.title}</span>
-                <span className="h-3 rounded-r bg-mist">
-                  {ph.n > 0 && <span className="block h-full rounded-r bg-brand" style={{ width: `${(ph.n / maxN) * 100}%` }} />}
-                </span>
-                <span className="text-right font-semibold text-ink">{ph.n || ""}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -214,12 +160,65 @@ export async function BetriebOverview({ money = true, admin = false }: { money?:
           )}
         </section>
       </div>
+
+      <h2 className="pt-2 text-lg font-bold">Projekte</h2>
+      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+        <section className="card min-w-0 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <HardHat className="size-5 text-brand" />
+            <h3 className="font-bold">Projektfortschritt</h3>
+            <Link href="/projekte" className="ml-auto text-sm font-medium text-brand">Alle</Link>
+          </div>
+          {withPhase.length === 0 ? (
+            <p className="text-sm text-steel">Keine laufenden Projekte.</p>
+          ) : (
+            <ul className="space-y-3">
+              {withPhase.slice(0, 8).map((p) => {
+                const late = p.endDate && p.endDate < now;
+                return (
+                  <li key={p.id}>
+                    <Link href={`/projekte/${p.id}`} className="block space-y-1 rounded-xl p-1 hover:bg-mist">
+                      <div className="flex items-baseline justify-between gap-2 text-sm">
+                        <span className="min-w-0 truncate font-medium">{p.name}</span>
+                        <span className="shrink-0 text-xs text-steel">{p.pct !== null ? `${p.pct} %` : "–"}</span>
+                      </div>
+                      {p.pct !== null && <ProgressBar pct={p.pct} />}
+                      <p className={clsx("truncate text-xs", late ? "text-bad" : "text-steel")}>
+                        {[p.cur ? PHASES.find((x) => x.key === p.cur!.key)?.title : "alle Phasen erledigt", p.leader?.name && `PL ${p.leader.name}`, p.customer, p.endDate && `${late ? "Ende überschritten: " : "bis "}${formatDate(p.endDate)}`].filter(Boolean).join(" · ")}
+                      </p>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section className="card min-w-0 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <ClipboardList className="size-5 text-brand" />
+            <h3 className="font-bold">Projekte je Phase</h3>
+          </div>
+          {/* Ein Wert je Phase → eine Farbe (Markenblau), Zahl steht als Text daneben */}
+          <ul className="space-y-1.5" aria-label="Anzahl laufender Projekte je aktueller Phase">
+            {perPhase.map((ph) => (
+              <li key={ph.key} className="grid grid-cols-[9.5rem_1fr_1.5rem] items-center gap-2 text-xs" title={`${ph.title}: ${ph.n} ${ph.n === 1 ? "Projekt" : "Projekte"}`}>
+                <span className="truncate text-steel">{ph.title}</span>
+                <span className="h-3 rounded-r bg-mist">
+                  {ph.n > 0 && <span className="block h-full rounded-r bg-brand" style={{ width: `${(ph.n / maxN) * 100}%` }} />}
+                </span>
+                <span className="text-right font-semibold text-ink">{ph.n || ""}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
     </section>
   );
 }
 
 /** Vertrieb: Umsatz der letzten 6 Monate (netto) und Angebots-Pipeline aus der eigenen Buchhaltung */
-async function SalesRow() {
+export async function SalesRow() {
   const today = todayYmd();
   const [y, m] = today.split("-").map(Number);
   const months = Array.from({ length: 6 }, (_, k) => {
