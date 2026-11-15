@@ -44,6 +44,7 @@ export default async function FertigungPage({ searchParams }: { searchParams: Pr
           <h1 className="page-title">Fertigung</h1>
           <p className="mt-1 text-sm text-steel">Fertigungskarten der Werkstatt – von der Arbeitsvorbereitung bis „zur Montage bereit“. Sind alle Karten eines Projekts fertig, wird die Montage freigegeben.</p>
         </div>
+        <Link href="/fertigung/kapazitaet" className="btn-secondary"><Gauge className="size-4" /> Kapazität</Link>
       </div>
 
       <details className="card p-4" open={Boolean(sp.projekt)}>

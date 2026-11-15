@@ -32,6 +32,13 @@ export const bookConfigSchema = z.object({
   dunningFee2: z.number().min(0).max(100).default(10),
   /** Neue Frist in Tagen bei Erinnerung/Mahnung */
   dunningDays: z.number().int().min(1).max(60).default(7),
+  /** Mahnvorschläge (Mahnwesen): Erinnerung X Tage nach Fälligkeit, nächste Stufe Y Tage nach Ablauf der Mahnfrist.
+   *  Es wird nie automatisch gesendet – nur vorgeschlagen; die Geschäftsführung gibt frei. */
+  autoDunning: z.boolean().default(true),
+  reminderAfterDays: z.number().int().min(0).max(60).default(7),
+  nextLevelAfterDays: z.number().int().min(0).max(60).default(5),
+  /** Kleinbeträge nicht mahnen (Euro, offen) */
+  dunningMinEuro: z.number().min(0).max(1000).default(5),
   /** Name im Absender der E-Rechnung (Ansprechpartner) */
   contactName: z.string().trim().max(100).default("Buchhaltung"),
   /** DATEV: Beraternummer (vom Steuerberater), Mandantennummer, Kontenrahmen, Beginn Wirtschaftsjahr (Monat) */

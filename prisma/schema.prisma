@@ -48,6 +48,9 @@ model User {
   vacationDays   Int?
   /// Mängel, die diesem Mitarbeiter zugewiesen sind
   defects        Defect[]         @relation("DefectAssignee")
+  /// Digitale Personalakte (nur Admin): Stammdaten und Dokumente mit Ablaufdatum
+  employeeProfile EmployeeProfile?
+  employeeDocs    EmployeeDoc[]
 
   /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt).
   /// Eindeutigkeit prüft die App beim Speichern – kein @unique, sonst bricht `prisma db push`
@@ -245,6 +248,8 @@ model Project {
   supplierOrders SupplierOrder[]
   stockMoves StockMove[]
   costs    ProjectCost[]
+  /// Nachunternehmer-Verträge für dieses Projekt
+  subcontracts SubcontractorContract[]
   phases     ProjectPhase[]
   milestones ProjectMilestone[]
   members    ProjectMember[]
@@ -923,6 +928,8 @@ model Customer {
   buyerReference String?
   /// Zahlungsziel in Tagen (sonst Standard aus den Einstellungen)
   paymentDays    Int?
+  /// Mahnwesen: für diesen Kunden keine automatischen Mahnvorschläge (z. B. öffentliche Hand, Stammkunde)
+  noDunning      Boolean  @default(false)
   notes          String?
   /// Übernommen aus Lexware (Kontakt-ID)
   lexId          String?
@@ -1028,6 +1035,9 @@ model SalesDoc {
   sentTo        String?
   dunningLevel  Int            @default(0)
   dunnedAt      DateTime?
+  /// Mahnwesen: nächste Mahnstufe nicht vor diesem Tag vorschlagen (z. B. Zahlung zugesagt)
+  dunningPausedUntil DateTime?
+  dunningPauseNote   String?
   /// Aus Lexware übernommen (Archiv, Original-PDF von Lexware)
   lexId         String?
   imported      Boolean        @default(false)
@@ -1550,4 +1560,141 @@ model ProductConfig {
 
   @@index([docId])
   @@index([createdAt])
+}
+
+/// Routenplanung: geokodierte Adressen (Cache). Quelle OpenStreetMap (Nominatim) oder von Hand gesetzt.
+model GeoPoint {
+  id        String   @id @default(cuid())
+  /// normalisierte Adresse (klein, Leerzeichen zusammengefasst)
+  key       String   @unique
+  address   String
+  lat       Float?
+  lng       Float?
+  /// "osm" | "manuell" | "fehler"
+  source    String   @default("osm")
+  createdAt DateTime @default(now())
+}
+
+/// Nachunternehmer (Subunternehmer) mit Nachweisen (§ 48b Freistellung, Unbedenklichkeit …) und Verträgen
+model Subcontractor {
+  id          String   @id @default(cuid())
+  name        String
+  /// Gewerk, z. B. „Verzinkung“, „Kranarbeiten“, „Montage“
+  trade       String?
+  contactName String?
+  email       String?
+  phone       String?
+  street      String?
+  zip         String?
+  city        String?
+  /// Steuernummer (für die Prüfung der Freistellungsbescheinigung beim BZSt)
+  taxNumber   String?
+  notes       String?
+  active      Boolean  @default(true)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  docs      SubcontractorDoc[]
+  contracts SubcontractorContract[]
+
+  @@index([name])
+}
+
+model SubcontractorDoc {
+  id              String        @id @default(cuid())
+  subcontractorId String
+  subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  /// FREISTELLUNG_48B | UNBEDENKLICHKEIT_FA | UNBEDENKLICHKEIT_KK | BG | SOKA | HAFTPFLICHT | MINDESTLOHN | GEWERBE | SONSTIGES
+  kind            String
+  title           String?
+  /// Nummer der Bescheinigung (z. B. Sicherheitsnummer der Freistellung)
+  number          String?
+  validFrom       DateTime?
+  validUntil      DateTime?
+  /// Scan/PDF (StoredFile kind „nachunternehmer“)
+  fileId          String?
+  note            String?
+  createdBy       String?
+  createdAt       DateTime      @default(now())
+
+  @@index([subcontractorId])
+  @@index([validUntil])
+}
+
+model SubcontractorContract {
+  id              String        @id @default(cuid())
+  /// NU-2026-0001 (Nummernkreis „NACHUNTERNEHMER-<Jahr>“)
+  number          String        @unique
+  subcontractorId String
+  subcontractor   Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  title           String
+  /// Leistungsumfang
+  scope           String?
+  /// Auftragssumme netto in Euro
+  amountNet       Float?
+  /// ANGEFRAGT | BEAUFTRAGT | IN_ARBEIT | ABGENOMMEN | ABGERECHNET | STORNIERT
+  status          String        @default("BEAUFTRAGT")
+  startDate       DateTime?
+  endDate         DateTime?
+  /// Sicherheitseinbehalt in Prozent
+  retentionPct    Float?
+  fileId          String?
+  createdBy       String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([subcontractorId])
+  @@index([projectId])
+}
+
+/// Digitale Personalakte: Stammdaten je Mitarbeiter (nur Admin)
+model EmployeeProfile {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobTitle         String?
+  birthDate        DateTime?
+  street           String?
+  zip              String?
+  city             String?
+  privatePhone     String?
+  privateEmail     String?
+  emergencyContact String?
+  entryDate        DateTime?
+  exitDate         DateTime?
+  /// UNBEFRISTET | BEFRISTET | MINIJOB | AUSBILDUNG | WERKSTUDENT | AUSHILFE
+  contractType     String?
+  contractUntil    DateTime?
+  weeklyHours      Float?
+  /// Lohn/Gehalt als Freitext (z. B. „19,50 €/Std.“)
+  wage             String?
+  notes            String?
+  updatedBy        String?
+  updatedAt        DateTime  @updatedAt
+}
+
+/// Digitale Personalakte: Verträge, Führerscheine, Qualifikationen … mit Ablaufdatum
+model EmployeeDoc {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// ARBEITSVERTRAG | FUEHRERSCHEIN | QUALIFIKATION | UNTERWEISUNG | ARBEITSMEDIZIN | ERSTE_HILFE | SONSTIGES
+  kind       String
+  title      String
+  number     String?
+  issuedAt   DateTime?
+  validUntil DateTime?
+  /// Nächste Kontrolle (z. B. Führerscheinkontrolle halbjährlich)
+  nextCheck  DateTime?
+  /// Scan/PDF (StoredFile kind „personal“ – nur für Admins abrufbar)
+  fileId     String?
+  note       String?
+  createdBy  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([validUntil])
 }

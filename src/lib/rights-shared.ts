@@ -73,6 +73,8 @@ export const PATH_AREA: Record<string, Area> = {
   "/maengel": "projekte",
   "/bautagebuch": "projekte",
   "/pc": "pc",
+  "/nachunternehmer": "einkauf",
+  "/auswertung": "buchhaltung",
 };
 
 export function canPath(u: RightsUser, href: string) {
@@ -91,6 +93,7 @@ export const TOOL_AREA: Record<string, Area> = {
   nachkalkulation: "projekte", projekte: "projekte", projekt_notiz: "projekte", projekt_planung: "projekte", zeichnungen: "projekte",
   auftraege: "auftraege", fertigung: "fertigung", montage: "montage", akquise: "akquise", am_pc: "pc",
   bautagebuch: "projekte", maengel: "projekte", ausschreibungen: "akquise", liquiditaet: "buchhaltung", angebot_diktat: "buchhaltung",
+  route: "montage", nachunternehmer: "einkauf", auswertung: "buchhaltung", kapazitaet: "fertigung", mahnvorschlaege: "buchhaltung",
 };
 
 /** Freigabe-Karten (PendingAction) → Bereich, den der Freigebende braucht */

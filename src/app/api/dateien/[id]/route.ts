@@ -1,13 +1,17 @@
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/auth/user";
 import { IMAGE_TYPES } from "@/lib/files";
+import { canArea } from "@/lib/rights-shared";
 
 // Datei ausliefern: Bilder und PDF im Browser, alles andere als Download. Nie HTML/SVG inline.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await currentUser())) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
+  const me = await currentUser();
+  if (!me) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
   const { id } = await params;
-  const f = await db.storedFile.findUnique({ where: { id }, select: { name: true, mime: true, data: true } });
+  const f = await db.storedFile.findUnique({ where: { id }, select: { name: true, mime: true, data: true, kind: true } });
   if (!f) return Response.json({ error: "Nicht gefunden." }, { status: 404 });
+  // Personalakte nur für Admins, Nachweise der Nachunternehmer nur mit Recht auf den Einkauf
+  if ((f.kind === "personal" && me.role !== "ADMIN") || (f.kind === "nachunternehmer" && !canArea(me, "einkauf"))) return Response.json({ error: "Nicht gefunden." }, { status: 404 });
   const download = new URL(req.url).searchParams.has("download");
   const inline = !download && (IMAGE_TYPES.includes(f.mime) || f.mime === "application/pdf");
   const name = f.name.replace(/[\r\n"\\]/g, "_");

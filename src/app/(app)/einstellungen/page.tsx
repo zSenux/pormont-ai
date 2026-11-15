@@ -2,7 +2,7 @@ import Link from "next/link";
 import { areasOf, AREA_LABEL, canPath, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
 import { setUserFunktion } from "@/app/actions";
 import { headers } from "next/headers";
-import { BookOpen, Gavel, Mic, ShieldAlert, Factory, Wrench, PenTool, ShoppingCart, Palmtree, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
+import { BookOpen, Gavel, Mic, ShieldAlert, Factory, Wrench, PenTool, ShoppingCart, Palmtree, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse, BarChart3, Gauge, Handshake, IdCard, Route } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -59,21 +59,26 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
           { href: "/maengel", label: "Mängel", icon: ShieldAlert },
           { href: "/stunden", label: "Stunden", icon: Clock },
           { href: "/abwesenheiten", label: "Urlaub & Krank", icon: Palmtree },
+          { href: "/personal", label: "Personal", icon: IdCard },
           { href: "/spesen", label: "Spesen", icon: Receipt },
           { href: "/akquise", label: "Akquise", icon: Target },
           { href: "/ausschreibungen", label: "Ausschreibungen", icon: Gavel },
           { href: "/lieferanten", label: "Lieferanten", icon: Truck },
           { href: "/bestellungen", label: "Bestellungen", icon: ShoppingCart },
+          { href: "/nachunternehmer", label: "Nach­unternehmer", icon: Handshake },
           { href: "/lager", label: "Lager", icon: Warehouse },
           { href: "/auftraege", label: "Aufträge", icon: ClipboardList },
           { href: "/projekte", label: "Projekte", icon: HardHat },
           { href: "/zeichnungen", label: "Zeichnungen", icon: PenTool },
           { href: "/fertigung", label: "Fertigung", icon: Factory },
+          { href: "/fertigung/kapazitaet", label: "Kapazität", icon: Gauge },
           { href: "/montage", label: "Montage", icon: Wrench },
+          { href: "/montage/route", label: "Route", icon: Route },
           { href: "/aufgaben", label: "Aufgaben", icon: CheckSquare },
           { href: "/kalender", label: "Kalender", icon: Calendar },
           { href: "/belege/foto", label: "Beleg-Foto", icon: Camera },
           { href: "/buchhaltung", label: "Buchhaltung", icon: FileText },
+          { href: "/auswertung", label: "Auswertung", icon: BarChart3 },
           { href: "/dokumente", label: "Dokumente", icon: FolderSearch },
           { href: "/pc", label: "Computer", icon: Monitor },
           { href: "/datenuebernahme", label: "Daten­übernahme", icon: Database },

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, MapPin, Plus, Truck, Users } from "lucide-react";
+import { CalendarDays, MapPin, Plus, Route, Truck, Users } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -37,9 +37,12 @@ export default async function MontagePage({ searchParams }: { searchParams: Prom
 
   return (
     <main className="mx-auto max-w-4xl space-y-5 px-4 py-6 md:py-10">
-      <div>
-        <h1 className="page-title">Montage</h1>
-        <p className="mt-1 text-sm text-steel">Montagetermine mit Team, Fahrzeug, Checkliste, Fotos, Bericht und Abnahme mit Unterschrift – gemacht fürs Handy auf der Baustelle.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="page-title">Montage</h1>
+          <p className="mt-1 text-sm text-steel">Montagetermine mit Team, Fahrzeug, Checkliste, Fotos, Bericht und Abnahme mit Unterschrift – gemacht fürs Handy auf der Baustelle.</p>
+        </div>
+        <Link href="/montage/route" className="btn-secondary"><Route className="size-4" /> Route planen</Link>
       </div>
 
       <details className="card p-4" open={Boolean(sp.projekt)}>
