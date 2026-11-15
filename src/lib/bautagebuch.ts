@@ -7,6 +7,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { addDaysYmd, berlinDateTime, berlinParts, formatDate, todayYmd } from "@/lib/berlin";
 import { COMPANY } from "@/lib/company";
+import { CREW_ROLES, crewByRole, readHead, readReport, reportSchema, shiftText, weatherFlags, type Report } from "@/lib/bautagebuch-shared";
 
 // Bautagebuch: je Projekt und Tag ein Eintrag – Wetter (Open-Meteo, echte Messwerte), Personal (Vorschlag aus
 // Stunden/Montage-Team), ausgeführte Arbeiten, Material, Behinderungen, Besucher/Anordnungen, Fotos.
@@ -14,7 +15,7 @@ import { COMPANY } from "@/lib/company";
 
 export class DiaryError extends Error {}
 
-export const crewSchema = z.array(z.object({ name: z.string().trim().min(1).max(80), userId: z.string().max(40).nullish(), hours: z.number().min(0).max(24).nullish() })).max(40);
+export const crewSchema = z.array(z.object({ name: z.string().trim().min(1).max(80), userId: z.string().max(40).nullish(), hours: z.number().min(0).max(24).nullish(), role: z.enum(CREW_ROLES).nullish() })).max(40);
 export type CrewMember = z.infer<typeof crewSchema>[number];
 export const readCrew = (raw: unknown): CrewMember[] => {
   const p = crewSchema.safeParse(raw);
@@ -114,6 +115,8 @@ export const diaryInput = z.object({
   material: z.string().trim().max(4000).nullish(),
   obstacles: z.string().trim().max(4000).nullish(),
   visitors: z.string().trim().max(4000).nullish(),
+  /** Bautagesbericht: Formular ersetzt ihn ganz, Jarvis ergänzt einzelne Felder */
+  report: reportSchema.optional(),
 });
 export type DiaryInput = z.infer<typeof diaryInput>;
 
@@ -132,7 +135,8 @@ export async function saveDiary(input: DiaryInput, actor: { name: string }, opts
   if (i.weather) weather = { weather: i.weather, weatherSource: "manuell", weatherCode: null, tempMin: null, tempMax: null, rainMm: null, windKmh: null };
   else if (!old?.weather) weather = await fetchWeather(project.address, i.day).then((w) => ({ ...w, weatherSource: "open-meteo" })).catch(() => ({}));
   const crew = i.crew ?? (old ? undefined : await crewSuggestion(project.id, i.day));
-  const data = { ...weather, ...(crew ? { crew } : {}), work: text("work"), material: text("material"), obstacles: text("obstacles"), visitors: text("visitors") };
+  const report = await mergeReport(project.id, i.day, old ? readReport(old.report) : null, i.report, opts.append);
+  const data = { ...weather, ...(crew ? { crew } : {}), work: text("work"), material: text("material"), obstacles: text("obstacles"), visitors: text("visitors"), ...(report ? { report } : {}) };
   const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
   try {
     return old
@@ -145,6 +149,49 @@ export async function saveDiary(input: DiaryInput, actor: { name: string }, opts
   }
 }
 
+/** Vorschlag für einen neuen Bericht: nächste Bericht-Nr., Richtmeister/Gewerk/Schichtzeiten vom letzten Bericht davor */
+export async function reportDefaults(projectId: string, day: string): Promise<Report> {
+  const [p, all, prev] = await Promise.all([
+    db.project.findUnique({ where: { id: projectId }, select: { diaryHead: true, leader: { select: { name: true } } } }),
+    db.diaryEntry.findMany({ where: { projectId }, select: { report: true } }),
+    db.diaryEntry.findFirst({ where: { projectId, day: { lt: berlinDateTime(day) } }, orderBy: { day: "desc" }, select: { report: true } }),
+  ]);
+  const head = readHead(p?.diaryHead);
+  const last = readReport(prev?.report);
+  const max = Math.max(0, ...all.map((e) => readReport(e.report).no ?? 0));
+  return {
+    no: max ? max + 1 : (head.startNo ?? all.length + 1),
+    foreman: last.foreman ?? p?.leader?.name ?? null,
+    trade: last.trade ?? head.trade ?? null,
+    earlyFrom: last.earlyFrom ?? null,
+    earlyTo: last.earlyTo ?? null,
+    lateFrom: last.lateFrom ?? null,
+    lateTo: last.lateTo ?? null,
+  };
+}
+
+/** Bericht zusammenführen: neu → Vorschlag + Eingabe; Formular ersetzt; Jarvis (append) ergänzt nur genannte Felder, Anordnungen/Änderungen werden angehängt */
+async function mergeReport(projectId: string, day: string, old: Report | null, input: Report | undefined, append?: boolean): Promise<Report | null> {
+  if (!old) return { ...(await reportDefaults(projectId, day)), ...strip(input ?? {}) };
+  if (!input) return null;
+  if (!append) return { ...input, no: input.no ?? old.no };
+  const add = strip(input);
+  return {
+    ...old,
+    ...add,
+    equipment: { ...(old.equipment ?? {}), ...(add.equipment ?? {}) },
+    changes: [...(old.changes ?? []), ...(add.changes ?? [])].slice(0, 12),
+    orders: old.orders && add.orders ? `${old.orders}\n${add.orders}` : (add.orders ?? old.orders),
+  };
+}
+const strip = (r: Report) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined && v !== null && v !== "")) as Report;
+
+/** Kopf der Bautagesberichte je Projekt speichern */
+export async function saveHead(projectId: string, raw: unknown) {
+  const head = strip(readHead(raw) as Report) as ReturnType<typeof readHead>;
+  return db.project.update({ where: { id: projectId }, data: { diaryHead: head }, select: { id: true } });
+}
+
 /** Wetter neu holen (überschreibt Hand-Eingabe) */
 export async function refreshWeather(entryId: string) {
   const e = await db.diaryEntry.findUnique({ where: { id: entryId }, include: { project: { select: { address: true } } } });
@@ -153,14 +200,21 @@ export async function refreshWeather(entryId: string) {
   return db.diaryEntry.update({ where: { id: e.id }, data: { weather: w.weather, weatherCode: w.weatherCode, tempMin: w.tempMin, tempMax: w.tempMax, rainMm: w.rainMm, windKmh: w.windKmh, weatherSource: "open-meteo" } });
 }
 
-export function diaryText(e: { day: Date; weather: string | null; crew: unknown; work: string | null; material: string | null; obstacles: string | null; visitors: string | null; authorName: string | null; id: string; _count?: { files: number } }) {
+export function diaryText(e: { day: Date; weather: string | null; crew: unknown; work: string | null; material: string | null; obstacles: string | null; visitors: string | null; authorName: string | null; id: string; report?: unknown; _count?: { files: number } }) {
   const crew = readCrew(e.crew);
   const hrs = crew.reduce((s, c) => s + (c.hours ?? 0), 0);
+  const r = readReport(e.report);
+  const eq = Object.entries(r.equipment ?? {}).filter(([, v]) => v);
   return [
-    `${formatDate(e.day)}${e.authorName ? ` (${e.authorName})` : ""} · id ${e.id}`,
+    `${r.no ? `Bericht Nr. ${r.no}, ` : ""}${formatDate(e.day)}${e.authorName ? ` (${e.authorName})` : ""} · id ${e.id}`,
+    (r.foreman || r.trade) && `  Richtmeister: ${r.foreman ?? "–"} · Gewerk: ${r.trade ?? "–"}`,
+    (r.earlyFrom || r.lateFrom) && `  Schichten: ${[shiftText(r.earlyFrom, r.earlyTo) && `Früh/Tag ${shiftText(r.earlyFrom, r.earlyTo)}`, shiftText(r.lateFrom, r.lateTo) && `Spät/Nacht ${shiftText(r.lateFrom, r.lateTo)}`].filter(Boolean).join(", ")}`,
     e.weather && `  Wetter: ${e.weather}`,
-    crew.length && `  Personal: ${crew.map((c) => `${c.name}${c.hours ? ` ${fmtHours(c.hours)}` : ""}`).join(", ")}${hrs ? ` = ${fmtHours(hrs)}` : ""}`,
+    crew.length && `  Personal: ${crew.map((c) => `${c.name}${c.role && c.role !== "Monteur" ? ` [${c.role}]` : ""}${c.hours ? ` ${fmtHours(c.hours)}` : ""}`).join(", ")}${hrs ? ` = ${fmtHours(hrs)}` : ""}`,
+    eq.length && `  Geräte: ${eq.map(([k, v]) => `${k} ${v}`).join(", ")}`,
     e.work && `  Arbeiten: ${e.work}`,
+    r.changes?.length && `  Änderungen: ${r.changes.map((c) => `${c.men ?? 0} Mann × ${c.hours ?? 0} Std. ${c.text ?? ""}`.trim()).join("; ")}`,
+    r.orders && `  Anordnungen: ${r.orders}`,
     e.material && `  Material/Lieferungen: ${e.material}`,
     e.obstacles && `  Behinderungen/Besonderheiten: ${e.obstacles}`,
     e.visitors && `  Besucher/Anordnungen: ${e.visitors}`,
@@ -174,7 +228,7 @@ const MM = 72 / 25.4;
 const W = 210 * MM, H = 297 * MM, LEFT = 20 * MM, RIGHT = W - 20 * MM, BOTTOM = 22 * MM;
 const BRAND = rgb(15 / 255, 77 / 255, 131 / 255), INK = rgb(16 / 255, 24 / 255, 32 / 255), STEEL = rgb(100 / 255, 113 / 255, 124 / 255), LINE = rgb(216 / 255, 224 / 255, 230 / 255), MIST = rgb(242 / 255, 245 / 255, 247 / 255);
 
-function wrap(text: string, font: PDFFont, size: number, width: number) {
+export function wrap(text: string, font: PDFFont, size: number, width: number) {
   const out: string[] = [];
   for (const para of text.replace(/\r/g, "").split("\n")) {
     let line = "";
@@ -198,7 +252,7 @@ function wrap(text: string, font: PDFFont, size: number, width: number) {
 }
 
 /** Nur Zeichen, die die eingebettete Schrift kann (Emojis u. ä. fallen weg) */
-const safe = (font: PDFFont, s: string) => {
+export const safe = (font: PDFFont, s: string) => {
   const ok = new Set(font.getCharacterSet());
   return [...s].map((ch) => (ok.has(ch.codePointAt(0)!) || ch === "\n" ? ch : "")).join("");
 };

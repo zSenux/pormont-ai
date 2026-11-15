@@ -232,6 +232,8 @@ model Project {
   /// Kunde aus dem Kundenstamm (Buchhaltung); `customer` bleibt als Anzeigename
   customerId   String?
   customerRef  Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  /// Kopf der Bautagesberichte: Auftraggeber, dessen Projekt-Nr., Gewerk, Ort, erste Bericht-Nr. (bautagebuch-shared.ts)
+  diaryHead    Json?
   /// Projektleiter (verantwortlich)
   leaderId     String?
   leader       User?         @relation("ProjectLeader", fields: [leaderId], references: [id], onDelete: SetNull)
@@ -1439,6 +1441,8 @@ model DiaryEntry {
   /// Besucher, Anordnungen des Bauherrn/Bauleiters
   visitors    String?
   authorName  String?
+  /// Bautagesbericht nach Vorlage des Auftraggebers (Bericht-Nr., Richtmeister, Gewerk, Schichten, Geräte, Änderungen, Anordnungen) – siehe bautagebuch-shared.ts
+  report      Json         @default("{}")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   files       StoredFile[]

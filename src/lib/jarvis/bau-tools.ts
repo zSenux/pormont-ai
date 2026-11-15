@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { addDaysYmd, berlinDateTime, formatDate, todayYmd } from "@/lib/berlin";
 import { findUserByName } from "@/lib/phases";
 import { DiaryError, diaryText, saveDiary } from "@/lib/bautagebuch";
+import { CREW_ROLES, EQUIPMENT_KEYS, type Report } from "@/lib/bautagebuch-shared";
 import { assignDefect, createDefect, DefectError, defectLine, setDefectStatus, sourceLabel, warrantyList, warrantyOf } from "@/lib/maengel";
 import { DEFECT_OPEN, DEFECT_STATUSES, SEVERITIES, SOURCES } from "@/lib/maengel-shared";
 import { refreshTenders, tenderLine, TENDER_STATUSES } from "@/lib/ausschreibungen";
@@ -18,12 +19,21 @@ import type { ToolCtx } from "./tools";
 
 const str = (description: string) => ({ type: "string" as const, description });
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum als JJJJ-MM-TT");
+/** „07:00-16:30“ → ["07:00", "16:30"] */
+const shift = z.string().transform((s, ctx) => {
+  const m = s.match(/^\s*(\d{1,2})[:.](\d{2})\s*[-–bis ]+\s*(\d{1,2})[:.](\d{2})\s*$/);
+  if (!m) {
+    ctx.addIssue({ code: "custom", message: "Schicht als HH:MM-HH:MM" });
+    return z.NEVER;
+  }
+  return [`${m[1].padStart(2, "0")}:${m[2]}`, `${m[3].padStart(2, "0")}:${m[4]}`] as const;
+});
 
 export const BAU_TOOLS: Anthropic.Tool[] = [
   {
     name: "bautagebuch",
     description:
-      "Bautagebuch je Projekt: lesen (Einträge von/bis, Standard letzte 14 Tage) oder eintragen (Tag, Standard heute; ergänzt den Eintrag des Tages: arbeiten, material, behinderungen, besucher, personal mit Stunden; Wetter holt Jarvis automatisch). Danach Link zum Tag nennen; PDF für den Bauherrn unter /api/bautagebuch/<projekt_id>?von=…&bis=….",
+      "Bautagebuch / Bautagesbericht je Projekt (Aufbau wie das Kunden-Formular: Richtmeister, Gewerk, Schichten, Witterung, 1. Arbeitseinsatz, 2. Geräteeinsatz, 3. Ausgeführte Arbeiten + Änderungen Mann × Std., 4. Besondere Vorkommnisse + Anordnungen): lesen (von/bis, Standard letzte 14 Tage) oder eintragen (Tag, Standard heute; ergänzt den Bericht des Tages, nur genannte Felder; Wetter, Bericht-Nr. und Richtmeister/Schichten vom Vortag kommen automatisch). Danach Link zum Tag nennen; PDF je Tag eine Seite unter /api/bautagebuch/<projekt_id>?von=…&bis=… (kompakt mit &art=tagebuch).",
     input_schema: {
       type: "object",
       properties: {
@@ -37,7 +47,15 @@ export const BAU_TOOLS: Anthropic.Tool[] = [
         behinderungen: str("Behinderungen, Besonderheiten, Mehrleistungen"),
         besucher: str("Besucher, Anordnungen des Bauherrn/Bauleiters"),
         wetter: str("nur wenn ausdrücklich genannt – sonst automatisch"),
-        personal: { type: "array", items: { type: "object", properties: { name: { type: "string" }, stunden: { type: "number" } }, required: ["name"] }, description: "Personal auf der Baustelle (ersetzt die Liste des Tages)" },
+        personal: { type: "array", items: { type: "object", properties: { name: { type: "string" }, stunden: { type: "number" }, rolle: { type: "string", enum: [...CREW_ROLES] } }, required: ["name"] }, description: "Personal auf der Baustelle (ersetzt die Liste des Tages); rolle Standard Monteur" },
+        richtmeister: str("Ausführender Richtmeister"),
+        gewerk: str("Gewerk"),
+        schicht: str("Früh-/Tagschicht „HH:MM-HH:MM“"),
+        spaetschicht: str("Spät-/Nachtschicht „HH:MM-HH:MM“"),
+        temperatur: { type: "number", description: "°C, nur wenn genannt" },
+        geraete: { type: "object", properties: Object.fromEntries(EQUIPMENT_KEYS.map((k) => [k, { type: "string" }])), description: "Geräteeinsatz je Gerät als kurzer Text, z. B. {autokran: \"1 × 4 Std.\"}" },
+        aenderungen: { type: "array", items: { type: "object", properties: { mann: { type: "number" }, stunden: { type: "number" }, kran_std: { type: "number" }, buehnen: { type: "number" }, beschreibung: { type: "string" } } }, description: "Änderungen/Zusatzleistungen (werden angehängt)" },
+        anordnungen: str("Anordnungen des Auftraggebers/Fachbauleiters (werden angehängt)"),
       },
       required: ["aktion", "projekt_id"],
     },
@@ -103,7 +121,7 @@ export async function runBauTool(name: string, i: Record<string, unknown>, ctx: 
   try {
     if (name === "bautagebuch") {
       const q = z
-        .object({ aktion: z.enum(["lesen", "eintragen"]), projekt_id: z.string(), datum: ymd.optional(), von: ymd.optional(), bis: ymd.optional(), arbeiten: z.string().max(8000).optional(), material: z.string().max(4000).optional(), behinderungen: z.string().max(4000).optional(), besucher: z.string().max(4000).optional(), wetter: z.string().max(300).optional(), personal: z.array(z.object({ name: z.string().min(1).max(80), stunden: z.number().min(0).max(24).optional() })).max(40).optional() })
+        .object({ aktion: z.enum(["lesen", "eintragen"]), projekt_id: z.string(), datum: ymd.optional(), von: ymd.optional(), bis: ymd.optional(), arbeiten: z.string().max(8000).optional(), material: z.string().max(4000).optional(), behinderungen: z.string().max(4000).optional(), besucher: z.string().max(4000).optional(), wetter: z.string().max(300).optional(), personal: z.array(z.object({ name: z.string().min(1).max(80), stunden: z.number().min(0).max(24).optional(), rolle: z.enum(CREW_ROLES).optional() })).max(40).optional(), richtmeister: z.string().max(80).optional(), gewerk: z.string().max(120).optional(), schicht: shift.optional(), spaetschicht: shift.optional(), temperatur: z.number().min(-40).max(55).optional(), geraete: z.partialRecord(z.enum(EQUIPMENT_KEYS), z.string().max(60)).optional(), aenderungen: z.array(z.object({ mann: z.number().min(0).max(200).optional(), stunden: z.number().min(0).max(24).optional(), kran_std: z.number().min(0).max(500).optional(), buehnen: z.number().min(0).max(500).optional(), beschreibung: z.string().max(300).optional() })).max(12).optional(), anordnungen: z.string().max(4000).optional() })
         .parse(i);
       const p = await project(q.projekt_id);
       if (!p) return "Projekt nicht gefunden – erst mit projekte suchen.";
@@ -113,8 +131,14 @@ export async function runBauTool(name: string, i: Record<string, unknown>, ctx: 
         return list.length ? `Bautagebuch ${p.name} (${list.length} Tage):\n${list.map(diaryText).join("\n")}\n[Bautagebuch](/projekte/${p.id}/bautagebuch) · [PDF](/api/bautagebuch/${p.id}?von=${from}&bis=${to})` : `Im Zeitraum keine Einträge. [Bautagebuch](/projekte/${p.id}/bautagebuch)`;
       }
       const users = await db.user.findMany({ select: { id: true, name: true } });
-      const crew = q.personal?.map((c) => ({ name: c.name, userId: users.find((u) => u.name.toLowerCase() === c.name.toLowerCase() || u.name.toLowerCase().startsWith(`${c.name.toLowerCase()} `))?.id ?? null, hours: c.stunden ?? null }));
-      const e = await saveDiary({ projectId: p.id, day: q.datum ?? todayYmd(), weather: q.wetter, crew, work: q.arbeiten, material: q.material, obstacles: q.behinderungen, visitors: q.besucher }, await actor(ctx), { append: true });
+      const crew = q.personal?.map((c) => ({ name: c.name, userId: users.find((u) => u.name.toLowerCase() === c.name.toLowerCase() || u.name.toLowerCase().startsWith(`${c.name.toLowerCase()} `))?.id ?? null, hours: c.stunden ?? null, role: c.rolle ?? null }));
+      const report: Report = {
+        foreman: q.richtmeister, trade: q.gewerk, temp: q.temperatur,
+        earlyFrom: q.schicht?.[0], earlyTo: q.schicht?.[1], lateFrom: q.spaetschicht?.[0], lateTo: q.spaetschicht?.[1],
+        equipment: q.geraete, orders: q.anordnungen,
+        changes: q.aenderungen?.map((c) => ({ men: c.mann ?? null, hours: c.stunden ?? null, crane: c.kran_std ?? null, platforms: c.buehnen ?? null, text: c.beschreibung ?? null })),
+      };
+      const e = await saveDiary({ projectId: p.id, day: q.datum ?? todayYmd(), weather: q.wetter, crew, work: q.arbeiten, material: q.material, obstacles: q.behinderungen, visitors: q.besucher, report }, await actor(ctx), { append: true });
       return `Bautagebuch ${p.name} gespeichert:\n${diaryText(e)}\nFotos dazu: [Tag öffnen](/projekte/${p.id}/bautagebuch?tag=${q.datum ?? todayYmd()})`;
     }
 
