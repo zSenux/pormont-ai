@@ -10,8 +10,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   const f = await db.storedFile.findUnique({ where: { id }, select: { name: true, mime: true, data: true, kind: true } });
   if (!f) return Response.json({ error: "Nicht gefunden." }, { status: 404 });
-  // Personalakte nur für Admins, Nachweise der Nachunternehmer nur mit Recht auf den Einkauf
-  if ((f.kind === "personal" && me.role !== "ADMIN") || (f.kind === "nachunternehmer" && !canArea(me, "einkauf"))) return Response.json({ error: "Nicht gefunden." }, { status: 404 });
+  // Personalakte nur für Admins, Nachweise der Nachunternehmer nur mit Recht auf den Einkauf, Kontoauszüge nur mit Recht auf die Buchhaltung
+  if ((f.kind === "personal" && me.role !== "ADMIN") || (f.kind === "nachunternehmer" && !canArea(me, "einkauf")) || (f.kind === "kontoauszug" && !canArea(me, "buchhaltung"))) return Response.json({ error: "Nicht gefunden." }, { status: 404 });
   const download = new URL(req.url).searchParams.has("download");
   const inline = !download && (IMAGE_TYPES.includes(f.mime) || f.mime === "application/pdf");
   const name = f.name.replace(/[\r\n"\\]/g, "_");

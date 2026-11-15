@@ -12,6 +12,7 @@ import { addPayment, BookError, cancelInvoice, copyDoc, downPaymentFromQuote, cr
 import { createDunning, sendDoc, sendDunning } from "@/lib/buchhaltung/send";
 import { articleInput, createCustomer, customerInput, updateCustomer } from "@/lib/buchhaltung/customers";
 import { startLexwareImport } from "@/lib/buchhaltung/lexware-import";
+import { FileError, guessMime, storeFile } from "@/lib/files";
 import type { DocKind } from "@/lib/buchhaltung/types";
 
 // Server-Actions der Buchhaltung. Jede Action prüft die Anmeldung (und damit die Freischaltung) über requireUser().
@@ -347,4 +348,54 @@ export async function startImportAction(_prev: Result, form: FormData): Promise<
   } catch (e) {
     return fail(e);
   }
+}
+
+/** Eigenes Briefpapier (PDF oder Bild) hochladen – liegt danach hinter jedem Angebot, jeder Rechnung, Gutschrift und Mahnung.
+ *  Festgeschriebene Belege behalten ihr archiviertes PDF (GoBD). */
+export async function saveLetterheadAction(_prev: Result, form: FormData): Promise<Result> {
+  const admin = await requireAdmin();
+  const cur = await bookConfig();
+  const f = form.get("datei");
+  let fileId = cur.letterheadFileId;
+  let fileName = cur.letterheadName;
+  if (f instanceof File && f.size) {
+    if (f.size > 8 * 1024 * 1024) return { error: "Die Datei ist zu groß (höchstens 8 MB)." };
+    const mime = guessMime(f.name, f.type);
+    if (!["application/pdf", "image/png", "image/jpeg"].includes(mime)) return { error: "Bitte das Briefpapier als PDF, PNG oder JPG hochladen." };
+    const data = Buffer.from(await f.arrayBuffer());
+    if (mime === "application/pdf") {
+      try {
+        const { PDFDocument } = await import("pdf-lib");
+        const p = await PDFDocument.load(data, { ignoreEncryption: true });
+        if (!p.getPageCount()) return { error: "Das PDF hat keine Seite." };
+      } catch {
+        return { error: "Das PDF lässt sich nicht lesen." };
+      }
+    }
+    try {
+      const stored = await storeFile({ name: f.name, mime, data, kind: "briefpapier", uploadedBy: admin.name });
+      fileId = stored.id;
+      fileName = stored.name;
+    } catch (e) {
+      return { error: e instanceof FileError ? e.message : "Hochladen hat nicht geklappt." };
+    }
+  }
+  const mm = (k: string, d: number) => {
+    const v = num(form.get(k));
+    return v === null || Number.isNaN(v) ? d : Math.round(Math.min(80, Math.max(10, v)));
+  };
+  const p = bookConfigSchema.safeParse({ ...cur, letterheadFileId: fileId, letterheadName: fileName, letterheadOnly: form.get("letterheadOnly") === "on", letterheadTopMm: mm("letterheadTopMm", cur.letterheadTopMm), letterheadBottomMm: mm("letterheadBottomMm", cur.letterheadBottomMm) });
+  if (!p.success) return { error: p.error.issues[0]?.message };
+  await saveBookConfig(p.data);
+  if (cur.letterheadFileId && cur.letterheadFileId !== fileId) await db.storedFile.deleteMany({ where: { id: cur.letterheadFileId, kind: "briefpapier" } });
+  refresh();
+  return { ok: fileId ? "Briefpapier gespeichert – gilt ab sofort für alle neuen Belege." : "Gespeichert." };
+}
+
+export async function removeLetterheadAction() {
+  await requireAdmin();
+  const cur = await bookConfig();
+  await saveBookConfig({ ...cur, letterheadFileId: null, letterheadName: null });
+  if (cur.letterheadFileId) await db.storedFile.deleteMany({ where: { id: cur.letterheadFileId, kind: "briefpapier" } });
+  refresh();
 }

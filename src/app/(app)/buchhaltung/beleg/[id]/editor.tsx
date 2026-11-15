@@ -245,13 +245,20 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
             <p className="col-span-2 text-xs text-steel">Leer = Leistungsdatum ist das Rechnungsdatum. Pflichtangabe auf jeder Rechnung.</p>
           </div>
         )}
-        <label className="flex items-start gap-2 text-sm sm:col-span-2">
-          <input type="checkbox" checked={f.reverseCharge} onChange={(e) => set("reverseCharge", e.target.checked)} className="mt-1" />
-          <span>
-            <strong>§ 13b UStG</strong> – Bauleistung an ein Bauunternehmen: keine Umsatzsteuer ausweisen, der Kunde schuldet die Steuer.
-            {f.reverseCharge && customer && !customer.vatId && <span className="block text-warn">Dafür braucht der Kunde eine USt-IdNr.</span>}
-          </span>
-        </label>
+        <fieldset className="sm:col-span-2">
+          <legend className="label">Umsatzsteuer</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className={`flex cursor-pointer items-start gap-2 rounded-2xl border p-3 text-sm ${!f.reverseCharge ? "border-brand bg-brand/5" : "border-line"}`}>
+              <input type="radio" name="ust-art" checked={!f.reverseCharge} onChange={() => set("reverseCharge", false)} className="mt-1" />
+              <span><strong>Normal mit MwSt.</strong><span className="block text-xs text-steel">netto + 19 % USt. = brutto</span></span>
+            </label>
+            <label className={`flex cursor-pointer items-start gap-2 rounded-2xl border p-3 text-sm ${f.reverseCharge ? "border-brand bg-brand/5" : "border-line"}`}>
+              <input type="radio" name="ust-art" checked={f.reverseCharge} onChange={() => set("reverseCharge", true)} className="mt-1" />
+              <span><strong>§ 13b UStG – netto</strong><span className="block text-xs text-steel">Bauleistung an Bauunternehmen: keine USt., der Kunde schuldet die Steuer</span></span>
+            </label>
+          </div>
+          {f.reverseCharge && customer && !customer.vatId && <p className="mt-1 text-sm text-warn">Dafür braucht der Kunde eine USt-IdNr.</p>}
+        </fieldset>
         <div className="block sm:col-span-2">
           <div className="flex items-end justify-between gap-2"><label htmlFor="beleg-intro" className="label">Einleitung</label><BlockPicker blocks={textBlocks} value={f.intro} onPick={(v) => set("intro", v)} label="Textbaustein in die Einleitung" /></div>
           <textarea id="beleg-intro" value={f.intro} onChange={(e) => set("intro", e.target.value)} rows={2} className="input resize-y" />
@@ -278,7 +285,7 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
                 <div className="flex items-start gap-2">
                   <span className="mt-2.5 w-5 shrink-0 text-xs text-steel">{i + 1}.</span>
                   <div className="min-w-0 flex-1 space-y-2">
-                    <input value={r.name} onChange={(e) => setRow(r.key, { name: e.target.value })} maxLength={300} placeholder="Bezeichnung, z. B. Edelstahl-Geländer V2A" className="input font-medium" aria-label="Bezeichnung" />
+                    <input value={r.name} onChange={(e) => setRow(r.key, { name: e.target.value })} maxLength={300} placeholder="Text, z. B. Edelstahl-Geländer V2A" className="input font-medium" aria-label="Text" />
                     {r.open ? (
                       <textarea value={r.description} onChange={(e) => setRow(r.key, { description: e.target.value })} rows={2} maxLength={4000} placeholder="Beschreibung (Material, Maße, Ausführung …)" className="input resize-y text-sm" aria-label="Beschreibung" />
                     ) : (
@@ -287,10 +294,10 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-[6rem_6rem_8rem_5rem_6rem_1fr]">
                       <label className="text-xs text-steel">Menge<input value={r.qty} onChange={(e) => setRow(r.key, { qty: e.target.value })} inputMode="decimal" className="input mt-0.5" /></label>
                       <label className="text-xs text-steel">Einheit<input value={r.unit} onChange={(e) => setRow(r.key, { unit: e.target.value })} list="einheiten" maxLength={30} className="input mt-0.5" /></label>
-                      <label className="text-xs text-steel">Preis netto €<input value={r.price} onChange={(e) => setRow(r.key, { price: e.target.value })} inputMode="decimal" placeholder="0,00" className="input mt-0.5" /></label>
+                      <label className="text-xs text-steel">Einzelpreis netto €<input value={r.price} onChange={(e) => setRow(r.key, { price: e.target.value })} inputMode="decimal" placeholder="0,00" className="input mt-0.5" /></label>
                       <label className="text-xs text-steel">Rabatt %<input value={r.discount} onChange={(e) => setRow(r.key, { discount: e.target.value })} inputMode="decimal" placeholder="0" className="input mt-0.5" /></label>
                       <label className="text-xs text-steel">USt.<select value={r.taxRate} onChange={(e) => setRow(r.key, { taxRate: Number(e.target.value) as Row["taxRate"] })} className="input mt-0.5" disabled={f.reverseCharge}><option value={19}>19 %</option><option value={7}>7 %</option><option value={0}>0 %</option></select></label>
-                      <p className="col-span-2 self-end pb-2 text-right text-sm font-semibold sm:col-span-1">{net}</p>
+                      <p className="col-span-2 self-end pb-2 text-right text-sm font-semibold sm:col-span-1"><span className="block text-xs font-normal text-steel">Gesamtpreis</span>{net}</p>
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-col gap-1">

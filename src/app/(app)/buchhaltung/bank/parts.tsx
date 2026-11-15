@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { StateForm } from "@/components/state-form";
-import { assignTxAction, autoAssignAction, importStatementAction } from "@/app/actions/bank";
+import { archiveStatementAction, assignTxAction, autoAssignAction, importStatementAction } from "@/app/actions/bank";
 import { ResultButton } from "../beleg/[id]/panels";
 
 export function UploadForm() {
@@ -33,5 +33,15 @@ export function ManualAssign({ txId, options }: { txId: string; options: Opt[] }
       </select>
       {pick && <ResultButton action={() => assignTxAction(txId, pick.kind, pick.id)} className="btn-secondary px-3 py-1 text-xs">Zuordnen</ResultButton>}
     </span>
+  );
+}
+
+/** Kontoauszug als PDF nur hinterlegen (z. B. der monatliche Auszug aus dem Online-Banking) */
+export function ArchivePdfForm({ month }: { month: string }) {
+  return (
+    <StateForm action={archiveStatementAction} submit="PDF hinterlegen" reset className="flex flex-wrap items-end gap-2">
+      <label className="text-xs text-steel">Monat<input name="monat" type="month" defaultValue={month} required className="input mt-0.5" /></label>
+      <input name="datei" type="file" accept="application/pdf,.pdf" required className="input min-w-0 flex-1" aria-label="Kontoauszug als PDF" />
+    </StateForm>
   );
 }

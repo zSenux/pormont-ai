@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { clsx } from "clsx";
-import { Check, Landmark } from "lucide-react";
+import { Check, FileText, FolderArchive, Landmark } from "lucide-react";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate } from "@/lib/berlin";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { openCentsOf } from "@/lib/buchhaltung/docs";
-import { suggestions } from "@/lib/buchhaltung/bank";
+import { listStatements, suggestions } from "@/lib/buchhaltung/bank";
+import { todayYmd } from "@/lib/berlin";
+import { fileUrl } from "@/lib/files";
 import { assignTxAction, ignoreTxAction, unassignTxAction } from "@/app/actions/bank";
 import { ResultButton } from "../beleg/[id]/panels";
-import { AutoButton, ManualAssign, UploadForm } from "./parts";
+import { ArchivePdfForm, AutoButton, ManualAssign, UploadForm } from "./parts";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Bankabgleich" };
@@ -21,11 +23,12 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
   const sp = await searchParams;
   const f = (sp.f && sp.f in FILTER ? sp.f : "offen") as keyof typeof FILTER;
   const where = f === "offen" ? { docId: null, purchaseId: null, ignored: false } : f === "ignoriert" ? { ignored: true } : { OR: [{ docId: { not: null } }, { purchaseId: { not: null } }] };
-  const [txs, counts, openDocs, openPurchases] = await Promise.all([
+  const [txs, counts, openDocs, openPurchases, statements] = await Promise.all([
     db.bankTx.findMany({ where, orderBy: [{ day: "desc" }, { createdAt: "desc" }], take: 300 }),
     Promise.all([db.bankTx.count({ where: { docId: null, purchaseId: null, ignored: false } }), db.bankTx.count({ where: { OR: [{ docId: { not: null } }, { purchaseId: { not: null } }] } }), db.bankTx.count({ where: { ignored: true } })]),
     db.salesDoc.findMany({ where: { kind: "RECHNUNG", status: "OFFEN" }, orderBy: { date: "asc" }, include: { customer: { select: { name: true } } } }),
     db.purchaseDoc.findMany({ where: { status: "OFFEN" }, orderBy: { date: "asc" } }),
+    listStatements(),
   ]);
   const sug = f === "offen" ? await suggestions(txs) : new Map();
   const docOpts = openDocs.map((d) => ({ kind: "doc" as const, id: d.id, label: `${d.number} · ${d.customer?.name ?? ""} · ${fmtEuroCents(openCentsOf(d))}` }));
@@ -48,6 +51,27 @@ export default async function BankPage({ searchParams }: { searchParams: Promise
           <p className="mt-1 text-sm text-steel">Im Online-Banking den Auszug als <b>CAMT (XML)</b> oder <b>CSV</b> herunterladen und hier einlesen. Doppelte Umsätze werden erkannt. Jarvis sucht dann die passende Rechnung (Rechnungsnummer im Verwendungszweck oder gleicher Betrag) bzw. Ausgabe.</p>
         </div>
         <UploadForm />
+      </section>
+
+      <section id="auszuege" className="card space-y-3 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="mr-auto flex items-center gap-2 font-semibold"><FolderArchive className="size-4 text-brand" /> Hinterlegte Kontoauszüge ({statements.length})</h2>
+          <Link href="/buchhaltung/ablage" className="text-sm text-brand">Zur Ablage nach Monaten →</Link>
+        </div>
+        <p className="text-sm text-steel">Jeder eingelesene Auszug wird als Original-Datei aufbewahrt. Den PDF-Auszug der Bank kannst du zusätzlich hier ablegen.</p>
+        <ArchivePdfForm month={todayYmd().slice(0, 7)} />
+        {statements.length > 0 && (
+          <ul className="divide-y divide-line rounded-2xl border border-line text-sm">
+            {statements.slice(0, 8).map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+                <FileText className="size-4 shrink-0 text-steel" />
+                <a href={fileUrl(s.id)} target="_blank" className="min-w-0 flex-1 truncate font-medium text-brand">{s.name}</a>
+                <span className="text-steel">{formatDate(new Date(`${s.from}T12:00:00`))} – {formatDate(new Date(`${s.to}T12:00:00`))}</span>
+                <span className="w-28 text-right text-xs text-steel">{s.source === "pdf" ? "PDF der Bank" : `${s.count} Umsätze`}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <div className="flex flex-wrap items-center gap-2">

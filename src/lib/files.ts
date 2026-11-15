@@ -37,7 +37,7 @@ export function guessMime(name: string, given?: string) {
   return ({ pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", txt: "text/plain", csv: "text/csv", md: "text/markdown" } as Record<string, string>)[ext ?? ""] ?? "application/octet-stream";
 }
 
-export async function storeFile(f: { name: string; mime: string; data: Buffer; kind: "dokument" | "foto" | "beleg" | "spesen" | "zeichnung" | "nachunternehmer" | "personal"; projectId?: string | null; uploadedBy?: string | null }) {
+export async function storeFile(f: { name: string; mime: string; data: Buffer; kind: "dokument" | "foto" | "beleg" | "spesen" | "zeichnung" | "nachunternehmer" | "personal" | "briefpapier" | "kontoauszug"; projectId?: string | null; uploadedBy?: string | null }) {
   const cad = f.kind === "zeichnung" ? CAD_EXT[f.name.toLowerCase().split(".").pop() ?? ""] : undefined;
   const mime = cad ?? guessMime(f.name, f.mime);
   if (!f.data.length) throw new FileError("Die Datei ist leer.");
@@ -68,7 +68,7 @@ export async function searchFiles(q: string, opts: { projectId?: string; kind?: 
     where: {
       ...(opts.projectId ? { projectId: opts.projectId } : {}),
       // Personalakte und Nachweise der Nachunternehmer tauchen nie in der allgemeinen Dokumentensuche auf
-      ...(opts.kind ? { kind: opts.kind } : { kind: { notIn: ["personal", "nachunternehmer"] } }),
+      ...(opts.kind ? { kind: opts.kind } : { kind: { notIn: ["personal", "nachunternehmer", "kontoauszug", "briefpapier"] } }),
       AND: words.map((w) => ({ OR: [{ name: { contains: w, mode: "insensitive" as const } }, { text: { contains: w, mode: "insensitive" as const } }, { summary: { contains: w, mode: "insensitive" as const } }] })),
     },
     orderBy: { createdAt: "desc" },

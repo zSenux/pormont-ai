@@ -525,6 +525,23 @@ async function recalcPaid(tx: Tx, docId: string) {
   return { paid, status };
 }
 
+/** Offene Posten: Rest einer Rechnung mit einem Klick als bezahlt buchen (Zahlung über den offenen Betrag).
+ *  Gegen Doppelklick gesichert: nur wenn sich die Rechnung seit dem Lesen nicht geändert hat. */
+export async function payRest(docId: string, p: { day: string; method?: string }, user: Actor) {
+  return db.$transaction(async (tx) => {
+    const d = await tx.salesDoc.findUnique({ where: { id: docId } });
+    if (!d || d.kind !== "RECHNUNG" || d.status !== "OFFEN") throw new BookError("Diese Rechnung ist nicht (mehr) offen.");
+    const open = openCentsOf(d);
+    if (open <= 0) throw new BookError("Hier ist nichts mehr offen.");
+    const lock = await tx.salesDoc.updateMany({ where: { id: docId, status: "OFFEN", paidCents: d.paidCents, updatedAt: d.updatedAt }, data: { updatedAt: new Date() } });
+    if (!lock.count) throw new BookError("Die Rechnung wurde gerade geändert – bitte neu laden.");
+    await tx.payment.create({ data: { docId, day: dayOf(p.day), amountCents: open, method: p.method && PAYMENT_METHODS[p.method] ? p.method : "UEBERWEISUNG", note: "Offene Posten: als bezahlt markiert", userName: user.name } });
+    const r = await recalcPaid(tx, docId);
+    await log(tx, docId, `Als bezahlt markiert (Offene Posten): ${fmtEuroCents(open)} vom ${p.day.split("-").reverse().join(".")}`, user);
+    return { ...r, amountCents: open };
+  });
+}
+
 export async function addPayment(docId: string, p: { day: string; amountCents: number; method?: string; note?: string | null }, user: Actor) {
   if (!Number.isInteger(p.amountCents) || p.amountCents === 0 || Math.abs(p.amountCents) > 1e10) throw new BookError("Betrag prüfen.");
   return db.$transaction(async (tx) => {

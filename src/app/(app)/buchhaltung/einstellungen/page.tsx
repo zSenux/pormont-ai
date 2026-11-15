@@ -1,11 +1,11 @@
-import { CheckCircle2, Download, Hash, Landmark, Loader2, Upload } from "lucide-react";
+import { CheckCircle2, Download, FileImage, Hash, Landmark, Loader2, Upload } from "lucide-react";
 import { requireAdmin } from "@/lib/auth/user";
 import { berlinParts, formatDateTime, todayYmd } from "@/lib/berlin";
 import { lexwareConfigured } from "@/lib/lexware/client";
 import { bookConfig, missingForInvoices } from "@/lib/buchhaltung/config";
 import { numberState, PREFIX } from "@/lib/buchhaltung/docs";
 import { importState } from "@/lib/buchhaltung/lexware-import";
-import { ConfigForm, ImportForm, NumberForm } from "./forms";
+import { ConfigForm, ImportForm, LetterheadForm, NumberForm } from "./forms";
 
 export const metadata = { title: "Buchhaltung – Einstellungen" };
 export const dynamic = "force-dynamic";
@@ -26,6 +26,12 @@ export default async function BookSettings() {
         {missing.length > 0 ? <p className="text-sm text-warn">Für Rechnungen fehlt noch: {missing.join(", ")}.</p> : <p className="flex items-center gap-1 text-sm text-ok"><CheckCircle2 className="size-4" /> Alles da für Rechnungen und E-Rechnung.</p>}
         <ConfigForm c={cfg} />
         <p className="text-xs text-steel">Name, Anschrift, USt-IdNr., Handelsregister und Geschäftsführung kommen aus den ProMont-Stammdaten und stehen automatisch auf jedem Beleg.</p>
+      </section>
+
+      <section id="briefpapier" className="card space-y-3 p-4">
+        <h2 className="flex items-center gap-2 font-semibold"><FileImage className="size-4 text-brand" /> Eigenes Briefpapier</h2>
+        <p className="text-sm text-steel">Euer Briefkopf mit Fußzeile liegt dann hinter jedem Angebot, jeder Rechnung, Gutschrift, Mahnung und Auftragsbestätigung – überall gleich. Schon festgeschriebene Belege behalten ihr archiviertes PDF.</p>
+        <LetterheadForm c={cfg} />
       </section>
 
       <section className="card space-y-3 p-4">
