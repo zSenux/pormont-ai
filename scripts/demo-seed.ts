@@ -463,5 +463,21 @@ for (const [part, kind, label, amount] of costDemo) await db.projectCost.create(
 await db.productionJob.create({ data: { number: `FA-DEMO-${String(faNo++).padStart(3, "0")}`, projectId: await proj("Hallenvordach"), title: "Trapezblech und Rinnen vorbereiten", quantity: "1 Satz", machine: "Schweißplatz 2", assigneeId: users["Sven Müller"], status: "OFFEN", plannedStart: day(14), plannedEnd: day(19), plannedHours: 70, createdBy: "Demo" } });
 await db.productionJob.create({ data: { number: `FA-DEMO-${String(faNo++).padStart(3, "0")}`, projectId: await proj("Carport"), title: "Carport Stützen und Pfetten", quantity: "1 Satz", status: "OFFEN", plannedHours: 24, createdBy: "Demo" } });
 
+// Spesen: Firmensätze über den Pauschalen (Aufteilung steuerfrei / pauschal 25 % / lohnsteuerpflichtig sichtbar)
+await db.appSetting.upsert({ where: { key: "SPESEN" }, create: { key: "SPESEN", value: JSON.stringify({ meal: { TAG8: 2000, REISE: 2000, TAG24: 3500 }, km: 35, night: 2000 }) }, update: {} });
+const spesenDemo: [string, number, string, string, Record<string, unknown>][] = [
+  ["Mehmet Yılmaz", -1, "VERPFLEGUNG", "Montage Hallenvordach Schwetzingen", { mealDay: "TAG8", amountCents: 2000 }],
+  ["Mehmet Yılmaz", -2, "VERPFLEGUNG", "Montage Hallenvordach Schwetzingen", { mealDay: "TAG8", amountCents: 2000 }],
+  ["Mehmet Yılmaz", -3, "FAHRT", "Mannheim – Schwetzingen und zurück", { km: 42, amountCents: 42 * 35 }],
+  ["Sven Müller", -4, "VERPFLEGUNG", "Montage Stahltreppe Heidelberg, Anreise", { mealDay: "REISE", amountCents: 2000 }],
+  ["Sven Müller", -3, "VERPFLEGUNG", "Montage Stahltreppe Heidelberg", { mealDay: "TAG24", amountCents: 3500 - 560, breakfast: true }],
+  ["Sven Müller", -4, "UEBERNACHTUNG", "Übernachtung (Pauschale ohne Beleg)", { amountCents: 2000 }],
+  ["Tobias Kern", -6, "AUSLAGE", "Schrauben und Dübel Baumarkt", { amountCents: 2380 }],
+];
+for (const [name, off, kind, description, extra] of spesenDemo) {
+  const status = off <= -3 ? "GENEHMIGT" : "EINGEREICHT";
+  await db.expense.create({ data: { userId: users[name], day: day(off), kind, description, status, ...(status === "GENEHMIGT" ? { reviewedBy: "Dirk Linke", reviewedAt: new Date() } : {}), ...(extra as { amountCents: number }) } });
+}
+
 console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten, ${orders.length} Bestellungen, ${articles.length} Artikel.`);
 await db.$disconnect();

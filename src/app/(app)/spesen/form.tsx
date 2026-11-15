@@ -5,11 +5,11 @@ import { Camera, Check, Loader2 } from "lucide-react";
 import { StateForm } from "@/components/state-form";
 import { shrink } from "@/components/upload";
 import { addExpense } from "@/app/actions/spesen";
-import { KINDS, KIND_LABEL, KM_RATE, MEAL_LABEL, MEAL_RATES, euro, kmAmount, mealAmount, type ExpenseKind, type MealDay } from "@/lib/spesen";
+import { KINDS, KIND_LABEL, MEAL_LABEL, MEAL_RATES, TAX_LABEL, euro, kmAmount, mealAmountAt, taxSplit, type ExpenseKind, type MealDay, type SpesenRates } from "@/lib/spesen";
 
 type Receipt = { brutto: number | null; datum: string | null; lieferant: string | null; lesbar: boolean } | null;
 
-export function ExpenseForm({ today, projects }: { today: string; projects: { id: string; name: string }[] }) {
+export function ExpenseForm({ today, projects, rates }: { today: string; projects: { id: string; name: string }[]; rates: SpesenRates }) {
   const [kind, setKind] = useState<ExpenseKind>("VERPFLEGUNG");
   const [mealDay, setMealDay] = useState<MealDay>("TAG8");
   const [meals, setMeals] = useState({ breakfast: false, lunch: false, dinner: false });
@@ -19,6 +19,7 @@ export function ExpenseForm({ today, projects }: { today: string; projects: { id
   const [desc, setDesc] = useState("");
   const [file, setFile] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [flat, setFlat] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function upload(list: FileList | null) {
@@ -48,8 +49,10 @@ export function ExpenseForm({ today, projects }: { today: string; projects: { id
     }
   }
 
-  const preview = kind === "VERPFLEGUNG" ? mealAmount(mealDay, meals) : kind === "FAHRT" && +km > 0 ? kmAmount(+km) : null;
-  const needsReceipt = kind === "UEBERNACHTUNG" || kind === "AUSLAGE";
+  const preview = kind === "VERPFLEGUNG" ? mealAmountAt(rates, mealDay, meals) : kind === "FAHRT" && +km > 0 ? kmAmount(+km, rates.km) : kind === "UEBERNACHTUNG" && flat ? rates.night : null;
+  const nightFlat = kind === "UEBERNACHTUNG" && flat;
+  const needsReceipt = (kind === "UEBERNACHTUNG" && !flat) || kind === "AUSLAGE";
+  const split = preview !== null ? taxSplit({ kind, amountCents: preview, mealDay, ...meals, km: +km || 0, fileId: nightFlat ? null : (file?.id ?? null) }) : null;
 
   return (
     <StateForm action={addExpense} submit="Einreichen" onOk={() => { setFile(null); setAmount(""); setDesc(""); setKm(""); setMeals({ breakfast: false, lunch: false, dinner: false }); }}>
@@ -70,7 +73,7 @@ export function ExpenseForm({ today, projects }: { today: string; projects: { id
       {kind === "VERPFLEGUNG" && (
         <div className="space-y-2">
           <select name="mealDay" value={mealDay} onChange={(e) => setMealDay(e.target.value as MealDay)} className="input w-full" aria-label="Abwesenheit">
-            {(Object.keys(MEAL_RATES) as MealDay[]).map((k) => <option key={k} value={k}>{MEAL_LABEL[k]} – {euro(MEAL_RATES[k])}</option>)}
+            {(Object.keys(MEAL_RATES) as MealDay[]).map((k) => <option key={k} value={k}>{MEAL_LABEL[k]} – {euro(rates.meal[k])}{rates.meal[k] > MEAL_RATES[k] ? ` (davon ${euro(MEAL_RATES[k])} steuerfrei)` : ""}</option>)}
           </select>
           <fieldset className="flex flex-wrap gap-3 text-sm">
             <legend className="mb-1 text-xs text-steel">Mahlzeiten bezahlt bekommen (Kunde/Firma)?</legend>
@@ -81,7 +84,10 @@ export function ExpenseForm({ today, projects }: { today: string; projects: { id
         </div>
       )}
       {kind === "FAHRT" && (
-        <label className="block text-xs text-steel">Gefahrene Kilometer (Hin + Rück) mit eigenem Auto · {euro(KM_RATE)} je km<input name="km" inputMode="numeric" required value={km} onChange={(e) => setKm(e.target.value.replace(/\D/g, ""))} className="input mt-1 w-full" /></label>
+        <label className="block text-xs text-steel">Gefahrene Kilometer (Hin + Rück) mit eigenem Auto · {euro(rates.km)} je km<input name="km" inputMode="numeric" required value={km} onChange={(e) => setKm(e.target.value.replace(/\D/g, ""))} className="input mt-1 w-full" /></label>
+      )}
+      {kind === "UEBERNACHTUNG" && (
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="pauschal" checked={flat} onChange={(e) => setFlat(e.target.checked)} className="size-4" /> Ohne Beleg – Übernachtungspauschale {euro(rates.night)}</label>
       )}
       {needsReceipt && (
         <div className="space-y-2">
@@ -95,7 +101,14 @@ export function ExpenseForm({ today, projects }: { today: string; projects: { id
         </div>
       )}
       <input name="description" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={kind === "FAHRT" ? "Strecke, z. B. Mannheim – Baustelle Heidelberg und zurück" : kind === "VERPFLEGUNG" ? "Anlass, z. B. Montage BASF Ludwigshafen" : "Wofür? z. B. Hotel Speyer, Schrauben Baumarkt"} className="input w-full" aria-label="Beschreibung" />
-      {preview !== null && <p className="text-sm">Betrag: <b>{euro(preview)}</b>{kind === "VERPFLEGUNG" && preview < MEAL_RATES[mealDay] && <span className="text-steel"> (gekürzt wegen gestellter Mahlzeiten)</span>}</p>}
+      {preview !== null && <p className="text-sm">Betrag: <b>{euro(preview)}</b>{kind === "VERPFLEGUNG" && preview < rates.meal[mealDay] && <span className="text-steel"> (gekürzt wegen gestellter Mahlzeiten)</span>}</p>}
+      {split && (split.flat25 > 0 || split.taxable > 0) && (
+        <p className="rounded-xl bg-mist px-3 py-2 text-xs text-steel">
+          Davon {euro(split.free)} {TAX_LABEL.free}
+          {split.flat25 > 0 && <> · <b className="text-ink">{euro(split.flat25)}</b> {TAX_LABEL.flat25}</>}
+          {split.taxable > 0 && <> · <b className="text-ink">{euro(split.taxable)}</b> {TAX_LABEL.taxable}</>}
+        </p>
+      )}
     </StateForm>
   );
 }

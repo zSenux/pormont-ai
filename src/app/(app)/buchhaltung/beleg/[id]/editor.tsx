@@ -47,7 +47,30 @@ let seq = 1;
 const toRow = (l: Line): Row => ({ key: seq++, articleId: l.articleId ?? null, name: l.name, description: l.description ?? "", qty: de(l.qty, 3), unit: l.unit, price: de(l.price), discount: l.discount ? de(l.discount, 2) : "", taxRate: l.taxRate, open: Boolean(l.description) });
 const emptyRow = (): Row => ({ key: seq++, articleId: null, name: "", description: "", qty: "1", unit: "Stk", price: "", discount: "", taxRate: 19, open: false });
 
-export function DocEditor({ doc, customers, projects, articles, defaultPaymentDays, downPayments = [] }: { doc: EditorDoc; customers: Customer[]; projects: { id: string; name: string }[]; articles: Article[]; defaultPaymentDays: number; downPayments?: DownPayment[] }) {
+export type EditorTextBlock = { title: string; text: string };
+
+/** Auswahl „Textbaustein einfügen“ – hängt den Text als eigenen Absatz an */
+function BlockPicker({ blocks, value, onPick, label }: { blocks: EditorTextBlock[]; value: string; onPick: (v: string) => void; label: string }) {
+  if (!blocks.length) return null;
+  return (
+    <select
+      value=""
+      onChange={(e) => {
+        const b = blocks[Number(e.target.value)];
+        if (!b) return;
+        if (value.includes(b.text)) return;
+        onPick(value.trim() ? `${value.trimEnd()}\n\n${b.text}` : b.text);
+      }}
+      className="input w-auto py-1 text-xs"
+      aria-label={label}
+    >
+      <option value="">+ Textbaustein …</option>
+      {blocks.map((b, i) => <option key={i} value={i} disabled={value.includes(b.text)}>{b.title}{value.includes(b.text) ? " ✓" : ""}</option>)}
+    </select>
+  );
+}
+
+export function DocEditor({ doc, customers, projects, articles, defaultPaymentDays, downPayments = [], textBlocks = [] }: { doc: EditorDoc; customers: Customer[]; projects: { id: string; name: string }[]; articles: Article[]; defaultPaymentDays: number; downPayments?: DownPayment[]; textBlocks?: EditorTextBlock[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok?: string; error?: string } | null>(null);
@@ -229,10 +252,10 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
             {f.reverseCharge && customer && !customer.vatId && <span className="block text-warn">Dafür braucht der Kunde eine USt-IdNr.</span>}
           </span>
         </label>
-        <label className="block sm:col-span-2">
-          <span className="label">Einleitung</span>
-          <textarea value={f.intro} onChange={(e) => set("intro", e.target.value)} rows={2} className="input resize-y" />
-        </label>
+        <div className="block sm:col-span-2">
+          <div className="flex items-end justify-between gap-2"><label htmlFor="beleg-intro" className="label">Einleitung</label><BlockPicker blocks={textBlocks} value={f.intro} onPick={(v) => set("intro", v)} label="Textbaustein in die Einleitung" /></div>
+          <textarea id="beleg-intro" value={f.intro} onChange={(e) => set("intro", e.target.value)} rows={2} className="input resize-y" />
+        </div>
       </section>
 
       <section className="card p-4">
@@ -293,10 +316,20 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
       </section>
 
       <section className="card p-4">
-        <label className="block">
-          <span className="label">Schlusstext</span>
-          <textarea value={f.outro} onChange={(e) => set("outro", e.target.value)} rows={2} className="input resize-y" />
-        </label>
+        <div className="flex items-end justify-between gap-2"><label htmlFor="beleg-outro" className="label">Schlusstext (steht unten auf dem Beleg)</label><BlockPicker blocks={textBlocks} value={f.outro} onPick={(v) => set("outro", v)} label="Textbaustein in den Schlusstext" /></div>
+        <textarea id="beleg-outro" value={f.outro} onChange={(e) => set("outro", e.target.value)} rows={Math.min(8, Math.max(2, f.outro.split("\n").length + 1))} className="input resize-y" />
+        {textBlocks.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {textBlocks.map((b, i) => {
+              const on = f.outro.includes(b.text);
+              return (
+                <button key={i} type="button" onClick={() => set("outro", on ? f.outro.replace(b.text, "").replace(/\n{3,}/g, "\n\n").trim() : f.outro.trim() ? `${f.outro.trimEnd()}\n\n${b.text}` : b.text)} className={`chip px-2.5 py-1 ${on ? "border-brand bg-brand text-white" : "border-line bg-white text-ink hover:border-brand"}`}>
+                  {on ? <Check className="size-3.5" /> : <Plus className="size-3.5" />} {b.title}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <div className="sticky bottom-20 z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-white/95 p-3 shadow-lg backdrop-blur md:bottom-4">

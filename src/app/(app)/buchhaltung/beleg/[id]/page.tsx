@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, ArrowLeft, Copy, FileCode2, FileDown, FileText, Lock, Receipt, Trash2, Undo2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ClipboardCheck, Copy, FileCode2, FileDown, FileText, Lock, Receipt, Trash2, Undo2 } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatDateTime, todayYmd } from "@/lib/berlin";
-import { bookConfig, missingForInvoices } from "@/lib/buchhaltung/config";
+import { blocksFor, bookConfig, fillBlock, missingForInvoices } from "@/lib/buchhaltung/config";
 import { customerName, deductionIds, isOverdue, readDeductions, PAYMENT_METHODS, readParty, statusText, ymdOf, openCentsOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents, fmtNum, fmtPrice, lineNetCents, readLines } from "@/lib/buchhaltung/money";
 import { defaultDocMail, defaultDunningMail } from "@/lib/buchhaltung/send";
@@ -38,6 +38,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
   const configs: DocConfig[] = (await db.productConfig.findMany({ where: { docId: d.id }, orderBy: { createdAt: "asc" }, select: { id: true, title: true, product: true, params: true, token: true, image: true } })).map((c) => ({ id: c.id, title: c.title, product: c.product as Product, params: c.params, token: c.token, hasImage: Boolean(c.image) }));
   const h = await headers();
   const origin = process.env.PUBLIC_URL?.replace(/\/$/, "") || `${h.get("x-forwarded-proto")?.split(",")[0] || "https"}://${h.get("x-forwarded-host") || h.get("host")}`;
+  const order = d.kind === "ANGEBOT" && d.status !== "ENTWURF" ? await db.order.findFirst({ where: { quoteId: d.id }, select: { id: true, number: true, confirmationSentAt: true, confirmationSentTo: true } }) : null;
   const related = await db.salesDoc.findMany({ where: { OR: [{ sourceId: d.id }, ...(d.sourceId ? [{ id: d.sourceId }] : [])] }, select: { id: true, kind: true, invoiceType: true, number: true, status: true } });
 
   if (d.status === "ENTWURF") {
@@ -47,6 +48,10 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
       db.article.findMany({ where: { archived: false }, orderBy: { name: "asc" }, take: 1000 }),
     ]);
     const missing = d.kind !== "ANGEBOT" ? missingForInvoices(cfg) : [];
+    // Textbausteine dieser Belegart, Platzhalter {angebot} schon gefüllt
+    const srcQuote = d.sourceId ? await db.salesDoc.findUnique({ where: { id: d.sourceId }, select: { kind: true, number: true, date: true } }) : null;
+    const quoteRef = srcQuote?.kind === "ANGEBOT" && srcQuote.number ? `${srcQuote.number} vom ${formatDate(srcQuote.date)}` : null;
+    const textBlocks = blocksFor(cfg.textBlocks, d.kind).map((b) => ({ title: b.title, text: fillBlock(b.text, quoteRef) }));
     // Für Schlussrechnungen: offene Abschläge des Kunden (alle, damit auch andere Projekte wählbar sind)
     const downPayments = d.kind === "RECHNUNG" && d.customerId
       ? (await db.salesDoc.findMany({ where: { kind: "RECHNUNG", invoiceType: "ABSCHLAG", customerId: d.customerId, status: { in: ["OFFEN", "BEZAHLT"] }, OR: [{ finalId: null }, { finalId: d.id }] }, orderBy: { date: "asc" } })).map((x) => ({ id: x.id, number: x.number!, date: ymdOf(x.date)!, title: x.title, netCents: x.netCents, taxCents: x.taxCents, grossCents: x.grossCents, paid: x.status === "BEZAHLT" }))
@@ -68,6 +73,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
           projects={projects}
           articles={articles.map((a) => ({ id: a.id, name: a.name, number: a.number, unit: a.unit, priceNet: a.priceNet, taxRate: a.taxRate, description: a.description }))}
           defaultPaymentDays={d.customer?.paymentDays ?? cfg.paymentDays}
+          textBlocks={textBlocks}
         />
         {configs.map((c) => <DocConfigPanel key={c.id} config={c} draft origin={origin} />)}
       </main>
@@ -100,6 +106,14 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
         </div>
         <span className={clsx("chip px-3 py-1 text-sm", tone)}>{statusText(d)}</span>
       </div>
+
+      {order && (
+        <Link href={`/auftraege/${order.id}#bestaetigung`} className={clsx("card flex flex-wrap items-center gap-2 p-3 text-sm hover:border-brand", !order.confirmationSentAt && "border-brand/40 bg-brand-soft/50")}>
+          <ClipboardCheck className="size-4 shrink-0 text-brand" />
+          <span className="min-w-0 flex-1">Auftrag <b>{order.number}</b> · Auftragsbestätigung {order.confirmationSentAt ? `gesendet am ${formatDate(order.confirmationSentAt)} an ${order.confirmationSentTo}` : <b>noch nicht an den Kunden gesendet</b>}</span>
+          {!order.confirmationSentAt && <span className="btn-primary px-3 py-1.5 text-xs">Jetzt prüfen und senden</span>}
+        </Link>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
         <div className="min-w-0 space-y-4">

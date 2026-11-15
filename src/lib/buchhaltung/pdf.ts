@@ -264,18 +264,24 @@ ${fx}
   ctx.trailerInfo.ID = ctx.obj([PDFHexString.of(id), PDFHexString.of(id)]);
 }
 
+/** Auftragsbestätigung: gleiches Layout wie das Angebot, eigener Kopf (kein Buchungsbeleg) */
+export type OrderConfirmation = { quote: string | null; period: string | null };
+
 /** PDF für Angebot/Rechnung/Gutschrift. Mit xml → PDF/A-3 mit eingebetteter E-Rechnung (ZUGFeRD). */
-export async function renderDocPdf(d: DocData, xml: string | null = null): Promise<Uint8Array> {
-  const label = docLabel(d);
+export async function renderDocPdf(d: DocData, xml: string | null = null, as?: OrderConfirmation): Promise<Uint8Array> {
+  const label = as ? "Auftragsbestätigung" : docLabel(d);
   const title = d.number ? `${label} ${d.number}` : `${label} (Entwurf)`;
   const { doc, letter: L } = await newDoc(title, { headerLabel: title, bank: d.config, draft: !d.number });
   L.newPage(true);
 
-  const info: [string, string][] = [
-    [`${label}snummer`, d.number ?? "Entwurf"],
-    [`${label}sdatum`, fmtDate(d.date)],
-  ];
+  const info: [string, string][] = as
+    ? [["Auftragsnummer", d.number ?? "–"], ["Datum", fmtDate(d.date)], ...(as.quote ? [["Angebot", as.quote] as [string, string]] : [])]
+    : [
+        [`${label}snummer`, d.number ?? "Entwurf"],
+        [`${label}sdatum`, fmtDate(d.date)],
+      ];
   if (d.buyer.customerNo) info.push(["Kundennummer", String(d.buyer.customerNo)]);
+  if (as?.period) info.push(["Ausführung", as.period]);
   if (d.kind !== "ANGEBOT") {
     const from = d.serviceFrom ?? d.date;
     const to = d.serviceTo ?? from;
@@ -385,7 +391,7 @@ export async function renderDocPdf(d: DocData, xml: string | null = null): Promi
     L.para(d.dueDate ? `Bitte überweisen Sie den ${d.deductions.length ? "noch zu zahlenden Betrag" : "Gesamtbetrag"} ohne Abzug bis zum ${fmtDate(d.dueDate)} unter Angabe der Rechnungsnummer ${d.number ?? ""} auf das unten genannte Konto.` : "Der Betrag ist sofort ohne Abzug fällig.", { gap: 6 });
   }
   if (d.kind === "GUTSCHRIFT" && d.preceding) L.para(`Diese Gutschrift storniert die Rechnung ${d.preceding.number} vom ${fmtDate(d.preceding.date)}.`, { gap: 6 });
-  if (d.kind === "ANGEBOT" && d.dueDate) L.para(`Dieses Angebot ist gültig bis zum ${fmtDate(d.dueDate)}.`, { gap: 6 });
+  if (d.kind === "ANGEBOT" && d.dueDate && !as) L.para(`Dieses Angebot ist gültig bis zum ${fmtDate(d.dueDate)}.`, { gap: 6 });
   if (d.outro) L.para(d.outro, { gap: 6 });
   L.ensure(14 * MM);
   L.para("Mit freundlichen Grüßen", { gap: 0 });

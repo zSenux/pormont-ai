@@ -80,7 +80,10 @@ export async function createOrder(input: { title: string; customerId?: string | 
 /** Wird von der Buchhaltung aufgerufen, wenn ein Angebot angenommen wird (Automatik „Angebot angenommen → Auftrag“). Fehler blockieren die Buchhaltung nie. */
 export async function onQuoteAccepted(quoteId: string, user: Actor) {
   try {
-    return (await createOrderFromQuote(quoteId, user)).order;
+    const r = await createOrderFromQuote(quoteId, user);
+    // Auftragsbestätigung zum Senden bereitlegen (Push) – gesendet wird erst nach Klick
+    if (r.created) await (await import("@/lib/buchhaltung/auftragsbestaetigung")).offerConfirmation(r.order.id, user.id).catch(() => {});
+    return r.order;
   } catch (e) {
     console.error("[auftrag] Automatik nach Angebotsannahme fehlgeschlagen:", e instanceof Error ? e.message : e);
     return null;

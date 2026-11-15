@@ -15,12 +15,13 @@ import { createDunning, defaultDocMail, defaultDunningMail, sendDoc, sendDunning
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { docLabel } from "@/lib/buchhaltung/types";
 import { DUNNING_LABEL } from "@/lib/buchhaltung/pdf";
+import { defaultConfirmationMail, sendConfirmation } from "@/lib/buchhaltung/auftragsbestaetigung";
 
 // Festschreiben, Versand, Mahnung und Storno der Buchhaltung sowie Mails laufen NIE direkt aus dem Chat: Jarvis legt eine PendingAction an,
 // das Team sieht eine Freigabe-Karte und erst „Freigeben“ führt sie aus (atomar, nur einmal).
 
 // kunde_anlegen/rechnung_erstellen/angebot_erstellen = alte Lexware-Karten (nur noch für bestehende Karten)
-export const ACTION_KINDS = ["kunde_anlegen", "rechnung_erstellen", "angebot_erstellen", "mail_senden", "beleg_hochladen", "preisanfrage_senden", "beleg_festschreiben", "beleg_senden", "mahnung_senden", "beleg_stornieren"] as const;
+export const ACTION_KINDS = ["kunde_anlegen", "rechnung_erstellen", "angebot_erstellen", "mail_senden", "beleg_hochladen", "preisanfrage_senden", "beleg_festschreiben", "beleg_senden", "mahnung_senden", "beleg_stornieren", "auftragsbestaetigung_senden"] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
 export type ActionLink = { label: string; url: string };
@@ -30,6 +31,7 @@ const belegInput = z.object({ fileId: z.string().min(1).max(40), text: z.string(
 const docRef = z.object({ docId: z.string().min(5).max(40) });
 const docSend = docRef.extend({ an: z.string().trim().max(300).optional(), cc: z.string().trim().max(300).optional(), betreff: z.string().trim().max(300).optional(), text: z.string().trim().max(20000).optional(), xml: z.boolean().default(false) });
 const dunSend = docRef.extend({ an: z.string().trim().max(300).optional() });
+const abSend = z.object({ orderId: z.cuid(), an: z.string().trim().max(300).optional() });
 
 async function loadDoc(docId: string) {
   const d = await db.salesDoc.findUnique({ where: { id: docId }, include: { customer: { select: { name: true, email: true } } } });
@@ -85,6 +87,14 @@ export async function describe(kind: ActionKind, input: unknown): Promise<{ summ
     if (!an) throw new BookError("Keine E-Mail-Adresse beim Kunden – bitte Empfänger angeben.");
     const level = Math.min(d.dunningLevel + 1, 3);
     return { summary: `${DUNNING_LABEL[level]} zu ${docTitle(d)} (offen ${fmtEuroCents(openCentsOf(d))}) erstellen und an ${an} senden (Vorlagentext, Mahnung + Rechnung als PDF).`, payload: { docId: m.docId, an } };
+  }
+  if (kind === "auftragsbestaetigung_senden") {
+    const m = abSend.parse(input);
+    const o = await db.order.findUnique({ where: { id: m.orderId }, include: { customer: { select: { name: true, email: true } }, quote: { select: { number: true } } } });
+    if (!o) throw new BookError("Auftrag nicht gefunden.");
+    const an = m.an || o.customer?.email;
+    if (!an) throw new BookError("Keine E-Mail-Adresse beim Kunden – bitte Empfänger angeben.");
+    return { summary: `Auftragsbestätigung ${o.number} „${o.title}“${o.quote?.number ? ` zu Angebot ${o.quote.number}` : ""} für ${o.customer?.name ?? "–"} als PDF an ${an} senden (Standardtext).${o.confirmationSentAt ? " Hinweis: wurde schon einmal gesendet." : ""}`, payload: { orderId: o.id, an } };
   }
   if (kind === "kunde_anlegen") {
     const c = contactInput.parse(input);
@@ -190,6 +200,13 @@ export async function executeAction(id: string, userId: string) {
       await sendDunning(dn.id, { an: m.an || def.an, betreff: def.betreff, text: def.text }, user);
       result = `${DUNNING_LABEL[dn.level]} an ${m.an || def.an} gesendet.`;
       links = [{ label: "Rechnung", url: `/buchhaltung/beleg/${m.docId}` }, { label: "Mahnung (PDF)", url: `/api/buchhaltung/mahnung/${dn.id}` }];
+    } else if (a.kind === "auftragsbestaetigung_senden") {
+      const m = abSend.parse(a.payload);
+      const user = await actorOf(userId);
+      const def = await defaultConfirmationMail(m.orderId, user.name);
+      const r = await sendConfirmation(m.orderId, { an: m.an || def.an, betreff: def.betreff, text: def.text }, user);
+      result = `Auftragsbestätigung ${r.number} an ${r.to} gesendet.`;
+      links = [{ label: "Auftrag", url: `/auftraege/${m.orderId}` }, { label: "PDF", url: `/api/auftraege/${m.orderId}/bestaetigung` }];
     } else throw new Error("Unbekannte Aktion.");
     await db.pendingAction.update({ where: { id }, data: { result, links } });
     await appendNote(a.chatId, `✓ Freigegeben und erledigt: ${result} ${links.map((l) => `[${l.label}](${l.url})`).join(" · ")}`);
