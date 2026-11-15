@@ -215,6 +215,8 @@ export async function approveAction(id: string) {
   const pa = await db.pendingAction.findUnique({ where: { id: z.cuid().parse(id) }, select: { kind: true } });
   const need = pa ? ACTION_AREA[pa.kind] : undefined;
   if (need && !canArea(u, need)) return { ok: false as const, error: `Keine Berechtigung: ${AREA_LABEL[need]} ist für deine Funktion nicht freigegeben.` };
+  // Mahnwesen: Mahnungen gibt nur die Geschäftsführung (Administrator) frei
+  if (pa?.kind === "mahnung_senden" && u.role !== "ADMIN") return { ok: false as const, error: "Mahnungen gibt nur die Geschäftsführung (Administrator) frei." };
   const r = await executeAction(z.cuid().parse(id), u.id);
   revalidatePath("/belege");
   return r;

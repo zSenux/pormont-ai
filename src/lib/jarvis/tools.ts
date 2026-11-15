@@ -19,6 +19,7 @@ import { ERP_TOOLS, ERP_TOOL_NAMES, runErpTool } from "./erp-tools";
 import { EPS_TOOLS, EPS_TOOL_NAMES, runEpsTool } from "./eps-tools";
 import { BAU_TOOLS, BAU_TOOL_NAMES, runBauTool } from "./bau-tools";
 import { VORLAGEN_TOOLS, VORLAGEN_TOOL_NAMES, runVorlagenTool } from "./vorlagen-tools";
+import { BETRIEB_TOOLS, BETRIEB_TOOL_NAMES, runBetriebTool } from "./betrieb-tools";
 
 // Werkzeuge von Jarvis. Lesen läuft sofort; Festschreiben, Senden, Mahnen, Storno und Mails nur als Freigabe-Karte.
 // Interne Aufgaben/Gedächtnis darf Jarvis direkt ändern (harmlos, sichtbar).
@@ -66,6 +67,7 @@ export const TOOLS: Def[] = [
   ...ERP_TOOLS,
   ...EPS_TOOLS,
   ...BAU_TOOLS,
+  ...BETRIEB_TOOLS,
 ];
 
 async function overview(userId: string) {
@@ -142,6 +144,7 @@ export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promi
   if (STOCK_TOOL_NAMES.has(name)) return runStockTool(name, i, ctx);
   if (EPS_TOOL_NAMES.has(name)) return runEpsTool(name, i, ctx);
   if (BAU_TOOL_NAMES.has(name)) return runBauTool(name, i, ctx).catch((e) => (console.error(`[jarvis] Werkzeug ${name}:`, e), "Fehler beim Ausführen."));
+  if (BETRIEB_TOOL_NAMES.has(name)) return runBetriebTool(name, i, ctx);
   if (ERP_TOOL_NAMES.has(name)) return runErpTool(name, i).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   if (TEAM_TOOL_NAMES.has(name)) return runTeamTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));
   if (WORK_TOOL_NAMES.has(name)) return runWorkTool(name, i, ctx).catch((e) => (e instanceof z.ZodError ? `Eingabe ungültig: ${e.issues.map((x) => x.message).join("; ")}` : e instanceof Error ? e.message : "Fehler."));

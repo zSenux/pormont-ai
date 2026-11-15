@@ -14,11 +14,13 @@ export function BookTabs({ admin }: { admin: boolean }) {
     { href: "/buchhaltung/belege?art=rechnungen", label: "Rechnungen", on: path.startsWith("/buchhaltung/belege") && art !== "angebote" && art !== "gutschriften" },
     { href: "/buchhaltung/belege?art=gutschriften", label: "Gutschriften", on: path.startsWith("/buchhaltung/belege") && art === "gutschriften" },
     { href: "/buchhaltung/vorlagen", label: "Vorlagen", on: path.startsWith("/buchhaltung/vorlagen") },
+    { href: "/buchhaltung/mahnwesen", label: "Mahnungen", on: path.startsWith("/buchhaltung/mahnwesen") },
     { href: "/buchhaltung/ausgaben", label: "Ausgaben", on: path.startsWith("/buchhaltung/ausgaben") },
     { href: "/buchhaltung/bank", label: "Bank", on: path.startsWith("/buchhaltung/bank") },
     { href: "/buchhaltung/liquiditaet", label: "Liquidität", on: path.startsWith("/buchhaltung/liquiditaet") },
     { href: "/buchhaltung/kunden", label: "Kunden", on: path.startsWith("/buchhaltung/kunden") },
     { href: "/buchhaltung/artikel", label: "Artikel", on: path.startsWith("/buchhaltung/artikel") },
+    { href: "/auswertung", label: "Jahresauswertung", on: false },
     ...(admin ? [{ href: "/buchhaltung/einstellungen", label: "Einstellungen", on: path.startsWith("/buchhaltung/einstellungen") }] : []),
   ];
   return (

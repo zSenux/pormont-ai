@@ -315,6 +315,118 @@ await demoSetting("VORLAGEN_KALK", {
   },
   stand: todayYmd(),
 });
+// ---------- Routenplanung: Koordinaten (offline, damit die Demo ohne Geodienst läuft) + Touren für morgen ----------
+const geo: [string, number, number][] = [
+  ["Ottmar-Mergenthaler-Str. 6, 68167 Mannheim", 49.4995, 8.4935],
+  ["Mannheimer Str. 112, 68309 Mannheim", 49.5163, 8.5196],
+  ["Lange Rötterstr. 41, 68167 Mannheim", 49.4979, 8.4795],
+  ["Benzstr. 7, 68526 Ladenburg", 49.4762, 8.6098],
+  ["Bergstr. 88, 69469 Weinheim", 49.5536, 8.6683],
+  ["Neckarstr. 1, 68259 Mannheim", 49.4857, 8.5505],
+  ["Rathausstr. 12, 68519 Viernheim", 49.5399, 8.5781],
+  ["Industriestr. 24, 68169 Mannheim", 49.5131, 8.4791],
+];
+const geoKey = (a: string) => a.toLowerCase().replace(/[,;]+/g, " ").replace(/\s+/g, " ").trim();
+for (const [address, lat, lng] of geo) await db.geoPoint.upsert({ where: { key: geoKey(address) }, create: { key: geoKey(address), address, lat, lng, source: "manuell" }, update: { lat, lng } });
+const tomorrow = addDaysYmd(t0, 1);
+const tAt = (h: number, m = 0) => new Date(`${tomorrow}T${String(h - 1).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`);
+const routeDemo: [string, string, number, string, string, string[]][] = [
+  ["Schiebetor", "Torantrieb einbauen und einstellen", 13, "Bergstr. 88, 69469 Weinheim", "Sprinter MA-PM 210", ["Mehmet Yılmaz", "Sven Müller"]],
+  ["Hallenvordach", "Fundamente und Anker prüfen", 8, "Benzstr. 7, 68526 Ladenburg", "Sprinter MA-PM 210", ["Mehmet Yılmaz", "Sven Müller"]],
+  ["Anfrage: Carport", "Aufmaß Carport", 10, "Rathausstr. 12, 68519 Viernheim", "Sprinter MA-PM 210", ["Mehmet Yılmaz"]],
+  ["Brandschutztüren", "Mangel Tür 1.04 nachjustieren", 9, "Neckarstr. 1, 68259 Mannheim", "Caddy MA-PM 105", ["Tobias Kern"]],
+  ["Edelstahl-Geländer", "Glashalter montieren", 11, "Lange Rötterstr. 41, 68167 Mannheim", "Caddy MA-PM 105", ["Tobias Kern"]],
+];
+for (const [part, title, h, address, vehicle, crew] of routeDemo) {
+  await db.assembly.create({ data: { number: `MO-DEMO-${String(moNo++).padStart(3, "0")}`, projectId: await proj(part), title, status: "GEPLANT", startAt: tAt(h), endAt: tAt(h + 2), address, vehicle, leaderId: users[crew[0]], checklist: check(0), createdBy: "Demo", crew: { create: crew.map((n) => ({ userId: users[n] })) } } });
+}
+
+// ---------- Nachunternehmer ----------
+const nuDemo: [string, string, string, string, [string, number | null][], [string, string | null, number, string][]][] = [
+  ["Kranverleih Rhein-Neckar (Demo)", "Kranarbeiten", "Herr Brandt", "Mannheim", [["FREISTELLUNG_48B", 400], ["UNBEDENKLICHKEIT_KK", 70], ["BG", 150], ["HAFTPFLICHT", 260]], [["Autokran 40 t – Montage Vordach", "Hallenvordach", 3800, "BEAUFTRAGT"]]],
+  ["Pulverbeschichtung Heidelberg (Demo)", "Pulverbeschichtung", "Frau Lenz", "Heidelberg", [["FREISTELLUNG_48B", 12], ["UNBEDENKLICHKEIT_KK", 45], ["BG", 200], ["HAFTPFLICHT", 300], ["MINDESTLOHN", null]], [["Beschichtung Geländer RAL 7016", "Edelstahl-Geländer", 2150, "IN_ARBEIT"]]],
+  ["Montageservice Kovač (Demo)", "Montage Stahlbau", "Herr Kovač", "Ludwigshafen", [["FREISTELLUNG_48B", -6], ["BG", 90], ["HAFTPFLICHT", 22]], [["Montagehelfer 2 Mann – Treppe Käfertal", "Stahltreppe", 6400, "BEAUFTRAGT"]]],
+];
+let nuNo = 1;
+for (const [name, trade, contactName, city, docs, contracts] of nuDemo) {
+  const sub = await db.subcontractor.create({ data: { name, trade, contactName, city, phone: "0621 000000", email: "kontakt@nachunternehmer.example", createdBy: "Demo" } });
+  for (const [kind, off] of docs) await db.subcontractorDoc.create({ data: { subcontractorId: sub.id, kind, number: kind === "FREISTELLUNG_48B" ? `S${1000 + nuNo}-DEMO` : null, validFrom: off === null ? null : day(off - 365), validUntil: off === null ? null : day(off), createdBy: "Demo" } });
+  for (const [title, part, amountNet, status] of contracts) await db.subcontractorContract.create({ data: { number: `NU-DEMO-${String(nuNo++).padStart(3, "0")}`, subcontractorId: sub.id, projectId: part ? await proj(part) : null, title, amountNet, status, startDate: day(-10), endDate: day(20), createdBy: "Demo" } });
+}
+
+// ---------- Personalakte ----------
+const prof: [string, string, number, string, string | null][] = [
+  ["Dirk Linke", "Metallbaumeister, Betriebsleiter", -4200, "UNBEFRISTET", null],
+  ["Josip Cabraja", "Projektleiter Stahlbau", -2900, "UNBEFRISTET", null],
+  ["Sven Müller", "Metallbauer (Schweißer)", -1500, "UNBEFRISTET", null],
+  ["Anna Weber", "Kauffrau Büromanagement", -800, "UNBEFRISTET", null],
+  ["Mehmet Yılmaz", "Monteur Stahlbau", -2100, "UNBEFRISTET", null],
+  ["Tobias Kern", "Metallbauer", -340, "BEFRISTET", "25"],
+];
+for (const [name, jobTitle, entry, contractType, until] of prof) {
+  await db.employeeProfile.create({ data: { userId: users[name], jobTitle, entryDate: day(entry), contractType, contractUntil: until ? day(Number(until)) : null, weeklyHours: name === "Anna Weber" ? 30 : 40, emergencyContact: "Demo-Kontakt, 0170 0000000", updatedBy: "Demo" } });
+}
+const empDocs: [string, string, string, number | null, number | null][] = [
+  ["Sven Müller", "QUALIFIKATION", "Schweißerprüfung EN ISO 9606-1 (135)", 20, null],
+  ["Sven Müller", "QUALIFIKATION", "Staplerschein", null, null],
+  ["Sven Müller", "FUEHRERSCHEIN", "Klasse BE", 3000, 150],
+  ["Tobias Kern", "QUALIFIKATION", "Schweißerprüfung EN ISO 9606-1 (135)", 500, null],
+  ["Tobias Kern", "ARBEITSVERTRAG", "Befristeter Arbeitsvertrag", 25, null],
+  ["Mehmet Yılmaz", "FUEHRERSCHEIN", "Klasse CE", 900, 9],
+  ["Mehmet Yılmaz", "QUALIFIKATION", "Hubarbeitsbühne (IPAF/DGUV 308-008)", 410, null],
+  ["Mehmet Yılmaz", "QUALIFIKATION", "Staplerschein", null, null],
+  ["Mehmet Yılmaz", "ARBEITSMEDIZIN", "G41 Arbeiten mit Absturzgefahr", -4, null],
+  ["Mehmet Yılmaz", "ERSTE_HILFE", "Ersthelfer-Ausbildung (DGUV)", 300, null],
+  ["Josip Cabraja", "FUEHRERSCHEIN", "Klasse B", 4000, 60],
+  ["Josip Cabraja", "UNTERWEISUNG", "Jahresunterweisung Arbeitsschutz", 200, null],
+  ["Anna Weber", "ERSTE_HILFE", "Ersthelfer-Ausbildung (DGUV)", 28, null],
+  ["Dirk Linke", "QUALIFIKATION", "Schweißaufsicht (IWT)", null, null],
+];
+for (const [name, kind, title, until, check] of empDocs) await db.employeeDoc.create({ data: { userId: users[name], kind, title, validUntil: until === null ? null : day(until), nextCheck: check === null ? null : day(check), issuedAt: day(-700), createdBy: "Demo" } });
+
+// ---------- Rechnungen mit Positionen je Kunde (Jahresauswertung) und Mahnstufen ----------
+const custOf = async (part: string) => (await db.project.findUniqueOrThrow({ where: { id: await proj(part) }, select: { customerId: true, id: true } }));
+const L2 = (name: string, qty: number, unit: string, price: number) => ({ name, qty, unit, price, discount: 0, taxRate: 19 });
+const tot = (ls: { qty: number; price: number }[]) => money(ls.reduce((t, l) => t + l.qty * l.price, 0));
+const invDemo: [string, number, ReturnType<typeof L2>[], "BEZAHLT" | "OFFEN", number][] = [
+  ["Brandschutztüren", -60, [L2("Stahltür T30-1 inkl. Zarge", 6, "Stk", 1650), L2("Montage Brandschutztür", 24, "Std.", 62)], "BEZAHLT", 0],
+  ["Stahltreppe", -95, [L2("Stahltreppe gerade 16 Stufen, verzinkt", 1, "Stk", 14200), L2("Podest 1,2 × 2,4 m", 1, "Stk", 3900), L2("Montage Stahlbau", 40, "Std.", 62)], "BEZAHLT", 0],
+  ["Edelstahl-Geländer", -40, [L2("Balkongeländer V2A mit Glasfüllung", 6, "Stk", 2480), L2("Montage Geländer", 30, "Std.", 62)], "OFFEN", -40],
+  ["Hallenvordach", -28, [L2("Stahlbau Vordach HEA/IPE, verzinkt", 1, "psch", 21500), L2("Montage Stahlbau", 32, "Std.", 62)], "OFFEN", -28],
+  ["Schiebetor", -30, [L2("Schiebetor freitragend 5,5 m", 1, "Stk", 6900), L2("Torantrieb Sommer inkl. Einbau", 1, "Stk", 1350)], "OFFEN", -30],
+];
+const dunPdf = await demoPdf("Mahnung", "–");
+for (const [part, off, ls, status] of invDemo) {
+  const c = await custOf(part);
+  const inv = await db.salesDoc.create({ data: { kind: "RECHNUNG", status, number: `DEMO-RE-${docNo++}`, customerId: c.customerId, projectId: c.id, title: "Rechnung", date: day(off), dueDate: day(off + 14), lines: ls, ...tot(ls), paidCents: status === "BEZAHLT" ? tot(ls).grossCents : 0, finalizedAt: day(off), sentAt: day(off) } });
+  // Neckar Logistik (Vordach): Zahlungserinnerung schon gesendet, Frist abgelaufen → 1. Mahnung fällig
+  if (part === "Hallenvordach") {
+    await db.dunning.create({ data: { docId: inv.id, level: 1, day: day(-12), openCents: inv.grossCents, dueDate: day(-5), pdf: new Uint8Array(dunPdf), sentAt: day(-12), sentTo: "kunde@example.com", userName: "Dirk Linke" } });
+    await db.salesDoc.update({ where: { id: inv.id }, data: { dunningLevel: 1, dunnedAt: day(-12) } });
+  }
+  // Familie Schneider: Zahlung zugesagt → zurückgestellt
+  if (part === "Schiebetor") await db.salesDoc.update({ where: { id: inv.id }, data: { dunningPausedUntil: day(6), dunningPauseNote: "Zahlung per Telefon zugesagt" } });
+}
+// Stunden über das Jahr verteilt (Auswertung je Monteur)
+const yearHours: [string, string, number][] = [["Sven Müller", "Stahltreppe", 46], ["Sven Müller", "Hallenvordach", 22], ["Tobias Kern", "Edelstahl-Geländer", 38], ["Tobias Kern", "Schiebetor", 18], ["Mehmet Yılmaz", "Brandschutztüren", 30], ["Mehmet Yılmaz", "Stahltreppe", 20], ["Josip Cabraja", "Hallenvordach", 14]];
+for (const [name, part, h] of yearHours) {
+  const projectId = await proj(part);
+  for (let k = 0; k < h / 8; k++) await db.timeEntry.create({ data: { projectId, userId: users[name], day: day(-10 - k * 6), minutes: 480, note: "Demo" } });
+}
+for (const name of ["Sven Müller", "Tobias Kern", "Mehmet Yılmaz"]) for (let k = 0; k < 6; k++) await db.timeEntry.create({ data: { userId: users[name], day: day(-12 - k * 9), minutes: 240, note: "Werkstatt allgemein (Demo)" } });
+// Material- und Fremdkosten je Projekt (realistische Margen in Nachkalkulation und Auswertung)
+const costDemo: [string, string, string, number][] = [
+  ["Stahltreppe", "MATERIAL", "Stahl U200, Gitterroste, Kleinteile", 7900], ["Stahltreppe", "FREMDLEISTUNG", "Feuerverzinkung", 1480], ["Stahltreppe", "GERAET", "Kran Montage", 950],
+  ["Edelstahl-Geländer", "MATERIAL", "V2A Rohr, Glashalter, VSG-Glas", 16800], ["Edelstahl-Geländer", "FREMDLEISTUNG", "Glaszuschnitt", 4200],
+  ["Hallenvordach", "MATERIAL", "HEA/IPE, Trapezblech, Anker", 31500], ["Hallenvordach", "FREMDLEISTUNG", "Statik Büro Hartmann", 3800], ["Hallenvordach", "GERAET", "Autokran 40 t", 3800],
+  ["Schiebetor", "MATERIAL", "Profile, Laufschiene, Antrieb", 3900], ["Schiebetor", "FREMDLEISTUNG", "Pulverbeschichtung", 950],
+  ["Brandschutztüren", "MATERIAL", "6 Türen T30-1 Hersteller", 7400],
+];
+for (const [part, kind, label, amount] of costDemo) await db.projectCost.create({ data: { projectId: await proj(part), kind, label, amount, userName: "Demo" } });
+
+// Kapazität: großer Auftrag in 2–3 Wochen (Überbuchung sichtbar)
+await db.productionJob.create({ data: { number: `FA-DEMO-${String(faNo++).padStart(3, "0")}`, projectId: await proj("Hallenvordach"), title: "Trapezblech und Rinnen vorbereiten", quantity: "1 Satz", machine: "Schweißplatz 2", assigneeId: users["Sven Müller"], status: "OFFEN", plannedStart: day(14), plannedEnd: day(19), plannedHours: 70, createdBy: "Demo" } });
+await db.productionJob.create({ data: { number: `FA-DEMO-${String(faNo++).padStart(3, "0")}`, projectId: await proj("Carport"), title: "Carport Stützen und Pfetten", quantity: "1 Satz", status: "OFFEN", plannedHours: 24, createdBy: "Demo" } });
 
 console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten, ${orders.length} Bestellungen.`);
 await db.$disconnect();

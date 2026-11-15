@@ -11,6 +11,45 @@ import { readLicense } from "@/lib/license";
 import { followUpReminders, lateDeadlines } from "@/lib/automation";
 import { dailyTenders } from "@/lib/ausschreibungen";
 import { warrantyReminders } from "@/lib/maengel";
+import { expiringNuDocs } from "@/lib/nachunternehmer";
+import { expiringEmployeeDocs } from "@/lib/personal";
+import { dunningProposals } from "@/lib/buchhaltung/mahnwesen";
+import { bookConfig } from "@/lib/buchhaltung/config";
+
+async function pushAdmins(msg: { title: string; body: string; url: string; tag: string }) {
+  const admins = await db.user.findMany({ where: { role: "ADMIN" }, select: { id: true } });
+  for (const a of admins) await sendPush({ ...msg, userId: a.id });
+}
+
+/** Ablaufwarnung Personalakte + Nachunternehmer-Nachweise: werktags ab 8 Uhr, je Eintrag und Stufe (30 Tage / abgelaufen) einmal, gebündelt an die Admins */
+async function expiryWarnings() {
+  const p = berlinParts();
+  if (["Sat", "Sun"].includes(p.weekday) || p.h < 8 || p.h >= 18) return;
+  const [emp, nu] = await Promise.all([expiringEmployeeDocs(), expiringNuDocs()]);
+  const fresh: { text: string; url: string }[] = [];
+  for (const d of emp) {
+    const stage = d.due.getTime() + 86400_000 <= Date.now() ? "ab" : "30";
+    if (await once(`ablauf:pers:${d.id}:${d.due.toISOString().slice(0, 10)}:${stage}`)) fresh.push({ text: `${d.user.name}: ${d.title}${stage === "ab" ? " abgelaufen" : ` bis ${formatDate(d.due)}`}`, url: `/personal/${d.user.id}` });
+  }
+  for (const d of nu) {
+    if (!d.validUntil) continue;
+    const stage = d.validUntil.getTime() + 86400_000 <= Date.now() ? "ab" : "30";
+    if (await once(`ablauf:nu:${d.id}:${d.validUntil.toISOString().slice(0, 10)}:${stage}`)) fresh.push({ text: `${d.subcontractor.name}: Nachweis${stage === "ab" ? " abgelaufen" : ` bis ${formatDate(d.validUntil)}`}`, url: `/nachunternehmer/${d.subcontractor.id}` });
+  }
+  if (fresh.length === 1) await pushAdmins({ title: "⏳ Läuft ab", body: fresh[0].text, url: fresh[0].url, tag: "ablauf" });
+  else if (fresh.length > 1) await pushAdmins({ title: `⏳ ${fresh.length} Nachweise laufen ab`, body: fresh.slice(0, 3).map((f) => f.text).join(" · "), url: emp.length ? "/personal" : "/nachunternehmer", tag: "ablauf" });
+}
+
+/** Mahnvorschläge: werktags ab 9 Uhr einmal am Tag Push an die Admins – gesendet wird nichts */
+async function dunningReminder() {
+  const p = berlinParts();
+  if (["Sat", "Sun"].includes(p.weekday) || p.h < 9 || p.h >= 17) return;
+  if (!(await bookConfig()).autoDunning) return;
+  const { due } = await dunningProposals();
+  if (!due.length || !(await once(`mahnvorschlag:${p.ymd}`))) return;
+  const sum = due.reduce((t, x) => t + x.open, 0);
+  await pushAdmins({ title: `💶 ${due.length} ${due.length === 1 ? "Mahnung wartet" : "Mahnungen warten"} auf Freigabe`, body: `Zusammen ${fmtEuroCents(sum)} – u. a. ${due.slice(0, 2).map((x) => customerName(x.doc)).join(", ")}. Gesendet wird erst nach deiner Freigabe.`, url: "/buchhaltung/mahnwesen", tag: "mahnwesen" });
+}
 
 // Hintergrund-Jobs im App-Prozess (wie in Klaic OS): Erinnerungen und Warnungen aus der Buchhaltung per Push.
 // Läuft nur in Produktion bzw. lokal mit JOBS=1.
@@ -116,6 +155,10 @@ export function startJobs() {
   setInterval(safe("fristen", lateDeadlines), 30 * 60_000);
   setTimeout(safe("fristen", lateDeadlines), 40_000);
   setInterval(safe("wiedervorlagen", followUpReminders), 10 * 60_000);
+  // Ablaufwarnungen (Personalakte, Nachunternehmer) und Mahnvorschläge
+  setInterval(safe("ablauf", expiryWarnings), 30 * 60_000);
+  setTimeout(safe("ablauf", expiryWarnings), 50_000);
+  setInterval(safe("mahnwesen", dunningReminder), 30 * 60_000);
   setTimeout(safe("mail", newMails), 15_000);
   // Ausschreibungen werktags ab 6 Uhr (einmal am Tag), Gewährleistung läuft ab (einmal je Projekt)
   setInterval(safe("ausschreibungen", () => dailyTenders(once)), 15 * 60_000);

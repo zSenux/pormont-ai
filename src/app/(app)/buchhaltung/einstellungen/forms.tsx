@@ -27,6 +27,12 @@ export function ConfigForm({ c }: { c: BookConfig }) {
         <label className="text-xs text-steel">Gebühr 1. Mahnung €<input name="dunningFee1" inputMode="decimal" defaultValue={n(c.dunningFee1)} className="input mt-0.5" /></label>
         <label className="text-xs text-steel">Gebühr 2. Mahnung €<input name="dunningFee2" inputMode="decimal" defaultValue={n(c.dunningFee2)} className="input mt-0.5" /></label>
       </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <label className="col-span-2 flex items-center gap-2 text-sm sm:col-span-4"><input type="checkbox" name="autoDunning" defaultChecked={c.autoDunning} className="size-4 accent-brand" /> Mahnvorschläge automatisch erstellen (Push an die Geschäftsführung – gesendet wird erst nach Freigabe)</label>
+        <label className="text-xs text-steel">Erinnerung Tage nach Fälligkeit<input name="reminderAfterDays" inputMode="numeric" defaultValue={c.reminderAfterDays} className="input mt-0.5" /></label>
+        <label className="text-xs text-steel">Nächste Stufe Tage nach Mahnfrist<input name="nextLevelAfterDays" inputMode="numeric" defaultValue={c.nextLevelAfterDays} className="input mt-0.5" /></label>
+        <label className="text-xs text-steel">Nicht mahnen unter €<input name="dunningMinEuro" inputMode="decimal" defaultValue={n(c.dunningMinEuro)} className="input mt-0.5" /></label>
+      </div>
       <h3 className="pt-2 text-sm font-semibold">DATEV (Angaben vom Steuerberater)</h3>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <label className="text-xs text-steel">Beraternummer<input name="datevBerater" inputMode="numeric" defaultValue={c.datevBerater} className="input mt-0.5" /></label>

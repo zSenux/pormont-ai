@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookOpen, ClipboardList, Mail, Plus, Search, Sparkles, Truck, Weight } from "lucide-react";
+import { BookOpen, ClipboardList, Mail, Plus, Search, Sparkles, Truck, Weight, Handshake } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -31,6 +31,7 @@ export default async function LieferantenPage({ searchParams }: { searchParams: 
           <h1 className="page-title">Lieferanten</h1>
           <p className="mt-1 text-sm text-steel">Stahl, Verzinkerei und Schlosserteile: Preisanfragen schicken, Angebote vergleichen, im Katalog nachschlagen.</p>
         </div>
+        <Link href="/nachunternehmer" className="btn-secondary"><Handshake className="size-4" /> Nachunternehmer</Link>
         <Link href="/lieferanten/stahl" className="btn-secondary"><Weight className="size-4" /> Stahl-Katalog</Link>
       </div>
 
