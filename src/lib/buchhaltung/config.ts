@@ -82,6 +82,15 @@ export const bookConfigSchema = z.object({
   textBlocks: z.array(textBlockSchema).max(30).default(DEFAULT_TEXT_BLOCKS),
   /** Angebot angenommen → Auftragsbestätigung an den Kunden vorschlagen */
   confirmOnAccept: z.boolean().default(true),
+  /** Eigenes Briefpapier (PDF oder Bild, A4) als Hintergrund für alle Angebote, Rechnungen, Gutschriften, Mahnungen und
+   *  Auftragsbestätigungen. StoredFile kind „briefpapier“. Erste Seite = Briefkopf, optional zweite Seite für Folgeseiten. */
+  letterheadFileId: z.string().max(40).nullable().default(null),
+  letterheadName: z.string().max(200).nullable().default(null),
+  /** Briefpapier hat eigenen Kopf/Fuß → Logo und Fußzeile von Jarvis weglassen */
+  letterheadOnly: z.boolean().default(true),
+  /** Freiraum oben (Folgeseiten) und unten in mm, damit der Text nicht in Kopf/Fuß des Briefpapiers läuft */
+  letterheadTopMm: z.number().int().min(10).max(80).default(30),
+  letterheadBottomMm: z.number().int().min(10).max(80).default(30),
 });
 export type BookConfig = z.infer<typeof bookConfigSchema>;
 

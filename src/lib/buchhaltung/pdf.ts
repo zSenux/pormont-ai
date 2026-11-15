@@ -2,10 +2,11 @@ import "server-only";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { AFRelationship, PDFDocument, PDFHexString, PDFName, PDFString, rgb, degrees, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
+import { AFRelationship, PDFDocument, PDFHexString, PDFName, PDFString, rgb, degrees, type PDFEmbeddedPage, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { COMPANY } from "@/lib/company";
-import { fmtIban } from "./config";
+import { db } from "@/lib/db";
+import { fmtIban, type BookConfig } from "./config";
 import { fmtEuroCents, fmtNum, fmtPrice, lineNetCents } from "./money";
 import { docLabel, sumDeductions, type DocData, type Party } from "./types";
 import { REVERSE_CHARGE_TEXT } from "./xrechnung";
@@ -85,16 +86,51 @@ function clean(s: string, font: PDFFont) {
   return [...s.normalize("NFC")].map((ch) => (ch === "\n" || set.includes(ch.codePointAt(0)!) ? ch : ch === "\t" ? " " : "?")).join("");
 }
 
+/** Hintergrund einer Seite aus dem eigenen Briefpapier */
+type Background = { page: PDFEmbeddedPage } | { img: PDFImage };
+type Letterhead = { first: Background; next: Background; only: boolean; top: number; bottom: number };
+
+/** Eigenes Briefpapier laden (PDF: Seite 1 = erste Seite, Seite 2 = Folgeseiten; Bild: für alle Seiten) */
+async function loadLetterhead(doc: PDFDocument, c: BookConfig): Promise<Letterhead | null> {
+  if (!c.letterheadFileId) return null;
+  const f = await db.storedFile.findUnique({ where: { id: c.letterheadFileId }, select: { mime: true, data: true } });
+  if (!f) return null;
+  try {
+    const data = new Uint8Array(f.data);
+    let first: Background;
+    let next: Background;
+    if (f.mime === "application/pdf") {
+      const src = await PDFDocument.load(data, { ignoreEncryption: true });
+      const n = src.getPageCount();
+      const pages = await doc.embedPdf(src, n > 1 ? [0, 1] : [0]);
+      first = { page: pages[0] };
+      next = { page: pages[1] ?? pages[0] };
+    } else {
+      const img = f.mime === "image/png" ? await doc.embedPng(data) : await doc.embedJpg(data);
+      first = next = { img };
+    }
+    return { first, next, only: c.letterheadOnly, top: c.letterheadTopMm * MM, bottom: c.letterheadBottomMm * MM };
+  } catch (e) {
+    console.error("[pdf] Briefpapier nicht lesbar", e);
+    return null;
+  }
+}
+
 class Letter {
   pages: PDFPage[] = [];
   page!: PDFPage;
   y = 0;
+  /** Unterkante des Textbereichs (Fußzeile bzw. Fuß des Briefpapiers) */
+  bottom = FOOTER_TOP;
   constructor(
     public doc: PDFDocument,
     public f: Fonts,
     public logo: PDFImage,
     public opts: { headerLabel: string; bank: { iban: string; bic: string; bankName: string; taxNumber: string }; draft: boolean },
-  ) {}
+    public paper: Letterhead | null = null,
+  ) {
+    if (paper?.only) this.bottom = paper.bottom;
+  }
 
   text(s: string, x: number, y: number, o: { size?: number; bold?: boolean; color?: ReturnType<typeof rgb>; align?: "left" | "right" | "center" } = {}) {
     const font = o.bold ? this.f.bold : this.f.regular;
@@ -122,9 +158,16 @@ class Letter {
   newPage(first: boolean) {
     this.page = this.doc.addPage([W, H]);
     this.pages.push(this.page);
+    const bg = this.paper ? (first ? this.paper.first : this.paper.next) : null;
+    if (bg) {
+      if ("page" in bg) this.page.drawPage(bg.page, { x: 0, y: 0, width: W, height: H });
+      else this.page.drawImage(bg.img, { x: 0, y: 0, width: W, height: H });
+    }
     const logoW = 58 * MM;
     const logoH = (logoW * this.logo.height) / this.logo.width;
-    if (first) {
+    if (this.paper?.only) {
+      if (!first) this.text(this.opts.headerLabel, LEFT, H - this.paper.top + 6 * MM, { size: 9, color: STEEL });
+    } else if (first) {
       this.page.drawImage(this.logo, { x: RIGHT - logoW, y: H - 12 * MM - logoH, width: logoW, height: logoH });
     } else {
       const sw = 32 * MM;
@@ -134,12 +177,12 @@ class Letter {
     if (this.opts.draft) {
       this.page.drawText("ENTWURF", { x: 45 * MM, y: 95 * MM, size: 96, font: this.f.bold, color: rgb(0.93, 0.95, 0.97), rotate: degrees(40) });
     }
-    this.footer();
-    this.y = first ? H - 45 * MM : H - 30 * MM;
+    if (!this.paper?.only) this.footer();
+    this.y = first ? H - 45 * MM : this.paper?.only ? H - this.paper.top : H - 30 * MM;
   }
 
   ensure(h: number, onBreak?: () => void) {
-    if (this.y - h < FOOTER_TOP + 6 * MM) {
+    if (this.y - h < this.bottom + 6 * MM) {
       this.newPage(false);
       onBreak?.();
     }
@@ -197,12 +240,12 @@ class Letter {
     if (n < 2) return;
     this.pages.forEach((p, i) => {
       const t = `Seite ${i + 1} von ${n}`;
-      p.drawText(t, { x: RIGHT - this.f.regular.widthOfTextAtSize(t, 7), y: FOOTER_TOP + 1 * MM, size: 7, font: this.f.regular, color: STEEL });
+      p.drawText(t, { x: RIGHT - this.f.regular.widthOfTextAtSize(t, 7), y: this.bottom + 1 * MM, size: 7, font: this.f.regular, color: STEEL });
     });
   }
 }
 
-async function newDoc(title: string, opts: { headerLabel: string; bank: Letter["opts"]["bank"]; draft: boolean }) {
+async function newDoc(title: string, opts: { headerLabel: string; bank: BookConfig; draft: boolean }) {
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   const a = await assets();
@@ -211,7 +254,8 @@ async function newDoc(title: string, opts: { headerLabel: string; bank: Letter["
   doc.setTitle(title, { showInWindowTitleBar: true });
   doc.setAuthor(COMPANY.name);
   doc.setLanguage("de-DE");
-  return { doc, letter: new Letter(doc, fonts, logo, opts) };
+  const paper = await loadLetterhead(doc, opts.bank);
+  return { doc, letter: new Letter(doc, fonts, logo, opts, paper) };
 }
 
 /** PDF/A-3b-Kennzeichnung: XMP-Metadaten, Farbprofil, Datei-ID; optional E-Rechnung als factur-x.xml anhängen */
@@ -309,17 +353,17 @@ export async function renderDocPdf(d: DocData, xml: string | null = null, as?: O
 
   // Positionen
   const mixed = new Set(d.lines.map((l) => l.taxRate)).size > 1 && !d.reverseCharge;
-  const cols = { pos: LEFT, name: LEFT + 9 * MM, qty: RIGHT - (mixed ? 68 : 57) * MM, price: RIGHT - (mixed ? 34 : 23) * MM, tax: RIGHT - 23 * MM, total: RIGHT };
+  const cols = { pos: LEFT, name: LEFT + 9 * MM, qty: RIGHT - (mixed ? 72 : 62) * MM, price: RIGHT - (mixed ? 38 : 28) * MM, tax: RIGHT - 27 * MM, total: RIGHT };
   const nameW = cols.qty - 17 * MM - cols.name;
   const tableHead = () => {
     L.page.drawRectangle({ x: LEFT, y: L.y - 6.5 * MM, width: RIGHT - LEFT, height: 6.5 * MM, color: MIST });
     const y = L.y - 4.4 * MM;
     L.text("Pos.", cols.pos + 1.5 * MM, y, { size: 8, bold: true, color: STEEL });
-    L.text("Bezeichnung", cols.name, y, { size: 8, bold: true, color: STEEL });
+    L.text("Text", cols.name, y, { size: 8, bold: true, color: STEEL });
     L.text("Menge", cols.qty, y, { size: 8, bold: true, color: STEEL, align: "right" });
     L.text("Einzelpreis", cols.price, y, { size: 8, bold: true, color: STEEL, align: "right" });
     if (mixed) L.text("USt.", cols.tax, y, { size: 8, bold: true, color: STEEL, align: "right" });
-    L.text("Gesamt", cols.total - 1.5 * MM, y, { size: 8, bold: true, color: STEEL, align: "right" });
+    L.text("Gesamtpreis", cols.total - 1.5 * MM, y, { size: 8, bold: true, color: STEEL, align: "right" });
     L.y -= 9 * MM;
   };
   L.ensure(20 * MM);
@@ -354,6 +398,7 @@ export async function renderDocPdf(d: DocData, xml: string | null = null, as?: O
   // Summen
   const t = d.totals;
   const rows: [string, string, boolean, boolean?][] = [["Summe netto", fmtEuroCents(t.netCents), false]];
+  if (d.reverseCharge) rows.push(["USt. 0 % (§ 13b UStG)", fmtEuroCents(0), false]);
   for (const g of t.taxes) {
     if (d.reverseCharge) continue;
     rows.push([`zzgl. ${g.rate} % USt.${t.taxes.length > 1 ? ` auf ${fmtEuroCents(g.netCents)}` : ""}`, fmtEuroCents(g.taxCents), false]);
@@ -409,7 +454,7 @@ export async function renderDocPdf(d: DocData, xml: string | null = null, as?: O
     L.text(`Ansicht: ${v.title}`, LEFT, L.y - 14, { size: 13, bold: true, color: BRAND });
     L.y -= 24;
     const maxW = RIGHT - LEFT;
-    const maxH = L.y - FOOTER_TOP - 40 * MM;
+    const maxH = L.y - L.bottom - 40 * MM;
     const scale = Math.min(maxW / img.width, maxH / img.height);
     const w = img.width * scale;
     const h = img.height * scale;

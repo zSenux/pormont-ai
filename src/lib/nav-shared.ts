@@ -3,7 +3,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3, Banknote, BookOpen, Calculator, Calendar, Camera, CheckSquare, ClipboardList, Clock, Database, Factory, FileText, FolderSearch, Gauge, Gavel, Handshake, HardHat, Home,
-  IdCard, LayoutTemplate, Mail, Mic, Monitor, Palmtree, PenTool, Receipt, Route, Settings, ShieldAlert, ShoppingCart, Sparkles, Target, TrendingUp, Truck, Wallet, Warehouse, Wrench, BellRing, Users, Workflow,
+  IdCard, LayoutTemplate, Mail, Mic, Monitor, Palmtree, PenTool, Receipt, Route, Settings, ShieldAlert, ShoppingCart, Sparkles, Target, TrendingUp, Truck, Wallet, Warehouse, Wrench, BellRing, Users, Workflow, Scale, FolderArchive,
 } from "lucide-react";
 import { PATH_AREA, type Area } from "@/lib/rights-shared";
 
@@ -83,7 +83,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/buchhaltung", label: "Angebote & Rechnungen", icon: FileText, keywords: "buchhaltung kunden artikel gutschrift" },
       { href: "/belege/foto", label: "Beleg fotografieren", icon: Camera, keywords: "kassenbon quittung" },
       { href: "/buchhaltung/ausgaben", label: "Ausgaben", icon: Wallet, keywords: "eingangsrechnung" },
+      { href: "/buchhaltung/offene-posten", label: "Offene Posten", icon: Scale, keywords: "bezahlt offen forderungen verbindlichkeiten debitoren kreditoren rechnungseingang rechnungsausgang" },
       { href: "/buchhaltung/bank", label: "Bank", icon: Banknote, keywords: "kontoauszug abgleich" },
+      { href: "/buchhaltung/ablage", label: "Ablage", icon: FolderArchive, keywords: "archiv monat kontoauszüge belege steuerberater zip" },
       { href: "/buchhaltung/mahnwesen", label: "Mahnwesen", icon: BellRing, keywords: "mahnung" },
       { href: "/buchhaltung/liquiditaet", label: "Liquidität", icon: TrendingUp, keywords: "kontostand planung" },
       { href: "/auswertung", label: "Auswertung", icon: BarChart3, keywords: "jahresauswertung umsatz" },

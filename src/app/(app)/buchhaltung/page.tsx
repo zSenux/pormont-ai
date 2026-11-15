@@ -87,7 +87,7 @@ export default async function BuchhaltungPage() {
               })}
             </ul>
           )}
-          <Link href="/buchhaltung/belege?art=rechnungen" className="block border-t border-line px-4 py-2 text-sm font-medium text-brand hover:bg-mist">Alle Rechnungen →</Link>
+          <div className="flex border-t border-line text-sm font-medium text-brand"><Link href="/buchhaltung/belege?art=rechnungen" className="flex-1 px-4 py-2 hover:bg-mist">Alle Rechnungen →</Link><Link href="/buchhaltung/offene-posten" className="border-l border-line px-4 py-2 hover:bg-mist">Offene Posten →</Link></div>
         </div>
         <div className="card overflow-hidden">
           <div className="flex items-center gap-3 border-b border-line bg-red-50/50 p-4">
@@ -111,7 +111,7 @@ export default async function BuchhaltungPage() {
               ))}
             </ul>
           )}
-          <Link href="/buchhaltung/ausgaben" className="block border-t border-line px-4 py-2 text-sm font-medium text-brand hover:bg-mist">Alle Ausgaben →</Link>
+          <div className="flex border-t border-line text-sm font-medium text-brand"><Link href="/buchhaltung/ausgaben" className="flex-1 px-4 py-2 hover:bg-mist">Alle Ausgaben →</Link><Link href="/buchhaltung/ablage" className="border-l border-line px-4 py-2 hover:bg-mist">Ablage →</Link></div>
         </div>
         <p className="card flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm lg:col-span-2">
           <span className="text-steel">Ergebnis {monthName} (netto, Einnahmen − Ausgaben)</span>

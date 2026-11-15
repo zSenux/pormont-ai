@@ -129,8 +129,56 @@ export function parseStatement(buf: Buffer): ParsedTx[] {
 }
 
 /** Umsätze speichern; schon importierte (gleicher Tag, Betrag, Name, Zweck) werden übersprungen */
+// ---------- Kontoauszüge hinterlegen ----------
+
+export type StatementMeta = { from: string; to: string; count: number; source: "import" | "pdf" };
+
+const statementMime = (name: string) => {
+  const ext = name.toLowerCase().split(".").pop();
+  return ext === "pdf" ? "application/pdf" : ext === "xml" ? "application/xml" : ext === "csv" ? "text/csv" : "text/plain";
+};
+
+/** Original-Datei des Kontoauszugs als StoredFile „kontoauszug“ ablegen (gleiche Datei nur einmal) */
+async function storeStatement(buf: Buffer, fileName: string, meta: StatementMeta, user: Actor) {
+  const sha256 = createHash("sha256").update(buf).digest("hex");
+  const same = await db.storedFile.findFirst({ where: { kind: "kontoauszug", sha256 }, select: { id: true } });
+  if (same) return same.id;
+  const f = await db.storedFile.create({
+    data: { name: fileName.slice(0, 200) || "Kontoauszug", mime: statementMime(fileName), size: buf.length, sha256, data: new Uint8Array(buf), kind: "kontoauszug", meta, uploadedBy: user.name, summary: `Kontoauszug ${meta.from} bis ${meta.to}` },
+    select: { id: true },
+  });
+  return f.id;
+}
+
+/** Kontoauszug als PDF (z. B. aus dem Online-Banking) nur ablegen – ohne Umsätze einzulesen */
+export async function archiveStatementPdf(buf: Buffer, fileName: string, month: string, user: Actor) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new BookError("Bitte den Monat angeben.");
+  if (buf.subarray(0, 5).toString("latin1") !== "%PDF-") throw new BookError("Bitte eine PDF-Datei wählen.");
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return storeStatement(buf, fileName, { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}`, count: 0, source: "pdf" }, user);
+}
+
+export type StatementRow = { id: string; name: string; size: number; createdAt: Date; uploadedBy: string | null } & StatementMeta;
+
+/** Hinterlegte Kontoauszüge, neueste zuerst; mit month („JJJJ-MM“) nur die, die diesen Monat berühren */
+export async function listStatements(month?: string): Promise<StatementRow[]> {
+  const rows = await db.storedFile.findMany({ where: { kind: "kontoauszug" }, orderBy: { createdAt: "desc" }, take: 500, select: { id: true, name: true, size: true, createdAt: true, uploadedBy: true, meta: true } });
+  const out = rows.map(({ meta, ...r }) => {
+    const m = (meta ?? {}) as Partial<StatementMeta>;
+    const day = r.createdAt.toISOString().slice(0, 10);
+    return { ...r, from: m.from ?? day, to: m.to ?? day, count: m.count ?? 0, source: m.source ?? "import" } as StatementRow;
+  });
+  if (!month) return out;
+  const start = `${month}-01`;
+  const end = `${month}-31`;
+  return out.filter((r) => r.from <= end && r.to >= start);
+}
+
 export async function importStatement(buf: Buffer, fileName: string, user: Actor) {
   const list = parseStatement(buf);
+  const days = list.map((t) => t.day).sort();
+  const statementId = await storeStatement(buf, fileName, { from: days[0], to: days[days.length - 1], count: list.length, source: "import" }, user);
   const seen = new Map<string, number>();
   const rows = list.map((t) => {
     const key = [t.day, t.amountCents, t.iban ?? "", (t.name ?? "").toLowerCase(), (t.purpose ?? "").toLowerCase().replace(/\s+/g, " ")].join("|");
@@ -144,11 +192,12 @@ export async function importStatement(buf: Buffer, fileName: string, user: Actor
       iban: t.iban?.slice(0, 40) ?? null,
       purpose: t.purpose?.slice(0, 500) ?? null,
       fileName: fileName.slice(0, 200),
+      statementId,
       importedBy: user.name,
     };
   });
   const r = await db.bankTx.createMany({ data: rows, skipDuplicates: true });
-  return { total: rows.length, added: r.count };
+  return { total: rows.length, added: r.count, statementId };
 }
 
 // ---------- Vorschläge ----------

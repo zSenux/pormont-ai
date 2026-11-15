@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireArea } from "@/lib/rights";
 import { BookError } from "@/lib/buchhaltung/docs";
-import { assignTx, autoAssign, importStatement, setIgnored, unassignTx } from "@/lib/buchhaltung/bank";
+import { archiveStatementPdf, assignTx, autoAssign, importStatement, setIgnored, unassignTx } from "@/lib/buchhaltung/bank";
 
 // Server-Actions für den Bankabgleich. requireArea("buchhaltung") prüft Anmeldung, Freischaltung und Recht.
 
@@ -15,7 +15,23 @@ const done = () => {
   revalidatePath("/buchhaltung/bank");
   revalidatePath("/buchhaltung/ausgaben");
   revalidatePath("/buchhaltung");
+  revalidatePath("/buchhaltung/ablage");
 };
+
+/** Kontoauszug als PDF hinterlegen (nur ablegen, keine Umsätze einlesen) */
+export async function archiveStatementAction(_prev: Result, form: FormData): Promise<Result> {
+  const user = await requireArea("buchhaltung");
+  const f = form.get("datei");
+  if (!(f instanceof File) || !f.size) return { error: "Bitte eine PDF-Datei auswählen." };
+  if (f.size > 15 * 1024 * 1024) return { error: "Die Datei ist zu groß (höchstens 15 MB)." };
+  try {
+    await archiveStatementPdf(Buffer.from(await f.arrayBuffer()), f.name, z.string().parse(form.get("monat")), user);
+    done();
+    return { ok: "Kontoauszug hinterlegt." };
+  } catch (e) {
+    return fail(e);
+  }
+}
 
 export async function importStatementAction(_prev: Result, form: FormData): Promise<Result> {
   const user = await requireArea("buchhaltung");
@@ -26,7 +42,7 @@ export async function importStatementAction(_prev: Result, form: FormData): Prom
     const r = await importStatement(Buffer.from(await f.arrayBuffer()), f.name, user);
     const auto = form.get("auto") === "on" ? await autoAssign(user) : 0;
     done();
-    return { ok: `${r.added} neue Umsätze übernommen${r.total > r.added ? `, ${r.total - r.added} waren schon da` : ""}${auto ? ` · ${auto} automatisch zugeordnet` : ""}.` };
+    return { ok: `Auszug hinterlegt · ${r.added} neue Umsätze übernommen${r.total > r.added ? `, ${r.total - r.added} waren schon da` : ""}${auto ? ` · ${auto} automatisch zugeordnet` : ""}.` };
   } catch (e) {
     return fail(e);
   }

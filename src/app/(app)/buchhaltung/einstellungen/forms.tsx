@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { StateForm } from "@/components/state-form";
-import { saveBookConfigAction, setNextNumberAction, startImportAction } from "@/app/actions/buchhaltung";
+import { removeLetterheadAction, saveBookConfigAction, saveLetterheadAction, setNextNumberAction, startImportAction } from "@/app/actions/buchhaltung";
 import type { BookConfig } from "@/lib/buchhaltung/config";
 
 const n = (v: number) => String(v).replace(".", ",");
@@ -94,5 +94,31 @@ export function ImportForm({ running }: { running: boolean }) {
         <input type="date" name="seit" className="input mt-1 max-w-xs" />
       </label>
     </StateForm>
+  );
+}
+
+/** Eigenes Briefpapier: Datei + Freiräume oben/unten */
+export function LetterheadForm({ c }: { c: BookConfig }) {
+  const router = useRouter();
+  return (
+    <div className="space-y-3">
+      <StateForm action={saveLetterheadAction} submit={c.letterheadFileId ? "Speichern" : "Briefpapier hochladen"} onOk={() => router.refresh()} className="space-y-3">
+        <label className="block text-sm">
+          {c.letterheadFileId ? <>Aktuell: <strong>{c.letterheadName}</strong> – neue Datei wählen, um es zu ersetzen</> : "Briefpapier als PDF (A4, Seite 2 = Folgeseiten) oder Bild (PNG/JPG, A4)"}
+          <input type="file" name="datei" accept="application/pdf,image/png,image/jpeg" className="input mt-1" />
+        </label>
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="letterheadOnly" defaultChecked={c.letterheadOnly} className="mt-1" /> Das Briefpapier hat schon Briefkopf und Fußzeile (Logo und Fußzeile von Jarvis weglassen)</label>
+        <div className="grid grid-cols-2 gap-2 sm:max-w-md">
+          <label className="text-xs text-steel">Freiraum oben auf Folgeseiten (mm)<input name="letterheadTopMm" inputMode="numeric" defaultValue={c.letterheadTopMm} className="input mt-0.5" /></label>
+          <label className="text-xs text-steel">Freiraum unten für die Fußzeile (mm)<input name="letterheadBottomMm" inputMode="numeric" defaultValue={c.letterheadBottomMm} className="input mt-0.5" /></label>
+        </div>
+      </StateForm>
+      {c.letterheadFileId && (
+        <div className="flex flex-wrap gap-2">
+          <a href="/api/buchhaltung/briefpapier" target="_blank" className="btn-secondary">Probe-PDF ansehen</a>
+          <form action={removeLetterheadAction}><button className="btn-secondary text-bad">Briefpapier entfernen</button></form>
+        </div>
+      )}
+    </div>
   );
 }
