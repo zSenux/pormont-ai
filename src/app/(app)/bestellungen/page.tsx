@@ -13,7 +13,7 @@ export const metadata = { title: "Bestellungen" };
 
 const eur = (n: number) => n.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
 
-export default async function Bestellungen({ searchParams }: { searchParams: Promise<{ status?: string; projekt?: string }> }) {
+export default async function Bestellungen({ searchParams }: { searchParams: Promise<{ status?: string; projekt?: string; neu?: string }> }) {
   const me = await requireUser();
   const sp = await searchParams;
   const status = BE_STATUSES.includes(sp.status as BeStatus) ? (sp.status as BeStatus) : undefined;
@@ -34,7 +34,7 @@ export default async function Bestellungen({ searchParams }: { searchParams: Pro
         <p className="mt-1 text-sm text-steel">Material beim Lieferanten bestellen und beim Wareneingang abhaken – Lagerartikel werden dabei automatisch zugebucht. Preisanfragen findest du unter <Link href="/lieferanten" className="text-brand">Lieferanten</Link>.</p>
       </div>
       {mayOrder && (
-        <details className="card p-5" open={Boolean(sp.projekt)}>
+        <details id="neu" className="card p-5" open={Boolean(sp.projekt || sp.neu)}>
           <summary className="flex cursor-pointer items-center gap-2 font-semibold"><Plus className="size-4 text-brand" /> Neue Bestellung</summary>
           <div className="mt-3"><NewOrderForm suppliers={suppliers} projects={projects} projectId={sp.projekt} /></div>
           {suppliers.length === 0 && <p className="mt-2 text-sm text-warn">Noch keine Lieferanten – zuerst unter Lieferanten anlegen.</p>}

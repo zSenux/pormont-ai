@@ -12,6 +12,7 @@ import { timeHm, todayEvents } from "@/lib/calendar";
 import { WindowsAppBanner } from "@/components/windows-app";
 import { latestWindowsRelease } from "@/lib/windows-app";
 import { BetriebOverview, SalesRow } from "@/components/betrieb";
+import { AblaufBoard } from "@/components/ablauf/board";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
           </Link>
         ))}
       </nav>
+
+      {/* Arbeitsablauf wie im gewohnten Startbild (am Handy über „Mehr“ → Arbeitsablauf) */}
+      <div className="hidden md:block">
+        <Suspense fallback={<div className="h-[520px] animate-pulse rounded-[28px] bg-brand/80" />}>
+          <AblaufBoard user={user} compact />
+        </Suspense>
+      </div>
 
       <WindowsAppBanner version={winApp?.version ?? null} size={winApp?.size ?? null} />
 

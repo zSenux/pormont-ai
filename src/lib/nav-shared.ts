@@ -3,7 +3,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3, Banknote, BookOpen, Calculator, Calendar, Camera, CheckSquare, ClipboardList, Clock, Database, Factory, FileText, FolderSearch, Gauge, Gavel, Handshake, HardHat, Home,
-  IdCard, LayoutTemplate, Mail, Mic, Monitor, Palmtree, PenTool, Receipt, Route, Settings, ShieldAlert, ShoppingCart, Sparkles, Target, TrendingUp, Truck, Wallet, Warehouse, Wrench, BellRing, Users,
+  IdCard, LayoutTemplate, Mail, Mic, Monitor, Palmtree, PenTool, Receipt, Route, Settings, ShieldAlert, ShoppingCart, Sparkles, Target, TrendingUp, Truck, Wallet, Warehouse, Wrench, BellRing, Users, Workflow,
 } from "lucide-react";
 import { PATH_AREA, type Area } from "@/lib/rights-shared";
 
@@ -17,6 +17,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Start",
     items: [
       { href: "/", label: "Übersicht", icon: Home, keywords: "dashboard start" },
+      { href: "/ablauf", label: "Arbeitsablauf", icon: Workflow, keywords: "startbild ablauf kunde angebot auftragsbestätigung lieferschein rechnung bestellung" },
       { href: "/jarvis", label: "Jarvis", icon: Sparkles, keywords: "ki chat fragen" },
       { href: "/mail", label: "Mail", icon: Mail, keywords: "postfach e-mail" },
       { href: "/kalender", label: "Kalender", icon: Calendar, keywords: "termine" },

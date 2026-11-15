@@ -80,7 +80,7 @@ export function TopNav({ name, funktion, areas, admin, logout }: { name: string;
             return (
               <div key={g.key} className="relative">
                 <button type="button" onClick={() => setOpen(open === g.key ? null : g.key)} aria-expanded={open === g.key} aria-haspopup="menu" title={g.title} className={pill(on)}>
-                  {Icon && <Icon className="size-4 lg:hidden xl:inline" />}
+                  {Icon && <Icon className="size-4 lg:hidden 2xl:inline" />}
                   <span className="hidden lg:inline">{g.short ?? g.title}</span>
                   <ChevronDown className={clsx("size-3.5 transition", open === g.key && "rotate-180")} />
                 </button>
@@ -92,8 +92,8 @@ export function TopNav({ name, funktion, areas, admin, logout }: { name: string;
 
         <button type="button" onClick={() => setPalette(true)} className="flex shrink-0 items-center gap-2 rounded-full border border-line px-3 py-1.5 text-sm text-steel hover:border-brand hover:text-ink" title="Seite suchen (Strg+K)">
           <Search className="size-4" />
-          <span className="hidden xl:inline">Suchen</span>
-          <kbd className="hidden rounded border border-line bg-mist px-1 text-[10px] xl:inline">Strg K</kbd>
+          <span className="hidden 2xl:inline">Suchen</span>
+          <kbd className="hidden rounded border border-line bg-mist px-1 text-[10px] 2xl:inline">Strg K</kbd>
         </button>
 
         <div className="relative ml-1">

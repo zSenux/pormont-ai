@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Calculator, ClipboardList, FileText, FolderOpen, Pencil, Sparkles, UserRound } from "lucide-react";
+import { ArrowLeft, Calculator, ClipboardCheck, ClipboardList, FileText, FolderOpen, Pencil, Sparkles, Truck, UserRound } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -68,6 +68,8 @@ export default async function AuftragDetail({ params }: { params: Promise<{ id: 
           <div><dt className="text-xs text-steel">Abgerechnet (brutto)</dt><dd className="font-semibold">{fmtEuroCents(invoiced)}</dd></div>
         </dl>
         <div className="flex flex-wrap gap-2">
+          <Link href={`/auftraege/${o.id}/bestaetigung`} className="btn-primary"><ClipboardCheck className="size-4" /> Auftragsbestätigung</Link>
+          <Link href={`/auftraege/${o.id}/lieferschein`} className="btn-secondary"><Truck className="size-4" /> Lieferschein</Link>
           <Link href={`/projekte/${o.projectId}`} className="btn-secondary"><FolderOpen className="size-4" /> Projektakte</Link>
           {o.quote && <Link href={`/buchhaltung/beleg/${o.quote.id}`} className="btn-secondary"><FileText className="size-4" /> Angebot {o.quote.number ?? "(Entwurf)"} · {DOC_STATUS[o.quote.status]}</Link>}
           <Link href={`/projekte/${o.projectId}/nachkalkulation`} className="btn-secondary">

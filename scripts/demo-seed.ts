@@ -145,6 +145,32 @@ for (const p of allProjects) {
   }
 }
 await db.salesDoc.create({ data: { kind: "ANGEBOT", status: "ABGELEHNT", number: `DEMO-AN-${docNo++}`, title: "Wendeltreppe Edelstahl", date: day(-60), lines: line("Wendeltreppe Edelstahl", 23800), ...money(23800) } });
+// Artikelstamm und ein Angebot mit echten Positionen (für Auftragsbestätigung/Lieferschein im Arbeitsablauf)
+const articles: [string, string, string, number, string][] = [
+  ["100", "Montagestunde Monteur", "Std.", 68, "LEISTUNG"],
+  ["101", "Werkstattstunde Metallbauer", "Std.", 62, "LEISTUNG"],
+  ["110", "Feuerverzinken", "kg", 0.85, "LEISTUNG"],
+  ["111", "Pulverbeschichtung RAL nach Wahl", "m²", 28, "LEISTUNG"],
+  ["200", "Flachstahl 40×8 S235", "m", 9.4, "MATERIAL"],
+  ["201", "Rundrohr 42,4×2,6 Handlauf", "m", 14.2, "MATERIAL"],
+  ["202", "Gitterrost 30/30 verzinkt", "m²", 96, "MATERIAL"],
+  ["300", "Anfahrtspauschale Rhein-Neckar", "psch", 45, "LEISTUNG"],
+];
+for (const [number, name, unit, priceNet, kind] of articles) await db.article.create({ data: { number, name, unit, priceNet, kind } });
+const firstQuote = await db.salesDoc.findFirst({ where: { kind: "ANGEBOT", status: "ANGENOMMEN" }, orderBy: { number: "asc" } });
+if (firstQuote) {
+  const pos = [
+    { name: "Treppengeländer Stahl nach Aufmaß", description: "Füllung Flachstahl 40×8, Pfosten 60×60, Handlauf Rundrohr 42,4", qty: 14.5, unit: "lfm", price: 285, discount: 0, taxRate: 19 },
+    { name: "Feuerverzinken", qty: 420, unit: "kg", price: 0.85, discount: 0, taxRate: 19 },
+    { name: "Pulverbeschichtung RAL 7016", qty: 18, unit: "m²", price: 28, discount: 0, taxRate: 19 },
+    { name: "Montage vor Ort inkl. Befestigungsmaterial", qty: 16, unit: "Std.", price: 68, discount: 0, taxRate: 19 },
+    { name: "Anfahrtspauschale Rhein-Neckar", qty: 2, unit: "psch", price: 45, discount: 0, taxRate: 19 },
+  ];
+  const net = pos.reduce((s, l) => s + Math.round(l.qty * l.price * 100), 0) / 100;
+  await db.salesDoc.update({ where: { id: firstQuote.id }, data: { lines: pos, ...money(net) } });
+}
+await db.salesDoc.create({ data: { kind: "ANGEBOT", status: "ENTWURF", title: "Balkongeländer Edelstahl", date: day(0), lines: line("Balkongeländer Edelstahl", 6900), ...money(6900) } });
+
 // Kundenakte: Kontakthistorie und Wiedervorlagen
 const crm: [string, string, string, number | null][] = [
   ["Herr Bauer", "ANRUF", "Hat wegen Carport angerufen, möchte Variante mit Geräteraum. Angebot nachreichen.", 1],
@@ -428,5 +454,5 @@ for (const [part, kind, label, amount] of costDemo) await db.projectCost.create(
 await db.productionJob.create({ data: { number: `FA-DEMO-${String(faNo++).padStart(3, "0")}`, projectId: await proj("Hallenvordach"), title: "Trapezblech und Rinnen vorbereiten", quantity: "1 Satz", machine: "Schweißplatz 2", assigneeId: users["Sven Müller"], status: "OFFEN", plannedStart: day(14), plannedEnd: day(19), plannedHours: 70, createdBy: "Demo" } });
 await db.productionJob.create({ data: { number: `FA-DEMO-${String(faNo++).padStart(3, "0")}`, projectId: await proj("Carport"), title: "Carport Stützen und Pfetten", quantity: "1 Satz", status: "OFFEN", plannedHours: 24, createdBy: "Demo" } });
 
-console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten, ${orders.length} Bestellungen.`);
+console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten, ${orders.length} Bestellungen, ${articles.length} Artikel.`);
 await db.$disconnect();
