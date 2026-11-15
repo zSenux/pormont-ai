@@ -1,14 +1,15 @@
-// Navigation: eine Liste für Seitenleiste (PC/Windows-App), Handy-„Mehr“ und Schnellsuche.
+// Navigation: eine Liste für die Kopfleiste mit Bereichs-Menüs (PC/Windows-App), Handy-„Mehr“ und Schnellsuche.
 // Gruppiert nach Arbeitsbereichen im Betrieb. Rechte: Menüpunkt nur, wenn der Bereich der Seite freigegeben ist (PATH_AREA).
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3, Banknote, BookOpen, Calculator, Calendar, Camera, CheckSquare, ClipboardList, Clock, Database, Factory, FileText, FolderSearch, Gauge, Gavel, Handshake, HardHat, Home,
-  IdCard, LayoutTemplate, Mail, Mic, Monitor, Palmtree, PenTool, Receipt, Route, Settings, ShieldAlert, ShoppingCart, Sparkles, Target, TrendingUp, Truck, Wallet, Warehouse, Wrench, BellRing,
+  IdCard, LayoutTemplate, Mail, Mic, Monitor, Palmtree, PenTool, Receipt, Route, Settings, ShieldAlert, ShoppingCart, Sparkles, Target, TrendingUp, Truck, Wallet, Warehouse, Wrench, BellRing, Users,
 } from "lucide-react";
 import { PATH_AREA, type Area } from "@/lib/rights-shared";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon; adminOnly?: boolean; keywords?: string };
-export type NavGroup = { key: string; title: string; items: NavItem[] };
+/** short = Beschriftung im Kopf am PC, icon = Symbol des Bereichs (schmale Fenster) */
+export type NavGroup = { key: string; title: string; short?: string; icon?: LucideIcon; items: NavItem[] };
 
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -25,6 +26,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "vertrieb",
     title: "Vertrieb",
+    short: "Vertrieb",
+    icon: Target,
     items: [
       { href: "/akquise", label: "Akquise", icon: Target, keywords: "neukunden" },
       { href: "/ausschreibungen", label: "Ausschreibungen", icon: Gavel, keywords: "ted vergabe" },
@@ -36,6 +39,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "projekte",
     title: "Projekte",
+    short: "Projekte",
+    icon: HardHat,
     items: [
       { href: "/projekte", label: "Projekte", icon: HardHat, keywords: "baustelle phasen nachkalkulation" },
       { href: "/zeichnungen", label: "Zeichnungen", icon: PenTool, keywords: "cad konstruktion" },
@@ -46,6 +51,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "werkstatt",
     title: "Werkstatt & Montage",
+    short: "Werkstatt",
+    icon: Factory,
     items: [
       { href: "/fertigung", label: "Fertigung", icon: Factory, keywords: "kanban werkstatt" },
       { href: "/fertigung/kapazitaet", label: "Kapazität", icon: Gauge, keywords: "auslastung" },
@@ -56,6 +63,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "einkauf",
     title: "Einkauf & Lager",
+    short: "Einkauf",
+    icon: Truck,
     items: [
       { href: "/lieferanten", label: "Lieferanten", icon: Truck, keywords: "preisanfrage katalog" },
       { href: "/bestellungen", label: "Bestellungen", icon: ShoppingCart, keywords: "wareneingang" },
@@ -67,6 +76,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "buchhaltung",
     title: "Buchhaltung",
+    short: "Buchhaltung",
+    icon: FileText,
     items: [
       { href: "/buchhaltung", label: "Angebote & Rechnungen", icon: FileText, keywords: "buchhaltung kunden artikel gutschrift" },
       { href: "/belege/foto", label: "Beleg fotografieren", icon: Camera, keywords: "kassenbon quittung" },
@@ -80,6 +91,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "team",
     title: "Team",
+    short: "Team",
+    icon: Users,
     items: [
       { href: "/stunden", label: "Stunden", icon: Clock, keywords: "stempeluhr zeiten" },
       { href: "/abwesenheiten", label: "Urlaub & Krank", icon: Palmtree, keywords: "abwesenheit" },
@@ -90,6 +103,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     key: "system",
     title: "Werkzeuge",
+    short: "Werkzeuge",
+    icon: Settings,
     items: [
       { href: "/dokumente", label: "Dokumente", icon: FolderSearch, keywords: "suche dateien" },
       { href: "/pc", label: "Computer", icon: Monitor, keywords: "fernsteuerung" },

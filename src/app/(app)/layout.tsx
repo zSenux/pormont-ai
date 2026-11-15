@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { requireUser } from "@/lib/auth/user";
 import { areasOf, FUNKTION_LABEL, type Funktion } from "@/lib/rights-shared";
-import { MobileHeader, MobileNav, SideNav } from "@/components/nav";
+import { MobileHeader, MobileNav, TopNav } from "@/components/nav";
 import { logout } from "@/app/actions";
 import { InstallHint } from "@/components/pwa";
 import { license, lockReason } from "@/lib/license";
@@ -14,8 +14,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const lic = await license();
   const soon = lic.ok && user.role === "ADMIN" && lic.bis && lic.bis <= addDaysYmd(todayYmd(), 14);
   return (
-    <div className="min-h-dvh pb-20 md:pb-0 md:pl-60 print:pl-0">
-      <SideNav
+    <div className="min-h-dvh pb-20 md:pb-0">
+      <TopNav
         name={user.name}
         funktion={user.role === "ADMIN" ? "Administrator" : user.funktion ? FUNKTION_LABEL[user.funktion as Funktion] ?? null : null}
         areas={areasOf(user)}
