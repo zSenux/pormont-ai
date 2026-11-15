@@ -55,13 +55,13 @@ export function TopNav({ name, areas }: { name: string; areas: readonly Area[] }
   return (
     <header className="sticky top-0 z-30 hidden border-b print:hidden border-line bg-white/90 backdrop-blur md:block">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-6">
-        <Link href="/" className="flex items-center gap-2" aria-label="Startseite">
+        <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="Startseite">
           <img src="/logo.svg" alt="ProMont GmbH" className="h-11 w-auto" />
-          <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
+          <span className="chip hidden border-brand/20 bg-brand-soft text-brand 2xl:inline-flex">Jarvis</span>
         </Link>
-        <nav className="flex flex-1 items-center gap-1">
+        <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
           {DESKTOP.filter((i) => allowed(areas, i.href)).map((i) => (
-            <Link key={i.href} href={i.href} title={i.label} className={clsx("flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
+            <Link key={i.href} href={i.href} title={i.label} className={clsx("flex shrink-0 items-center gap-2 rounded-full px-2.5 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
               <i.icon className="size-4" />
               {/* 15 Bereiche: Beschriftung nur am aktiven Punkt (sonst Tooltip), damit die Leiste nicht überläuft */}
               <span className={i.href !== "/einstellungen" && active(path, i.href) ? "hidden lg:inline" : "sr-only"}>{i.label}</span>

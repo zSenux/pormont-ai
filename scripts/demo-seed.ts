@@ -9,7 +9,7 @@ import { hashPassword } from "../src/lib/auth/password";
 import { PHASES } from "../src/lib/phases-shared";
 import { createOrderFromQuote } from "../src/lib/orders";
 import { requestAbsence } from "../src/lib/abwesenheit";
-import { addDaysYmd, todayYmd } from "../src/lib/berlin";
+import { addDaysYmd, berlinDateTime, todayYmd } from "../src/lib/berlin";
 
 if (process.env.NODE_ENV === "production") {
   console.error("Abbruch: Demo-Daten nie in Produktion.");
@@ -239,6 +239,65 @@ await requestAbsence({ userId: users["Sven Müller"], kind: "SONSTIGES", from: a
 const firstCustomer = await db.customer.findFirstOrThrow();
 for (const [off, net, paid] of [[-160, 18400, true], [-130, 26100, true], [-100, 9800, true], [-75, 31200, true], [-45, 22650, true], [-20, 14900, false], [-6, 11800, false]] as const) {
   await db.salesDoc.create({ data: { kind: "RECHNUNG", status: paid ? "BEZAHLT" : "OFFEN", number: `DEMO-RE-${docNo++}`, customerId: firstCustomer.id, title: "Abschlagsrechnung", date: day(off), dueDate: day(off + 14), lines: line("Abschlag Stahlbauarbeiten", net), ...money(net), paidCents: paid ? Math.round(net * 119) : 0, finalizedAt: day(off) } });
+}
+
+// Bautagebuch (Treppe Käfertal, letzte Arbeitstage) – Wetter hier nur Demo-Text, live holt Jarvis es vom Wetterdienst
+{
+  const projectId = await proj("Stahltreppe");
+  const diary: [number, string, [string, number][], string, string | null, string | null, string | null][] = [
+    [-6, "bedeckt, 6–11 °C, trocken, Wind bis 18 km/h", [["Mehmet Yılmaz", 8], ["Sven Müller", 8]], "Baustelle eingerichtet, Aufmaß kontrolliert, Ankerpunkte Podest gebohrt und gesetzt (8 × M16)", "Hilti-Anker HST3 M16, Bohrhammer", null, "Bauleiter Hr. Schmidt (Wohnbau Rhein-Neckar): Podesthöhe bestätigt"],
+    [-5, "leichter Regen, 7–10 °C, 4 mm Niederschlag", [["Mehmet Yılmaz", 6]], "Konsolen Podest montiert, ausgerichtet", null, "Regen ab 13 Uhr – Arbeiten im Freien eingestellt (Behinderung angezeigt)", null],
+    [-2, "teils bewölkt, 5–12 °C, trocken", [["Mehmet Yılmaz", 8], ["Sven Müller", 8], ["Tobias Kern", 4]], "Podest gesetzt und verschraubt, Treppenwangen eingehoben (Hubsteiger), 8 von 16 Stufen montiert", "Gitterroststufen geliefert (Lieferschein 4711), Hubsteiger 12 m gemietet", null, null],
+    [-1, "sonnig, 3–13 °C, trocken, Wind bis 12 km/h", [["Mehmet Yılmaz", 8], ["Sven Müller", 7.5]], "Restliche Stufen montiert, Geländerpfosten gesetzt, Schweißnähte Podest kontrolliert", null, "Estrich im Treppenhaus noch nicht begehbar – Zugang über Nebeneingang", "Kunde vor Ort: Handlauf zusätzlich an der Wandseite gewünscht (Nachtrag)"],
+  ];
+  for (const [off, weather, crew, work, material, obstacles, visitors] of diary) {
+    await db.diaryEntry.create({ data: { projectId, day: berlinDateTime(addDaysYmd(todayYmd(), off)), weather, weatherSource: "manuell", crew: crew.map(([name, hours]) => ({ name, userId: users[name], hours })), work, material, obstacles, visitors, authorName: "Mehmet Yılmaz" } });
+  }
+}
+
+// Abgenommenes Projekt mit Gewährleistung + Mängel
+{
+  const done = await db.project.create({ data: { name: "Außentreppe Kita Lindenhof", customer: "Stadt Mannheim – Fachbereich Bau", address: "Meerfeldstr. 20, 68163 Mannheim", description: "Fluchttreppe feuerverzinkt, 2 Podeste", status: "FERTIG", leaderId: users["Josip Cabraja"], startDate: day(-520), endDate: day(-430) } });
+  await db.assembly.create({ data: { number: "MO-DEMO-099", projectId: done.id, title: "Montage Fluchttreppe", status: "ABGENOMMEN", startAt: day(-440), endAt: day(-436), leaderId: users["Mehmet Yılmaz"], signerName: "Fr. Becker (Stadt Mannheim)", signedAt: day(-435), doneAt: day(-436), createdBy: "Demo" } });
+  const defects: [string, string, string, string, string, string | null, number, string, boolean][] = [
+    ["Stahltreppe", "Schweißnaht Podest links nacharbeiten", "Podest OG, linke Wange", "SCHWER", "Sven Müller", "IN_ARBEIT", 2, "INTERN", false],
+    ["Stahltreppe", "Kratzer in der Verzinkung an Stufe 6 ausbessern", "Stufe 6", "GERING", "Mehmet Yılmaz", "OFFEN", 12, "KUNDE", false],
+    ["Brandschutztüren", "Tür 1.04 schleift unten – Bänder nachjustieren", "Raum 1.04, EG", "MITTEL", "Mehmet Yılmaz", "OFFEN", -1, "ABNAHME", false],
+    ["Brandschutztüren", "Obentürschließer Tür 1.07 schließt zu schnell", "Raum 1.07", "MITTEL", "Mehmet Yılmaz", "BEHOBEN", 3, "ABNAHME", false],
+    ["Edelstahl-Geländer", "Glasleiste Balkon 3 OG fehlt eine Schraube", "Balkon 3, OG", "GERING", "Tobias Kern", "ERLEDIGT", -3, "INTERN", false],
+    ["Außentreppe Kita", "Rost an Bodenplatte Podest 1 (Gewährleistung)", "Podest 1, Fußplatte", "MITTEL", "Josip Cabraja", "OFFEN", 9, "GEWAEHRLEISTUNG", true],
+  ];
+  let mg = 1;
+  for (const [part, title, location, severity, who, status, due, source, warranty] of defects) {
+    const projectId = part === "Außentreppe Kita" ? done.id : await proj(part);
+    await db.defect.create({ data: { number: `MG-DEMO-${String(mg++).padStart(3, "0")}`, projectId, title, location, severity, status: status ?? "OFFEN", source, warranty, assigneeId: users[who], dueDate: day(due), reportedBy: "Josip Cabraja", ...(status === "BEHOBEN" || status === "ERLEDIGT" ? { fixedAt: day(-1), fixedBy: who, fixNote: "Nachgearbeitet und kontrolliert." } : {}), ...(status === "ERLEDIGT" ? { closedAt: day(0), closedBy: "Josip Cabraja" } : {}) } });
+  }
+}
+
+// Ausschreibungen – nur DEMO (live kommen sie aus dem EU-Amtsblatt TED bzw. Feeds)
+for (const [title, buyer, plz, place, days, score, matched, status] of [
+  ["DEMO – Erneuerung Geländer und Handläufe Schulzentrum", "Demo-Vergabestelle Rhein-Neckar", "68219", "Mannheim", 18, 90, "Geländer, Handlauf, CPV, PLZ 68219", "NEU"],
+  ["DEMO – Stahlbauarbeiten Fahrradüberdachung Bahnhof", "Demo-Stadtwerke", "69115", "Heidelberg", 11, 70, "Stahlbau, Überdachung, PLZ 69115", "INTERESSANT"],
+  ["DEMO – Fluchttreppe Verwaltungsgebäude", "Demo-Landkreis", "67059", "Ludwigshafen", 25, 70, "Treppe, Fluchttreppe, PLZ 67059", "NEU"],
+  ["DEMO – Toranlage Betriebshof", "Demo-Zweckverband", "64646", "Heppenheim", 6, 50, "Tor, PLZ 64646", "NEU"],
+] as const) {
+  await db.tender.create({ data: { source: "MANUELL", externalId: `demo-${title}`, title, buyer, postalCode: plz, place, deadline: day(days), publishedAt: day(-3), score, matched, status, description: "Demo-Eintrag für Vorführungen. Live stehen hier Kurzbeschreibung und Link der öffentlichen Bekanntmachung." } });
+}
+
+// Liquidität: Kontostand, geplante Zahlungen, offene Ausgaben
+await db.appSetting.upsert({ where: { key: "LIQUIDITAET" }, create: { key: "LIQUIDITAET", value: JSON.stringify({ balanceCents: 6_850_000, asOf: todayYmd(), reserveCents: 2_000_000, weeks: 12 }) }, update: {} });
+const mon = (n: number) => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n); d.setUTCHours(0, 0, 0, 0); return d; };
+await db.cashItem.createMany({ data: [
+  { name: "Löhne und Gehälter", amountCents: -2_840_000, interval: "MONATLICH", startDate: new Date(mon(1).getTime() - 3 * DAY) },
+  { name: "Miete Halle Ottmar-Mergenthaler-Str.", amountCents: -420_000, interval: "MONATLICH", startDate: new Date(mon(1).getTime() + 2 * DAY) },
+  { name: "Leasing Transporter + Caddy", amountCents: -98_000, interval: "MONATLICH", startDate: new Date(mon(1).getTime() + 14 * DAY) },
+  { name: "Umsatzsteuer-Vorauszahlung", amountCents: -910_000, interval: "MONATLICH", startDate: new Date(mon(1).getTime() + 9 * DAY) },
+  { name: "Abschlag Hallenvordach Ladenburg (erwartet)", amountCents: 2_560_000, interval: "EINMALIG", startDate: day(24) },
+  { name: "Schlussrechnung Balkone Neckarstadt (erwartet)", amountCents: 3_970_000, interval: "EINMALIG", startDate: day(45) },
+] });
+let eNo = 1;
+for (const [supplier, net, off, docNo] of [["Stahlhandel Haug GmbH", 8420, 9, "R-88123"], ["Verzinkerei Rhein-Neckar", 2380, 4, "VZ-2211"], ["Glas Schwind", 6150, 16, "41-2026"], ["Würth", 640, -2, "WÜ-5531"]] as const) {
+  await db.purchaseDoc.create({ data: { number: `E-DEMO-${String(eNo++).padStart(3, "0")}`, supplier, docNo, date: day(off - 14), dueDate: day(off), category: "MATERIAL", netCents: net * 100, taxCents: Math.round(net * 19), grossCents: Math.round(net * 119), status: "OFFEN", createdBy: "Demo" } });
 }
 
 console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten, ${orders.length} Bestellungen.`);

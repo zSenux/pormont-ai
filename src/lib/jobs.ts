@@ -9,6 +9,8 @@ import { mailsSince } from "@/lib/mail/client";
 import { timeHm, todayEvents } from "@/lib/calendar";
 import { readLicense } from "@/lib/license";
 import { followUpReminders, lateDeadlines } from "@/lib/automation";
+import { dailyTenders } from "@/lib/ausschreibungen";
+import { warrantyReminders } from "@/lib/maengel";
 
 // Hintergrund-Jobs im App-Prozess (wie in Klaic OS): Erinnerungen und Warnungen aus der Buchhaltung per Push.
 // Läuft nur in Produktion bzw. lokal mit JOBS=1.
@@ -115,5 +117,10 @@ export function startJobs() {
   setTimeout(safe("fristen", lateDeadlines), 40_000);
   setInterval(safe("wiedervorlagen", followUpReminders), 10 * 60_000);
   setTimeout(safe("mail", newMails), 15_000);
+  // Ausschreibungen werktags ab 6 Uhr (einmal am Tag), Gewährleistung läuft ab (einmal je Projekt)
+  setInterval(safe("ausschreibungen", () => dailyTenders(once)), 15 * 60_000);
+  setTimeout(safe("ausschreibungen", () => dailyTenders(once)), 60_000);
+  setInterval(safe("gewaehrleistung", () => warrantyReminders(once)), 6 * 3600_000);
+  setTimeout(safe("gewaehrleistung", () => warrantyReminders(once)), 90_000);
   console.log("[jobs] gestartet");
 }
