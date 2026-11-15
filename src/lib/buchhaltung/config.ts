@@ -7,6 +7,38 @@ import { db } from "@/lib/db";
 
 const KEY = "BUCHHALTUNG";
 
+/** Textbaustein für Angebote/Rechnungen (Einleitung/Schlusstext). „standard“ = steht bei neuen Belegen dieser Art automatisch unten im Schlusstext.
+ *  Platzhalter {angebot} = Nummer und Datum des Angebots, aus dem die Rechnung entstand. */
+export const textBlockSchema = z.object({
+  title: z.string().trim().min(1).max(60),
+  text: z.string().trim().min(1).max(2000),
+  for: z.enum(["ALLE", "ANGEBOT", "RECHNUNG"]).default("ALLE"),
+  standard: z.boolean().default(false),
+});
+export type TextBlock = z.infer<typeof textBlockSchema>;
+
+export const DEFAULT_TEXT_BLOCKS: TextBlock[] = [
+  { title: "Leistung gemäß Angebot", text: "Die Leistung erfolgte gemäß unserem beiliegenden Angebot {angebot}.", for: "RECHNUNG", standard: false },
+  { title: "VOB/B", text: "Grundlage dieses Vertrags ist die VOB Teil B (VOB/B) in der bei Vertragsschluss gültigen Fassung.", for: "ALLE", standard: false },
+  { title: "AGB", text: "Es gelten unsere Allgemeinen Geschäftsbedingungen (AGB), die wir Ihnen auf Wunsch gerne zusenden.", for: "ALLE", standard: false },
+  { title: "§ 13b UStG (Bauleistung)", text: "Steuerschuldnerschaft des Leistungsempfängers gemäß § 13b Abs. 2 Nr. 4 i. V. m. Abs. 5 UStG: Die Umsatzsteuer für diese Bauleistung schuldet der Leistungsempfänger.", for: "RECHNUNG", standard: false },
+  { title: "Freistellung § 48b EStG", text: "Eine gültige Freistellungsbescheinigung nach § 48b EStG liegt vor und wird Ihnen auf Wunsch gerne übersandt.", for: "RECHNUNG", standard: false },
+  { title: "Aufmaß vor Fertigung", text: "Maßgeblich ist das gemeinsame Aufmaß vor der Fertigung. Mehr- oder Mindermengen werden nach Aufmaß abgerechnet.", for: "ANGEBOT", standard: false },
+];
+
+/** Bausteine, die zu dieser Belegart passen */
+export const blocksFor = (blocks: TextBlock[], kind: string) => blocks.filter((b) => b.for === "ALLE" || b.for === kind);
+
+/** Schlusstext für einen neuen Beleg: Standardtext + als „standard“ markierte Bausteine */
+export function defaultOutro(c: BookConfig, kind: string, angebot: string | null = null) {
+  const base = kind === "ANGEBOT" ? c.quoteOutro : kind === "RECHNUNG" ? c.invoiceOutro : "";
+  const extra = kind === "GUTSCHRIFT" ? [] : blocksFor(c.textBlocks, kind).filter((b) => b.standard).map((b) => b.text);
+  return fillBlock([...extra, base].filter(Boolean).join("\n\n"), angebot) || null;
+}
+
+/** Platzhalter füllen ({angebot} → „AN-2026-0012 vom 03.11.2026“ bzw. ohne Angebot entfernt) */
+export const fillBlock = (text: string, angebot: string | null) => text.replace(/\s?\{angebot\}/g, angebot ? ` ${angebot}` : "");
+
 const iban = z
   .string()
   .trim()
@@ -46,6 +78,10 @@ export const bookConfigSchema = z.object({
   datevMandant: z.string().trim().regex(/^\d{0,5}$/, "Mandantennummer: bis zu 5 Ziffern").default(""),
   datevSkr: z.enum(["03", "04"]).default("03"),
   datevWjMonth: z.number().int().min(1).max(12).default(1),
+  /** Textbausteine (VOB/B, AGB, § 13b, „gemäß beiliegendem Angebot“ …) */
+  textBlocks: z.array(textBlockSchema).max(30).default(DEFAULT_TEXT_BLOCKS),
+  /** Angebot angenommen → Auftragsbestätigung an den Kunden vorschlagen */
+  confirmOnAccept: z.boolean().default(true),
 });
 export type BookConfig = z.infer<typeof bookConfigSchema>;
 

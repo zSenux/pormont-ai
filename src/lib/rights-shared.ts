@@ -99,5 +99,5 @@ export const TOOL_AREA: Record<string, Area> = {
 /** Freigabe-Karten (PendingAction) → Bereich, den der Freigebende braucht */
 export const ACTION_AREA: Record<string, Area> = {
   beleg_festschreiben: "buchhaltung", beleg_senden: "buchhaltung", mahnung_senden: "buchhaltung", beleg_stornieren: "buchhaltung", kunde_anlegen: "buchhaltung",
-  rechnung_erstellen: "buchhaltung", angebot_erstellen: "buchhaltung", beleg_hochladen: "buchhaltung", mail_senden: "mail", preisanfrage_senden: "einkauf",
+  rechnung_erstellen: "buchhaltung", angebot_erstellen: "buchhaltung", beleg_hochladen: "buchhaltung", mail_senden: "mail", preisanfrage_senden: "einkauf", auftragsbestaetigung_senden: "auftraege",
 };

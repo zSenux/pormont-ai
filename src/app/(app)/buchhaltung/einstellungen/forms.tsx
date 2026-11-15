@@ -47,6 +47,22 @@ export function ConfigForm({ c }: { c: BookConfig }) {
         <label className="text-xs text-steel">Rechnung – Einleitung<textarea name="invoiceIntro" defaultValue={c.invoiceIntro} rows={2} className="input mt-0.5 resize-y" /></label>
         <label className="text-xs text-steel">Rechnung – Schluss<textarea name="invoiceOutro" defaultValue={c.invoiceOutro} rows={2} className="input mt-0.5 resize-y" /></label>
       </div>
+      <h3 id="textbausteine" className="pt-2 text-sm font-semibold">Textbausteine (VOB/B, AGB, § 13b, „gemäß beiliegendem Angebot“ …)</h3>
+      <p className="text-xs text-steel">Im Beleg mit einem Klick unten einfügen. „Immer unten“ setzt den Baustein automatisch in jeden neuen Beleg dieser Art. <code>{"{angebot}"}</code> wird durch Nummer und Datum des Angebots ersetzt. Zum Löschen den Namen leeren.</p>
+      <div className="space-y-2">
+        {[...c.textBlocks, ...Array.from({ length: 3 }, () => null)].map((b, i) => (
+          <div key={i} className="grid gap-2 rounded-xl border border-line p-2 sm:grid-cols-[12rem_1fr_8rem]">
+            <input name={`tb_title_${i}`} defaultValue={b?.title ?? ""} placeholder="Name, z. B. VOB/B" maxLength={60} className="input" aria-label="Name des Bausteins" />
+            <textarea name={`tb_text_${i}`} defaultValue={b?.text ?? ""} placeholder="Text, der auf den Beleg kommt" rows={2} maxLength={2000} className="input resize-y" aria-label="Text des Bausteins" />
+            <div className="space-y-1">
+              <select name={`tb_for_${i}`} defaultValue={b?.for ?? "ALLE"} className="input" aria-label="Für"><option value="ALLE">Angebot + Rechnung</option><option value="ANGEBOT">nur Angebot</option><option value="RECHNUNG">nur Rechnung</option></select>
+              <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" name={`tb_std_${i}`} defaultChecked={b?.standard ?? false} className="size-4 accent-brand" /> Immer unten</label>
+            </div>
+          </div>
+        ))}
+      </div>
+      <h3 className="pt-2 text-sm font-semibold">Auftragsbestätigung</h3>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="confirmOnAccept" defaultChecked={c.confirmOnAccept} className="size-4 accent-brand" /> Wenn ein Angebot angenommen wird: Auftragsbestätigung an den Kunden zum Senden bereitlegen (gesendet wird erst nach deinem Klick)</label>
     </StateForm>
   );
 }

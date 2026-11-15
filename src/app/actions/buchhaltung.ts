@@ -272,6 +272,19 @@ export async function archiveArticleAction(id: string) {
 
 // ---------- Einstellungen (Admin) ----------
 
+/** Textbausteine aus dem Formular (tb_title_0 …); leerer Name = gelöscht */
+function readTextBlocks(form: FormData) {
+  const out: { title: string; text: string; for: "ALLE" | "ANGEBOT" | "RECHNUNG"; standard: boolean }[] = [];
+  for (let i = 0; i < 40; i++) {
+    const title = String(form.get(`tb_title_${i}`) ?? "").trim();
+    const text = String(form.get(`tb_text_${i}`) ?? "").trim();
+    if (!title || !text) continue;
+    const f = String(form.get(`tb_for_${i}`) ?? "ALLE");
+    out.push({ title: title.slice(0, 60), text: text.slice(0, 2000), for: f === "ANGEBOT" || f === "RECHNUNG" ? f : "ALLE", standard: form.get(`tb_std_${i}`) === "on" });
+  }
+  return out.slice(0, 30);
+}
+
 export async function saveBookConfigAction(_prev: Result, form: FormData): Promise<Result> {
   await requireAdmin();
   const cur = await bookConfig();
@@ -303,6 +316,8 @@ export async function saveBookConfigAction(_prev: Result, form: FormData): Promi
     datevMandant: opt(form.get("datevMandant")) ?? "",
     datevSkr: form.get("datevSkr") === "04" ? "04" : "03",
     datevWjMonth: Math.round(n("datevWjMonth", cur.datevWjMonth)),
+    textBlocks: readTextBlocks(form),
+    confirmOnAccept: form.get("confirmOnAccept") === "on",
   });
   if (!p.success) return { error: p.error.issues[0]?.message };
   await saveBookConfig(p.data);

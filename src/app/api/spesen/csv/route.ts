@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { currentUser } from "@/lib/auth/user";
 import { formatDate } from "@/lib/berlin";
 import { csvResponse, deNum } from "@/lib/csv";
-import { KIND_LABEL, STATUS_LABEL, type ExpenseKind } from "@/lib/spesen";
+import { KIND_LABEL, STATUS_LABEL, taxSplit, type ExpenseKind } from "@/lib/spesen";
 import { monthRange, thisMonth } from "@/lib/zeiten";
 
 // Spesen eines Monats als CSV (Administratoren: alle, sonst nur eigene)
@@ -19,7 +19,10 @@ export async function GET(req: Request) {
   });
   return csvResponse(
     `Spesen-${month}.csv`,
-    ["Mitarbeiter", "Datum", "Art", "Beschreibung", "Projekt", "km", "Betrag (€)", "Status", "Geprüft von", "Beleg"],
-    rows.map((e) => [e.user.name, formatDate(e.day), KIND_LABEL[e.kind as ExpenseKind] ?? e.kind, e.description, e.project?.name ?? "", e.km ?? "", deNum(e.amountCents / 100), STATUS_LABEL[e.status], e.reviewedBy ?? "", e.fileId ? "ja" : "nein"]),
+    ["Mitarbeiter", "Datum", "Art", "Beschreibung", "Projekt", "km", "Betrag (€)", "davon steuerfrei (€)", "davon pauschal 25 % (€)", "davon lohnsteuerpflichtig (€)", "Status", "Geprüft von", "Beleg"],
+    rows.map((e) => {
+      const t = taxSplit(e);
+      return [e.user.name, formatDate(e.day), KIND_LABEL[e.kind as ExpenseKind] ?? e.kind, e.description, e.project?.name ?? "", e.km ?? "", deNum(e.amountCents / 100), deNum(t.free / 100), deNum(t.flat25 / 100), deNum(t.taxable / 100), STATUS_LABEL[e.status], e.reviewedBy ?? "", e.fileId ? "ja" : "nein"];
+    }),
   );
 }

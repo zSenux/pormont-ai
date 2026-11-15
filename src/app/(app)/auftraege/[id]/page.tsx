@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Calculator, ClipboardCheck, ClipboardList, FileText, FolderOpen, Pencil, Sparkles, Truck, UserRound } from "lucide-react";
+import { ArrowLeft, Calculator, CheckCircle2, ClipboardCheck, ClipboardList, Eye, FileText, FolderOpen, Mail, Pencil, Sparkles, Truck, UserRound } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
+import { defaultConfirmationMail } from "@/lib/buchhaltung/auftragsbestaetigung";
+import { mailConfigured } from "@/lib/mail/config";
+import { SendConfirmationForm } from "@/components/order-confirmation";
 import { berlinParts, formatDate } from "@/lib/berlin";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { STATUS_LABEL as DOC_STATUS } from "@/lib/buchhaltung/docs";
@@ -27,7 +30,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 }
 
 export default async function AuftragDetail({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
+  const me = await requireUser();
   const { id } = await params;
   const o = await db.order.findUnique({
     where: { id },
@@ -42,6 +45,7 @@ export default async function AuftragDetail({ params }: { params: Promise<{ id: 
   const st = o.status as OrderStatus;
   const late = o.dueDate && o.dueDate < new Date() && st !== "ABGESCHLOSSEN" && st !== "STORNIERT";
   const invoiced = o.project.docs.filter((d) => d.kind === "RECHNUNG" && d.status !== "ENTWURF" && d.status !== "STORNIERT").reduce((s, d) => s + d.grossCents - d.prepaidCents, 0);
+  const abMail = await defaultConfirmationMail(o.id, me.name);
   const ask = `/jarvis?q=${encodeURIComponent(`Gib mir einen Stand zum Auftrag ${o.number} „${o.title}“.`)}`;
 
   return (
@@ -68,7 +72,7 @@ export default async function AuftragDetail({ params }: { params: Promise<{ id: 
           <div><dt className="text-xs text-steel">Abgerechnet (brutto)</dt><dd className="font-semibold">{fmtEuroCents(invoiced)}</dd></div>
         </dl>
         <div className="flex flex-wrap gap-2">
-          <Link href={`/auftraege/${o.id}/bestaetigung`} className="btn-primary"><ClipboardCheck className="size-4" /> Auftragsbestätigung</Link>
+          <Link href={`/auftraege/${o.id}/bestaetigung`} className="btn-secondary"><ClipboardCheck className="size-4" /> Auftragsbestätigung</Link>
           <Link href={`/auftraege/${o.id}/lieferschein`} className="btn-secondary"><Truck className="size-4" /> Lieferschein</Link>
           <Link href={`/projekte/${o.projectId}`} className="btn-secondary"><FolderOpen className="size-4" /> Projektakte</Link>
           {o.quote && <Link href={`/buchhaltung/beleg/${o.quote.id}`} className="btn-secondary"><FileText className="size-4" /> Angebot {o.quote.number ?? "(Entwurf)"} · {DOC_STATUS[o.quote.status]}</Link>}
@@ -79,6 +83,26 @@ export default async function AuftragDetail({ params }: { params: Promise<{ id: 
           <Link href={ask} className="btn-secondary"><Sparkles className="size-4" /> Stand von Jarvis</Link>
         </div>
       </header>
+
+      <section id="bestaetigung" className={clsx("card scroll-mt-24 space-y-3 p-5", !o.confirmationSentAt && "border-brand/40 bg-brand-soft/40")}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="mr-auto flex items-center gap-2 font-semibold">{o.confirmationSentAt ? <CheckCircle2 className="size-4 text-ok" /> : <Mail className="size-4 text-brand" />} Auftragsbestätigung an den Kunden</h2>
+          <a href={`/api/auftraege/${o.id}/bestaetigung`} target="_blank" rel="noreferrer" className="btn-secondary"><Eye className="size-4" /> PDF ansehen</a>
+        </div>
+        {o.confirmationSentAt ? (
+          <p className="text-sm">Gesendet am <b>{formatDate(o.confirmationSentAt)}</b> an {o.confirmationSentTo}. <span className="text-steel">Erneut senden geht unten.</span></p>
+        ) : (
+          <p className="text-sm text-steel">{o.quote ? `Angebot ${o.quote.number ?? ""} wurde angenommen. ` : ""}Die Auftragsbestätigung ist fertig – Text prüfen und mit einem Klick an den Kunden senden. Positionen, Preise und Bausteine (VOB/B, AGB …) kommen aus dem Angebot.</p>
+        )}
+        {mailConfigured() ? (
+          <details open={!o.confirmationSentAt} className="group">
+            <summary className="cursor-pointer text-sm font-medium text-brand group-open:mb-2">{o.confirmationSentAt ? "Noch einmal senden" : "Mail an den Kunden"}</summary>
+            <SendConfirmationForm orderId={o.id} d={abMail} />
+          </details>
+        ) : (
+          <p className="text-sm text-warn">Zum Senden zuerst das Firmenpostfach verbinden (Einstellungen → Verbindungen). Das PDF kannst du schon ansehen und herunterladen.</p>
+        )}
+      </section>
 
       <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
         <section className="card space-y-3 p-5">

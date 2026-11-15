@@ -1139,6 +1139,9 @@ model Order {
   /// Auftragsbeginn und Fertigstellungstermin (Tag, 00:00 Berliner Zeit)
   startDate     DateTime?
   dueDate       DateTime?
+  /// Auftragsbestätigung an den Kunden gesendet (Mail mit PDF)
+  confirmationSentAt DateTime?
+  confirmationSentTo String?
   /// Bestellnummer/Zeichen des Kunden
   customerRef   String?
   /// Materialbedarf (Freitext, bis die Stücklisten kommen)

@@ -23,6 +23,7 @@ import { canArea } from "@/lib/rights-shared";
 import { absenceCovers, absenceLine, absencesBetween, AbsenceError, cancelAbsence, decideAbsence, requestAbsence, vacationBalance } from "@/lib/abwesenheit";
 import { ABS_KIND_SHORT, ABS_KINDS, fmtDays, type AbsKind } from "@/lib/abwesenheit-shared";
 import type { ToolCtx } from "./tools";
+import { proposeAction } from "./actions";
 
 // EPS-Module für Jarvis: Projektplanung (Phasen, Meilensteine, Projektleiter/Team, Projektaufgaben).
 // Interne Daten – Jarvis ändert sie direkt (sichtbar mit Name, jederzeit änderbar).
@@ -58,12 +59,13 @@ export const EPS_TOOLS: Anthropic.Tool[] = [
   {
     name: "auftraege",
     description:
-      "Aufträge (mit Auftragsnummer AU-JJJJ-NNNN und Projektakte): liste (aktive, Suche nach Nummer/Kunde/Titel), details, aus_angebot (Auftrag aus einem angenommenen Angebot anlegen – passiert beim Annehmen auch automatisch), anlegen (ohne Angebot), status, aendern (Termine, Wert, Materialbedarf, Fertigungsinfos, Notiz).",
+      "Aufträge (mit Auftragsnummer AU-JJJJ-NNNN und Projektakte): liste (aktive, Suche nach Nummer/Kunde/Titel), details, aus_angebot (Auftrag aus einem angenommenen Angebot anlegen – passiert beim Annehmen auch automatisch), anlegen (ohne Angebot), status, aendern (Termine, Wert, Materialbedarf, Fertigungsinfos, Notiz), bestaetigung_senden (Auftragsbestätigung als PDF per Mail an den Kunden – legt nur eine Freigabe-Karte an).",
     input_schema: {
       type: "object",
       properties: {
-        aktion: { type: "string", enum: ["liste", "details", "aus_angebot", "anlegen", "status", "aendern"] },
-        id: str("details/status/aendern: Auftrags-ID oder Auftragsnummer"),
+        aktion: { type: "string", enum: ["liste", "details", "aus_angebot", "anlegen", "status", "aendern", "bestaetigung_senden"] },
+        id: str("details/status/aendern/bestaetigung_senden: Auftrags-ID oder Auftragsnummer"),
+        an: str("bestaetigung_senden: Empfänger (leer = E-Mail des Kunden)"),
         suche: str("liste: Nummer, Kunde oder Titel"),
         alle: { type: "boolean", description: "liste: auch abgeschlossene/stornierte" },
         angebot: str("aus_angebot: Angebots-ID oder Angebotsnummer (AN-…)"),
@@ -311,7 +313,8 @@ async function runOrders(i: Record<string, unknown>, ctx: ToolCtx): Promise<stri
   try {
     const q = z
       .object({
-        aktion: z.enum(["liste", "details", "aus_angebot", "anlegen", "status", "aendern"]),
+        aktion: z.enum(["liste", "details", "aus_angebot", "anlegen", "status", "aendern", "bestaetigung_senden"]),
+        an: z.string().trim().max(300).optional(),
         id: z.string().trim().max(40).optional(),
         suche: z.string().trim().max(80).optional(),
         alle: z.boolean().optional(),
@@ -348,6 +351,13 @@ async function runOrders(i: Record<string, unknown>, ctx: ToolCtx): Promise<stri
       case "details": {
         const o = q.id ? await findOrder(q.id) : null;
         return o ? orderText(o.id) : "Auftrag nicht gefunden (ID oder Nummer AU-… angeben).";
+      }
+      case "bestaetigung_senden": {
+        const o = q.id ? await findOrder(q.id) : null;
+        if (!o) return "Auftrag nicht gefunden (ID oder Nummer AU-… angeben).";
+        const a = await proposeAction(ctx.chatId, ctx.userId, "auftragsbestaetigung_senden", { orderId: o.id, an: q.an });
+        ctx.proposed.push(a.id);
+        return `Freigabe-Karte angelegt (noch NICHT gesendet): ${a.summary}\nSag dem Nutzer kurz, dass er unten auf „Freigeben“ tippen muss. PDF zum Prüfen: /api/auftraege/${o.id}/bestaetigung`;
       }
       case "aus_angebot": {
         if (!q.angebot) return "Welches Angebot? (ID oder Nummer)";

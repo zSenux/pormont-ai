@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatDateTime } from "@/lib/berlin";
 import { COMPANY } from "@/lib/company";
-import { KIND_LABEL, MEAL_LABEL, STATUS_LABEL, euro, type ExpenseKind, type MealDay } from "@/lib/spesen";
+import { KIND_LABEL, MEAL_LABEL, STATUS_LABEL, euro, flatTaxOf, sumSplit, taxSplit, type ExpenseKind, type MealDay } from "@/lib/spesen";
 import { monthLabel, monthRange, thisMonth } from "@/lib/zeiten";
 import { PrintButton } from "@/components/print-button";
 
@@ -24,12 +24,14 @@ export default async function ZettelPage({ searchParams }: { searchParams: Promi
   const rows = await db.expense.findMany({ where: { userId: uid, day: { gte: r.from, lt: r.to }, status: { not: "ABGELEHNT" } }, orderBy: [{ day: "asc" }, { createdAt: "asc" }], include: { project: { select: { name: true } } } });
   const byKind = (k: ExpenseKind) => rows.filter((e) => e.kind === k).reduce((s, e) => s + e.amountCents, 0);
   const total = rows.reduce((s, e) => s + e.amountCents, 0);
+  const split = sumSplit(rows);
+  const flat = flatTaxOf(split.flat25);
   const c = COMPANY;
   const detail = (e: (typeof rows)[number]) =>
     e.kind === "VERPFLEGUNG"
       ? [MEAL_LABEL[e.mealDay as MealDay], [e.breakfast && "Frühstück", e.lunch && "Mittag", e.dinner && "Abendessen"].filter(Boolean).join(", ") && `gestellt: ${[e.breakfast && "Frühstück", e.lunch && "Mittag", e.dinner && "Abendessen"].filter(Boolean).join(", ")}`].filter(Boolean).join(" · ")
       : e.kind === "FAHRT"
-        ? `${e.km} km × 0,30 €`
+        ? `${e.km} km × ${euro(Math.round(e.amountCents / Math.max(1, e.km ?? 1)))}`
         : e.fileId
           ? "Beleg liegt vor"
           : "ohne Beleg";
@@ -56,7 +58,7 @@ export default async function ZettelPage({ searchParams }: { searchParams: Promi
                 <td className="py-1.5 pr-2 whitespace-nowrap">{formatDate(e.day)}</td>
                 <td className="py-1.5 pr-2">{KIND_LABEL[e.kind as ExpenseKind]}</td>
                 <td className="py-1.5 pr-2 [overflow-wrap:anywhere]">{e.description}{e.project ? ` · ${e.project.name}` : ""}</td>
-                <td className="py-1.5 pr-2 text-[9pt] text-steel">{detail(e)}{e.status !== "EINGEREICHT" ? ` · ${STATUS_LABEL[e.status]}` : " · offen"}</td>
+                <td className="py-1.5 pr-2 text-[9pt] text-steel">{detail(e)}{e.status !== "EINGEREICHT" ? ` · ${STATUS_LABEL[e.status]}` : " · offen"}{(() => { const t = taxSplit(e); return t.flat25 || t.taxable ? <span className="block">davon {euro(t.free)} steuerfrei{t.flat25 ? `, ${euro(t.flat25)} pauschal 25 %` : ""}{t.taxable ? `, ${euro(t.taxable)} lohnsteuerpflichtig` : ""}</span> : null; })()}</td>
                 <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{euro(e.amountCents)}</td>
               </tr>
             ))}
@@ -68,9 +70,12 @@ export default async function ZettelPage({ searchParams }: { searchParams: Promi
               <tr key={k}><td className="pr-4 text-steel">{KIND_LABEL[k]}</td><td className="tabular-nums">{euro(byKind(k))}</td></tr>
             ))}
             <tr className="border-t border-ink font-bold"><td className="pr-4 pt-1">Summe</td><td className="pt-1 tabular-nums">{euro(total)}</td></tr>
+            <tr><td className="pr-4 pt-3 text-steel">davon steuerfrei</td><td className="pt-3 tabular-nums">{euro(split.free)}</td></tr>
+            {split.flat25 > 0 && <tr><td className="pr-4 text-steel">pauschal versteuert 25 % (LSt. {euro(flat.lst)} + Soli {euro(flat.soli)} trägt die Firma)</td><td className="tabular-nums">{euro(split.flat25)}</td></tr>}
+            {split.taxable > 0 && <tr><td className="pr-4 text-steel">lohnsteuerpflichtig (über die Lohnabrechnung)</td><td className="tabular-nums">{euro(split.taxable)}</td></tr>}
           </tbody>
         </table>
-        <p className="mt-6 text-[8.5pt] text-steel">Verpflegungspauschalen und Kilometersatz nach § 9 EStG (Richtwerte). Belege zu Übernachtung und Auslagen liegen digital in Jarvis. Stand {formatDateTime(new Date())}.</p>
+        <p className="mt-6 text-[8.5pt] text-steel">Steuerfrei bis zu den Pauschalen nach § 9 Abs. 4a EStG bzw. 0,30 €/km; Verpflegung darüber bis zur Höhe der Pauschale pauschal versteuert nach § 40 Abs. 2 Satz 1 Nr. 4 EStG (Richtwerte, keine Steuerberatung). Belege zu Übernachtung und Auslagen liegen digital in Jarvis. Stand {formatDateTime(new Date())}.</p>
         <div className="mt-14 grid grid-cols-2 gap-10 text-[9pt]">
           <p className="border-t border-ink pt-1">Datum, Unterschrift Mitarbeiter</p>
           <p className="border-t border-ink pt-1">Datum, Unterschrift {c.name}</p>

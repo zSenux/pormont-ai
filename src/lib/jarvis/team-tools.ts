@@ -5,7 +5,8 @@ import { db } from "@/lib/db";
 import { addDaysYmd, berlinDateTime, berlinParts, formatDate, todayYmd } from "@/lib/berlin";
 import { formatHours } from "@/lib/hours";
 import { netMinutes, runningEntry, thisMonth, monthRange } from "@/lib/zeiten";
-import { KIND_LABEL, STATUS_LABEL, euro, kmAmount, mealAmount, type ExpenseKind } from "@/lib/spesen";
+import { KIND_LABEL, STATUS_LABEL, euro, kmAmount, mealAmountAt, type ExpenseKind } from "@/lib/spesen";
+import { spesenRates } from "@/lib/spesen-config";
 import { STAGE_LABEL } from "@/lib/akquise/stages";
 import type { ToolCtx } from "./tools";
 
@@ -114,12 +115,12 @@ export async function runTeamTool(name: string, i: Record<string, unknown>, ctx:
       if (q.aktion === "verpflegung") {
         if (!q.dauer) return "Wie lange warst du unterwegs: über 8 Std. an einem Tag, An-/Abreisetag oder ganzer Tag (24 Std.)?";
         if (await db.expense.findFirst({ where: { userId: user.id, kind: "VERPFLEGUNG", day: berlinDateTime(day), status: { not: "ABGELEHNT" } } })) return "Für diesen Tag ist schon eine Verpflegungspauschale eingetragen.";
-        amountCents = mealAmount(q.dauer, { breakfast: q.fruehstueck, lunch: q.mittag, dinner: q.abend });
+        amountCents = mealAmountAt(await spesenRates(), q.dauer, { breakfast: q.fruehstueck, lunch: q.mittag, dinner: q.abend });
         if (!amountCents) return "Alle Mahlzeiten gestellt – es bleibt keine Pauschale.";
         await db.expense.create({ data: { userId: user.id, day: berlinDateTime(day), kind: "VERPFLEGUNG", description: q.beschreibung ?? "Verpflegung", mealDay: q.dauer, breakfast: !!q.fruehstueck, lunch: !!q.mittag, dinner: !!q.abend, amountCents } });
       } else {
         if (!q.km) return "Wie viele Kilometer bist du gefahren (Hin und Rück)?";
-        amountCents = kmAmount(q.km);
+        amountCents = kmAmount(q.km, (await spesenRates()).km);
         await db.expense.create({ data: { userId: user.id, day: berlinDateTime(day), kind: "FAHRT", description: q.beschreibung ?? "Dienstfahrt", km: q.km, amountCents } });
       }
       return `Eingereicht: ${euro(amountCents)} am ${formatDate(berlinDateTime(day))}. Ein Administrator gibt frei. [Spesen](/spesen)`;

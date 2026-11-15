@@ -66,3 +66,20 @@ export async function setOrderStatus(id: string, status: string) {
   revalidatePath("/auftraege");
   revalidatePath(`/projekte/${order.projectId}`);
 }
+
+/** Auftragsbestätigung per Mail an den Kunden (nur nach Klick) */
+export async function sendConfirmationAction(orderId: string, _prev: { ok?: string; error?: string } | undefined, form: FormData): Promise<{ ok?: string; error?: string }> {
+  const user = await requireArea("auftraege");
+  const { sendConfirmation } = await import("@/lib/buchhaltung/auftragsbestaetigung");
+  const { BookError } = await import("@/lib/buchhaltung/docs");
+  try {
+    const r = await sendConfirmation(z.cuid().parse(orderId), { an: opt(form.get("an")) ?? "", cc: opt(form.get("cc")) ?? "", betreff: opt(form.get("betreff")) ?? "", text: opt(form.get("text")) ?? "" }, user);
+    revalidatePath(`/auftraege/${orderId}`);
+    return { ok: `Auftragsbestätigung ${r.number} gesendet an ${r.to}.` };
+  } catch (e) {
+    if (e instanceof BookError) return { error: e.message };
+    if (e instanceof z.ZodError) return { error: "Bitte Empfänger, Betreff und Text prüfen." };
+    console.error("[auftrag] AB senden", e);
+    return { error: "Senden fehlgeschlagen." };
+  }
+}

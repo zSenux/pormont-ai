@@ -7,7 +7,8 @@ import { db } from "@/lib/db";
 import { requireAdmin, requireUser } from "@/lib/auth/user";
 import { berlinDateTime, todayYmd } from "@/lib/berlin";
 import { sendPush } from "@/lib/push";
-import { KINDS, KIND_LABEL, euro, kmAmount, mealAmount, MEAL_RATES, parseEuro } from "@/lib/spesen";
+import { KINDS, KIND_LABEL, euro, kmAmount, mealAmountAt, MEAL_RATES, parseEuro } from "@/lib/spesen";
+import { saveSpesenRates, spesenRates } from "@/lib/spesen-config";
 import { monthRange } from "@/lib/zeiten";
 
 // Spesen: Mitarbeiter reichen ein, ein Administrator genehmigt bzw. lehnt ab und markiert als ausgezahlt.
@@ -35,20 +36,25 @@ export async function addExpense(_prev: Result, form: FormData): Promise<Result>
   const meals = { breakfast: form.get("breakfast") === "on", lunch: form.get("lunch") === "on", dinner: form.get("dinner") === "on" };
   let amountCents: number | null = null;
   let description = e.description ?? "";
+  const rates = await spesenRates();
+  const nightFlat = e.kind === "UEBERNACHTUNG" && form.get("pauschal") === "on";
   if (e.kind === "VERPFLEGUNG") {
     if (!e.mealDay) return { error: "Bitte angeben, wie lange du unterwegs warst." };
     const dup = await db.expense.findFirst({ where: { userId: user.id, kind: "VERPFLEGUNG", day: berlinDateTime(e.day), status: { not: "ABGELEHNT" } } });
     if (dup) return { error: "Für diesen Tag ist schon eine Verpflegungspauschale eingetragen." };
-    amountCents = mealAmount(e.mealDay, meals);
+    amountCents = mealAmountAt(rates, e.mealDay, meals);
     if (!amountCents) return { error: "Alle Mahlzeiten gestellt – es bleibt keine Pauschale." };
   } else if (e.kind === "FAHRT") {
     if (!e.km) return { error: "Bitte die gefahrenen Kilometer angeben." };
-    amountCents = kmAmount(e.km);
+    amountCents = kmAmount(e.km, rates.km);
+  } else if (nightFlat) {
+    amountCents = rates.night;
+    if (!amountCents) return { error: "Für Übernachtungen ohne Beleg ist keine Pauschale hinterlegt." };
   } else {
     amountCents = parseEuro(e.amount ?? "");
     if (!amountCents) return { error: "Bitte den Betrag angeben, z. B. 23,80." };
   }
-  if (!description) description = e.kind === "FAHRT" ? "Dienstfahrt" : KIND_LABEL[e.kind];
+  if (!description) description = e.kind === "FAHRT" ? "Dienstfahrt" : nightFlat ? "Übernachtung (Pauschale ohne Beleg)" : KIND_LABEL[e.kind];
   if (e.fileId) {
     const f = await db.storedFile.findUnique({ where: { id: e.fileId }, select: { kind: true } });
     if (f?.kind !== "spesen") return { error: "Beleg nicht gefunden – bitte neu fotografieren." };
@@ -57,7 +63,7 @@ export async function addExpense(_prev: Result, form: FormData): Promise<Result>
     data: {
       userId: user.id, day: berlinDateTime(e.day), kind: e.kind, description, projectId: e.projectId ?? null,
       km: e.kind === "FAHRT" ? e.km : null, mealDay: e.kind === "VERPFLEGUNG" ? e.mealDay : null,
-      ...(e.kind === "VERPFLEGUNG" ? meals : {}), amountCents, fileId: e.fileId ?? null,
+      ...(e.kind === "VERPFLEGUNG" ? meals : {}), amountCents, fileId: nightFlat ? null : (e.fileId ?? null),
     },
   });
   after(() => notifyAdmins(`Neue Spesen von ${user.name}`, `${KIND_LABEL[e.kind]}: ${description} · ${euro(amountCents!)}`, user.id));
@@ -105,4 +111,24 @@ export async function markPaid(userId: string, month: string) {
   const r = monthRange(z.string().regex(/^\d{4}-\d{2}$/).parse(month));
   await db.expense.updateMany({ where: { userId: z.cuid().parse(userId), status: "GENEHMIGT", day: { gte: r.from, lt: r.to } }, data: { status: "AUSGEZAHLT", paidAt: new Date() } });
   revalidatePath("/spesen");
+}
+
+/** Spesensätze der Firma speichern (nur Admin) */
+export async function saveRatesAction(_prev: Result, form: FormData): Promise<Result> {
+  await requireAdmin();
+  // Betrag in Euro → Cent; „0“ ist erlaubt (Satz wird nicht gezahlt)
+  const c = (k: string) => {
+    const raw = String(form.get(k) ?? "").trim();
+    if (/^0+([.,]0*)?$/.test(raw)) return 0;
+    return parseEuro(raw) ?? NaN;
+  };
+  const vals = { TAG8: c("TAG8"), REISE: c("REISE"), TAG24: c("TAG24"), km: c("km"), night: c("night") };
+  if (Object.values(vals).some((v) => !Number.isFinite(v))) return { error: "Bitte alle Sätze als Betrag eintragen, z. B. 20,00." };
+  try {
+    await saveSpesenRates({ meal: { TAG8: vals.TAG8, REISE: vals.REISE, TAG24: vals.TAG24 }, km: vals.km, night: vals.night });
+  } catch {
+    return { error: "Sätze außerhalb des erlaubten Bereichs (km höchstens 2,00 €)." };
+  }
+  revalidatePath("/spesen");
+  return { ok: "Spesensätze gespeichert." };
 }

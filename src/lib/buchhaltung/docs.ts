@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import type { Prisma, SalesDoc, Customer } from "@/generated/prisma/client";
-import { addDaysYmd, berlinDateTime, berlinParts, todayYmd } from "@/lib/berlin";
-import { bookConfig, missingForInvoices, type BookConfig } from "./config";
+import { addDaysYmd, berlinDateTime, berlinParts, formatDate, todayYmd } from "@/lib/berlin";
+import { bookConfig, defaultOutro, missingForInvoices, type BookConfig } from "./config";
 import { computeTotals, fmtEuroCents, linesSchema, readLines, type Line } from "./money";
 import { buildCii } from "./xrechnung";
 import { renderDocPdf } from "./pdf";
@@ -212,6 +212,13 @@ function draftData(i: DraftInput) {
   };
 }
 
+/** „AN-2026-0012 vom 03.11.2026“ für den Platzhalter {angebot} */
+async function quoteRef(id: string | null | undefined) {
+  if (!id) return null;
+  const q = await db.salesDoc.findUnique({ where: { id }, select: { kind: true, number: true, date: true } });
+  return q?.kind === "ANGEBOT" && q.number ? `${q.number} vom ${formatDate(q.date)}` : null;
+}
+
 export async function createDraft(kind: DocKind, input: DraftInput, user: Actor, extra: { sourceId?: string | null } = {}) {
   const i = draftInput.parse(input);
   if (kind !== "RECHNUNG") i.invoiceType = undefined;
@@ -228,7 +235,7 @@ export async function createDraft(kind: DocKind, input: DraftInput, user: Actor,
       ...draftData({ ...i, lines }),
       date: dayOf(i.date ?? today),
       intro: i.intro !== undefined ? i.intro || null : kind === "ANGEBOT" ? cfg.quoteIntro : kind === "RECHNUNG" ? cfg.invoiceIntro : null,
-      outro: i.outro !== undefined ? i.outro || null : kind === "ANGEBOT" ? cfg.quoteOutro : kind === "RECHNUNG" ? cfg.invoiceOutro : null,
+      outro: i.outro !== undefined ? i.outro || null : defaultOutro(cfg, kind, await quoteRef(extra.sourceId)),
       dueDate: kind === "ANGEBOT" ? dayOf(i.dueDate ?? addDaysYmd(i.date ?? today, cfg.quoteDays)) : null,
       netCents: t.netCents,
       taxCents: t.taxCents,
