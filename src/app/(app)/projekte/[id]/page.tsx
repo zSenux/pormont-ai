@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Calculator, CalendarPlus, Clock, FileText, MapPin, NotebookPen, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, BookOpen, Calculator, Wrench, CalendarPlus, Clock, FileText, MapPin, NotebookPen, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -44,6 +44,7 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
   });
   if (!p) notFound();
   const calc = await calcProject(p.id);
+  const [openDefects, diaryDays] = await Promise.all([db.defect.count({ where: { projectId: p.id, status: { in: ["OFFEN", "IN_ARBEIT", "BEHOBEN"] } } }), db.diaryEntry.count({ where: { projectId: p.id } })]);
   const users = me.role === "ADMIN" ? await db.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }) : [];
   const total = p.times.reduce((s, t) => s + t.minutes, 0);
   const perUser = [...p.times.reduce((m, t) => m.set(t.user.name, (m.get(t.user.name) ?? 0) + t.minutes), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
@@ -89,6 +90,12 @@ export default async function ProjektDetail({ params }: { params: Promise<{ id: 
             <span className={clsx("text-xs font-semibold", calc.marginPct === null ? "text-steel" : calc.marginPct < 0 ? "text-bad" : calc.marginPct < 15 ? "text-warn" : "text-ok")}>
               {calc.marginPct !== null ? `${calc.marginPct.toLocaleString("de-DE", { maximumFractionDigits: 0 })} % Marge` : `Kosten ${formatEuro(calc.total)}`}
             </span>
+          </Link>
+          <Link href={`/projekte/${p.id}/bautagebuch`} className="btn-secondary">
+            <BookOpen className="size-4" /> Bautagebuch {diaryDays > 0 && <span className="text-xs font-semibold text-steel">{diaryDays} Tage</span>}
+          </Link>
+          <Link href={`/maengel?projekt=${p.id}`} className="btn-secondary">
+            <Wrench className="size-4" /> Mängel {openDefects > 0 && <span className="text-xs font-semibold text-bad">{openDefects} offen</span>}
           </Link>
           <details className="w-full">
             <summary className="btn-secondary inline-flex cursor-pointer list-none">

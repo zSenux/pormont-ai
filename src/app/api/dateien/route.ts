@@ -9,7 +9,7 @@ import { analyzeReceipt, transcribeDocument } from "@/lib/receipts";
 // Route-Handler statt Server-Action wegen der Dateigröße.
 export const maxDuration = 120;
 
-const meta = z.object({ kind: z.enum(["dokument", "foto", "beleg", "spesen"]), projectId: z.cuid().nullish(), note: z.string().trim().max(4000).nullish(), assemblyId: z.cuid().nullish(), phase: z.enum(["vorher", "nachher"]).nullish() });
+const meta = z.object({ kind: z.enum(["dokument", "foto", "beleg", "spesen"]), projectId: z.cuid().nullish(), note: z.string().trim().max(4000).nullish(), assemblyId: z.cuid().nullish(), phase: z.enum(["vorher", "nachher"]).nullish(), diaryId: z.cuid().nullish(), defectId: z.cuid().nullish() });
 
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -23,13 +23,24 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: "Ungültiger Upload." }, { status: 400 });
   }
-  const m = meta.safeParse({ kind: form.get("kind"), projectId: form.get("projectId") || null, note: form.get("note") || null, assemblyId: form.get("assemblyId") || null, phase: form.get("phase") || null });
+  const m = meta.safeParse({ kind: form.get("kind"), projectId: form.get("projectId") || null, note: form.get("note") || null, assemblyId: form.get("assemblyId") || null, phase: form.get("phase") || null, diaryId: form.get("diaryId") || null, defectId: form.get("defectId") || null });
   if (!m.success) return Response.json({ error: "Ungültige Angaben." }, { status: 400 });
   // Montage-Fotos: Projekt kommt aus der Montage
   if (m.data.assemblyId) {
     const asm = await db.assembly.findUnique({ where: { id: m.data.assemblyId }, select: { projectId: true } });
     if (!asm) return Response.json({ error: "Montage nicht gefunden." }, { status: 404 });
     m.data.projectId = asm.projectId;
+  }
+  // Bautagebuch-/Mangel-Fotos: Projekt kommt aus dem Eintrag
+  if (m.data.diaryId) {
+    const e = await db.diaryEntry.findUnique({ where: { id: m.data.diaryId }, select: { projectId: true } });
+    if (!e) return Response.json({ error: "Bautagebuch-Eintrag nicht gefunden." }, { status: 404 });
+    m.data.projectId = e.projectId;
+  }
+  if (m.data.defectId) {
+    const d = await db.defect.findUnique({ where: { id: m.data.defectId }, select: { projectId: true } });
+    if (!d) return Response.json({ error: "Mangel nicht gefunden." }, { status: 404 });
+    m.data.projectId = d.projectId;
   }
   if (m.data.projectId && !(await db.project.findUnique({ where: { id: m.data.projectId }, select: { id: true } }))) return Response.json({ error: "Projekt nicht gefunden." }, { status: 404 });
   const files = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 10);
@@ -41,10 +52,11 @@ export async function POST(req: Request) {
       const stored = await storeFile({ name: f.name, mime: f.type, data: Buffer.from(await f.arrayBuffer()), kind: m.data.kind, projectId: m.data.projectId, uploadedBy: user.name });
       let receipt = null;
       if (m.data.assemblyId) await db.storedFile.update({ where: { id: stored.id }, data: { assemblyId: m.data.assemblyId, meta: { phase: m.data.phase ?? "nachher" } } });
+      if (m.data.diaryId || m.data.defectId) await db.storedFile.update({ where: { id: stored.id }, data: { diaryId: m.data.diaryId ?? null, defectId: m.data.defectId ?? null, ...(m.data.defectId ? { meta: { phase: m.data.phase ?? "vorher" } } : {}) } });
       if (m.data.kind === "beleg" || m.data.kind === "spesen") receipt = await analyzeReceipt(stored.id).catch((e) => (console.error("[beleg]", e), null));
       // Scans ohne Text im Hintergrund abschreiben lassen (Suche)
       if (m.data.kind === "dokument" && !stored.text) after(() => transcribeDocument(stored.id).catch((e) => console.error("[dokument]", e)));
-      if (m.data.kind === "foto" && m.data.projectId) await db.projectNote.create({ data: { projectId: m.data.projectId, fileId: stored.id, text: files.length === 1 ? m.data.note : null, authorName: user.name } });
+      if (m.data.kind === "foto" && m.data.projectId && !m.data.diaryId && !m.data.defectId) await db.projectNote.create({ data: { projectId: m.data.projectId, fileId: stored.id, text: files.length === 1 ? m.data.note : null, authorName: user.name } });
       out.push({ id: stored.id, name: stored.name, hasText: Boolean(stored.text), receipt });
     }
     if (m.data.kind === "foto" && m.data.projectId && m.data.note && files.length !== 1) await db.projectNote.create({ data: { projectId: m.data.projectId, text: m.data.note, authorName: user.name } });

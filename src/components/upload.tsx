@@ -36,6 +36,8 @@ export function Uploader({
   hint,
   assemblyId,
   phase,
+  diaryId,
+  defectId,
 }: {
   kind: "dokument" | "foto" | "beleg";
   projectId?: string;
@@ -48,6 +50,9 @@ export function Uploader({
   /** Montage-Foto: Montage-ID und vorher/nachher */
   assemblyId?: string;
   phase?: "vorher" | "nachher";
+  /** Foto zum Bautagebuch-Eintrag bzw. zum Mangel */
+  diaryId?: string;
+  defectId?: string;
 }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
@@ -65,6 +70,8 @@ export function Uploader({
       if (projectId) form.set("projectId", projectId);
       if (assemblyId) form.set("assemblyId", assemblyId);
       if (phase) form.set("phase", phase);
+      if (diaryId) form.set("diaryId", diaryId);
+      if (defectId) form.set("defectId", defectId);
       if (withNote && note.trim()) form.set("note", note.trim());
       for (const f of Array.from(list ?? [])) form.append("files", await shrink(f));
       const res = await fetch("/api/dateien", { method: "POST", body: form });

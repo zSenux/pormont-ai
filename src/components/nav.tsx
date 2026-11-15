@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, ClipboardList, Factory, Wrench, PenTool, ShoppingCart, Palmtree, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck, Warehouse } from "lucide-react";
+import { BookOpen, Gavel, ShieldAlert, Calendar, ClipboardList, Factory, Wrench, PenTool, ShoppingCart, Palmtree, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck, Warehouse } from "lucide-react";
 import { clsx } from "clsx";
 import { PATH_AREA, type Area } from "@/lib/rights-shared";
 
@@ -22,10 +22,13 @@ const DESKTOP = [
   { href: "/zeichnungen", label: "Zeichnungen", icon: PenTool },
   { href: "/fertigung", label: "Fertigung", icon: Factory },
   { href: "/montage", label: "Montage", icon: Wrench },
+  { href: "/bautagebuch", label: "Bautagebuch", icon: BookOpen },
+  { href: "/maengel", label: "Mängel", icon: ShieldAlert },
   { href: "/stunden", label: "Stunden", icon: Clock },
   { href: "/abwesenheiten", label: "Urlaub", icon: Palmtree },
   { href: "/spesen", label: "Spesen", icon: Receipt },
   { href: "/akquise", label: "Akquise", icon: Target },
+  { href: "/ausschreibungen", label: "Ausschreibungen", icon: Gavel },
   { href: "/lieferanten", label: "Lieferanten", icon: Truck },
   { href: "/bestellungen", label: "Bestellungen", icon: ShoppingCart },
   { href: "/lager", label: "Lager", icon: Warehouse },
@@ -42,7 +45,7 @@ const MOBILE = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/auftraege", "/zeichnungen", "/fertigung", "/montage", "/projekte", "/stunden", "/abwesenheiten", "/spesen", "/akquise", "/lieferanten", "/bestellungen", "/lager", "/buchhaltung", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
+  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/bautagebuch", "/maengel", "/ausschreibungen", "/auftraege", "/zeichnungen", "/fertigung", "/montage", "/projekte", "/stunden", "/abwesenheiten", "/spesen", "/akquise", "/lieferanten", "/bestellungen", "/lager", "/buchhaltung", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
 ];
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
