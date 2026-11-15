@@ -1,3 +1,4 @@
+import { noLogin } from "@/lib/personal-shared";
 import Link from "next/link";
 import { areasOf, AREA_LABEL, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
 import { navFor, type NavGroup } from "@/lib/nav-shared";
@@ -187,7 +188,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
             {users.map((u) => (
               <li key={u.id} className="flex items-center gap-2 py-2 text-sm">
                 <span className="flex-1">
-                  <b>{u.name}</b> · {u.email}
+                  <b>{u.name}</b> · {noLogin(u) ? <span className="text-steel">ohne App-Zugang (nur Personalakte)</span> : u.email}
                   <span className="block text-xs text-steel">{u.role === "ADMIN" ? "Administrator" : "Mitarbeiter"}{u.lastLoginAt ? ` · zuletzt ${formatDateTime(u.lastLoginAt)}` : " · noch nie angemeldet"}</span>
                   {u.role !== "ADMIN" && (
                     <form action={setUserFunktion.bind(null, u.id)} className="mt-1 flex items-center gap-2">

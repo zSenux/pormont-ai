@@ -1681,6 +1681,9 @@ model EmployeeProfile {
   /// Lohn/Gehalt als Freitext (z. B. „19,50 €/Std.“)
   wage             String?
   notes            String?
+  /// Personalfragebogen (Steuer-ID, SV-Nr., Bank, Konfession …) als JSON – nur Admin
+  questionnaire    Json?
+  questionnaireAt  DateTime?
   updatedBy        String?
   updatedAt        DateTime  @updatedAt
 }
@@ -1690,7 +1693,7 @@ model EmployeeDoc {
   id         String    @id @default(cuid())
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  /// ARBEITSVERTRAG | FUEHRERSCHEIN | QUALIFIKATION | UNTERWEISUNG | ARBEITSMEDIZIN | ERSTE_HILFE | SONSTIGES
+  /// ARBEITSVERTRAG | FRAGEBOGEN | AUSWEIS | AUFENTHALT | SOZIALVERSICHERUNG | STEUER | ZEUGNIS | FUEHRERSCHEIN | QUALIFIKATION | UNTERWEISUNG | ARBEITSMEDIZIN | ERSTE_HILFE | SONSTIGES
   kind       String
   title      String
   number     String?

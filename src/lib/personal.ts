@@ -1,9 +1,11 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/berlin";
-import { storeFile } from "@/lib/files";
+import { randomBytes } from "node:crypto";
+import { PDFDocument } from "pdf-lib";
+import { guessMime, storeFile } from "@/lib/files";
 import { daysLeft, expiryState, EXPIRY_LABEL, WARN_DAYS } from "@/lib/nachunternehmer-shared";
-import { CONTRACT_TYPE_LABEL, dueOf, EMP_DOC_LABEL, EMP_SENSITIVE, isSensitive, type ContractType, type EmpDocKind } from "@/lib/personal-shared";
+import { CONTRACT_TYPE_LABEL, dueOf, EMP_DOC_LABEL, EMP_SENSITIVE, isSensitive, NO_LOGIN_HASH, Q_FIELDS, questionnaireState, type ContractType, type EmpDocKind } from "@/lib/personal-shared";
 
 // Digitale Personalakte: Stammdaten (EmployeeProfile) und Dokumente mit Ablaufdatum (EmployeeDoc).
 // Alles Sensible nur für Administratoren. Mitarbeiter sehen nur ihre eigenen, nicht sensiblen Einträge
@@ -25,13 +27,77 @@ export async function saveProfile(userId: string, i: ProfileInput, actor: Actor)
   return db.employeeProfile.upsert({ where: { userId }, create: { userId, ...i, updatedBy: actor.name }, update: { ...i, updatedBy: actor.name } });
 }
 
-export async function addEmployeeDoc(userId: string, i: { kind: EmpDocKind; title: string; number?: string | null; issuedAt?: Date | null; validUntil?: Date | null; nextCheck?: Date | null; note?: string | null; file?: { name: string; mime: string; data: Buffer } | null }, actor: Actor) {
+type Upload = { name: string; mime: string; data: Buffer };
+
+/** Mehrere Fotos/Seiten (z. B. ein abfotografierter Arbeitsvertrag) zu einem PDF zusammenfügen – A4, Bild eingepasst */
+export async function scanToPdf(files: Upload[]): Promise<Upload> {
+  if (files.length === 1) return files[0];
+  if (files.length > 30) throw new PersonalError("Höchstens 30 Seiten auf einmal.");
+  const out = await PDFDocument.create();
+  const A4 = [595.28, 841.89] as const;
+  for (const f of files) {
+    const mime = guessMime(f.name, f.mime);
+    if (mime === "application/pdf") {
+      const src = await PDFDocument.load(f.data, { ignoreEncryption: true }).catch(() => null);
+      if (!src) throw new PersonalError(`„${f.name}“ lässt sich nicht lesen.`);
+      for (const pg of await out.copyPages(src, src.getPageIndices())) out.addPage(pg);
+      continue;
+    }
+    if (mime !== "image/jpeg" && mime !== "image/png") throw new PersonalError(`„${f.name}“: Für mehrere Seiten bitte Fotos als JPG/PNG oder PDF.`);
+    const img = mime === "image/png" ? await out.embedPng(f.data) : await out.embedJpg(f.data);
+    const landscape = img.width > img.height;
+    const [W, H] = landscape ? [A4[1], A4[0]] : A4;
+    const scale = Math.min((W - 30) / img.width, (H - 30) / img.height);
+    const page = out.addPage([W, H]);
+    page.drawImage(img, { x: (W - img.width * scale) / 2, y: (H - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
+  }
+  return { name: "Scan.pdf", mime: "application/pdf", data: Buffer.from(await out.save()) };
+}
+
+export async function addEmployeeDoc(userId: string, i: { kind: EmpDocKind; title: string; number?: string | null; issuedAt?: Date | null; validUntil?: Date | null; nextCheck?: Date | null; note?: string | null; file?: Upload | null; files?: Upload[] }, actor: Actor) {
   adminOnly(actor);
   const u = await db.user.findUnique({ where: { id: userId }, select: { name: true } });
   if (!u) throw new PersonalError("Mitarbeiter nicht gefunden.");
-  const f = i.file ? await storeFile({ ...i.file, name: `${u.name} – ${i.title} – ${i.file.name}`, kind: "personal", uploadedBy: actor.name }) : null;
+  const uploads = i.files?.length ? i.files : i.file ? [i.file] : [];
+  const one = uploads.length ? await scanToPdf(uploads) : null;
+  const f = one ? await storeFile({ ...one, name: `${u.name} – ${i.title} – ${one.name}`, kind: "personal", uploadedBy: actor.name }) : null;
   return db.employeeDoc.create({ data: { userId, kind: i.kind, title: i.title, number: i.number || null, issuedAt: i.issuedAt ?? null, validUntil: i.validUntil ?? null, nextCheck: i.nextCheck ?? null, note: i.note || null, fileId: f?.id ?? null, createdBy: actor.name } });
 }
+
+/** Neuen Mitarbeiter anlegen – ohne App-Zugang (Monteure, Aushilfen). Einen Zugang gibt der Admin später unter Einstellungen → Team. */
+export async function createEmployee(i: { name: string; jobTitle?: string | null; entryDate?: Date | null; contractType?: ContractType | null; funktion?: string | null }, actor: Actor) {
+  adminOnly(actor);
+  const email = `personal-${randomBytes(6).toString("hex")}@ohne-zugang.invalid`;
+  return db.user.create({
+    data: { name: i.name, email, passwordHash: NO_LOGIN_HASH, role: "MEMBER", funktion: i.funktion ?? null, employeeProfile: { create: { jobTitle: i.jobTitle ?? null, entryDate: i.entryDate ?? null, contractType: i.contractType ?? null, updatedBy: actor.name } } },
+    select: { id: true },
+  });
+}
+
+/** Personalfragebogen speichern (nur bekannte Felder, Texte gekürzt); Geburtsdatum/Anschrift/Notfall auch in die Stammdaten */
+export async function saveQuestionnaire(userId: string, values: Record<string, string>, actor: Actor) {
+  adminOnly(actor);
+  const q: Record<string, string> = {};
+  for (const f of Q_FIELDS) {
+    const v = (values[f.key] ?? "").trim().slice(0, 200);
+    if (!v) continue;
+    if (f.type === "select" && f.options && !f.options.includes(v)) continue;
+    if (f.type === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) continue;
+    q[f.key] = v;
+  }
+  if (q.iban) q.iban = q.iban.replace(/\s+/g, "").toUpperCase();
+  if (q.steuerId && !/^\d{11}$/.test(q.steuerId.replace(/\s+/g, ""))) throw new PersonalError("Die Steuer-ID hat 11 Ziffern.");
+  if (q.steuerId) q.steuerId = q.steuerId.replace(/\s+/g, "");
+  const extra = { ...(q.notfall ? { emergencyContact: q.notfall } : {}), ...(q.telefon ? { privatePhone: q.telefon } : {}), ...(q.email ? { privateEmail: q.email } : {}) };
+  await db.employeeProfile.upsert({
+    where: { userId },
+    create: { userId, questionnaire: q, questionnaireAt: new Date(), updatedBy: actor.name, ...extra },
+    update: { questionnaire: q, questionnaireAt: new Date(), updatedBy: actor.name, ...extra },
+  });
+  return questionnaireState(q);
+}
+
+export const readQuestionnaire = (v: unknown): Record<string, string> => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => typeof x === "string")) as Record<string, string> : {});
 
 /** Kontrolle erledigt (z. B. Führerscheinkontrolle): nächste Kontrolle in `months` Monaten */
 export async function markChecked(docId: string, months: number, actor: Actor) {

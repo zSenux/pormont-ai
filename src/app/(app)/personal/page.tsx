@@ -1,13 +1,16 @@
 import Link from "next/link";
-import { AlertTriangle, IdCard, ShieldCheck } from "lucide-react";
+import { AlertTriangle, IdCard, ShieldCheck, UserPlus } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate } from "@/lib/berlin";
 import { expiringEmployeeDocs } from "@/lib/personal";
-import { dueOf, EMP_DOC_LABEL, EMP_SENSITIVE, type EmpDocKind } from "@/lib/personal-shared";
+import { CONTRACT_TYPE_LABEL, CONTRACT_TYPES, dueOf, EMP_DOC_LABEL, EMP_SENSITIVE, noLogin, questionnaireState, type EmpDocKind } from "@/lib/personal-shared";
+import { readQuestionnaire } from "@/lib/personal";
+import { StateForm } from "@/components/state-form";
+import { newEmployeeAction } from "@/app/actions/personal";
 import { daysLeft, expiryState, EXPIRY_LABEL, EXPIRY_TONE } from "@/lib/nachunternehmer-shared";
-import { FUNKTION_LABEL, type Funktion } from "@/lib/rights-shared";
+import { FUNKTION_LABEL, FUNKTIONEN, type Funktion } from "@/lib/rights-shared";
 
 export const metadata = { title: "Personalakte" };
 export const dynamic = "force-dynamic";
@@ -48,7 +51,7 @@ export default async function PersonalPage() {
   }
 
   const [users, expiring] = await Promise.all([
-    db.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, funktion: true, role: true, employeeProfile: { select: { jobTitle: true, entryDate: true, exitDate: true, contractType: true, contractUntil: true } }, employeeDocs: { select: { kind: true, title: true, validUntil: true, nextCheck: true } } } }),
+    db.user.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, email: true, passwordHash: true, funktion: true, role: true, employeeProfile: { select: { jobTitle: true, entryDate: true, exitDate: true, contractType: true, contractUntil: true, questionnaire: true } }, employeeDocs: { select: { kind: true, title: true, validUntil: true, nextCheck: true } } } }),
     expiringEmployeeDocs(),
   ]);
   // Qualifikations-Matrix: häufigste Bezeichnungen (Führerschein, Qualifikation, Unterweisung, Ersthelfer)
@@ -78,6 +81,22 @@ export default async function PersonalPage() {
         </section>
       )}
 
+      <details className="card p-5" open={users.length < 2}>
+        <summary className="flex cursor-pointer items-center gap-2 font-semibold"><UserPlus className="size-4 text-brand" /> Mitarbeiter anlegen</summary>
+        <p className="mt-1 text-sm text-steel">Legt die Akte an – auch für Kollegen ohne Jarvis-Zugang (z. B. Monteure). Danach geht es direkt zum Personalfragebogen; Arbeitsvertrag und Ausweis kannst du in der Akte abfotografieren.</p>
+        <StateForm action={newEmployeeAction} submit="Anlegen und Fragebogen ausfüllen" className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <input name="name" required minLength={2} maxLength={80} placeholder="Vor- und Nachname" className="input lg:col-span-2" aria-label="Name" />
+          <input name="jobTitle" placeholder="Tätigkeit, z. B. Metallbauer" className="input" aria-label="Tätigkeit" />
+          <label className="text-xs text-steel">Eintritt <input type="date" name="entryDate" className="input mt-1 w-full" /></label>
+          <label className="text-xs text-steel">Vertragsart
+            <select name="contractType" defaultValue="" className="input mt-1 w-full"><option value="">–</option>{CONTRACT_TYPES.map((c) => <option key={c} value={c}>{CONTRACT_TYPE_LABEL[c]}</option>)}</select>
+          </label>
+          <label className="text-xs text-steel lg:col-span-2">Funktion im Betrieb (für spätere Rechte)
+            <select name="funktion" defaultValue="" className="input mt-1 w-full"><option value="">–</option>{FUNKTIONEN.map((f) => <option key={f} value={f}>{FUNKTION_LABEL[f]}</option>)}</select>
+          </label>
+        </StateForm>
+      </details>
+
       <section className="card p-5">
         <h2 className="font-semibold">Team</h2>
         <ul className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -93,7 +112,8 @@ export default async function PersonalPage() {
                     <span className="flex items-center gap-2 font-semibold">{u.name} <span className={clsx("size-2 rounded-full", tone)} /></span>
                     <span className="block text-xs text-steel">{p?.jobTitle ?? (u.funktion ? FUNKTION_LABEL[u.funktion as Funktion] : u.role === "ADMIN" ? "Administrator" : "—")}</span>
                     <span className="block text-xs text-steel">{p?.entryDate ? `seit ${formatDate(p.entryDate)}` : "Stammdaten fehlen"}{p?.exitDate ? ` · Austritt ${formatDate(p.exitDate)}` : ""}{p?.contractUntil ? ` · befristet bis ${formatDate(p.contractUntil)}` : ""}</span>
-                    <span className="block text-xs text-steel">{u.employeeDocs.length} Dokumente</span>
+                    <span className="block text-xs text-steel">{u.employeeDocs.length} Dokumente · Fragebogen {(() => { const q = questionnaireState(readQuestionnaire(p?.questionnaire)); return q.filled === q.total ? "vollständig" : `${q.filled}/${q.total}`; })()}</span>
+                    {noLogin(u) && <span className="mt-1 inline-block rounded-full bg-mist px-2 py-0.5 text-[11px] text-steel">ohne App-Zugang</span>}
                   </span>
                 </Link>
               </li>
