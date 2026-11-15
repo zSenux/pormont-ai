@@ -22,7 +22,7 @@ export default async function BautagebuchUebersicht() {
     <main className="mx-auto max-w-3xl space-y-5 px-4 py-6 md:py-10">
       <div>
         <h1 className="page-title">Bautagebuch</h1>
-        <p className="mt-1 text-sm text-steel">Je Baustelle ein Eintrag pro Tag: Wetter, Personal, Arbeiten, Behinderungen, Fotos – als PDF für den Bauherrn. Heute schon {todayCount} {todayCount === 1 ? "Eintrag" : "Einträge"}.</p>
+        <p className="mt-1 text-sm text-steel">Je Baustelle ein Bautagesbericht pro Tag im Aufbau des Kunden-Formulars: Witterung, Arbeitseinsatz, Geräte, Arbeiten, Änderungen, Vorkommnisse, Fotos – als PDF zum Abgeben. Heute schon {todayCount} {todayCount === 1 ? "Eintrag" : "Einträge"}.</p>
       </div>
       <section className="card divide-y divide-line">
         {projects.length === 0 && <p className="p-5 text-sm text-steel">Keine laufenden Projekte.</p>}

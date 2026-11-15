@@ -276,8 +276,17 @@ for (const [off, net, paid] of [[-160, 18400, true], [-130, 26100, true], [-100,
     [-2, "teils bewölkt, 5–12 °C, trocken", [["Mehmet Yılmaz", 8], ["Sven Müller", 8], ["Tobias Kern", 4]], "Podest gesetzt und verschraubt, Treppenwangen eingehoben (Hubsteiger), 8 von 16 Stufen montiert", "Gitterroststufen geliefert (Lieferschein 4711), Hubsteiger 12 m gemietet", null, null],
     [-1, "sonnig, 3–13 °C, trocken, Wind bis 12 km/h", [["Mehmet Yılmaz", 8], ["Sven Müller", 7.5]], "Restliche Stufen montiert, Geländerpfosten gesetzt, Schweißnähte Podest kontrolliert", null, "Estrich im Treppenhaus noch nicht begehbar – Zugang über Nebeneingang", "Kunde vor Ort: Handlauf zusätzlich an der Wandseite gewünscht (Nachtrag)"],
   ];
-  for (const [off, weather, crew, work, material, obstacles, visitors] of diary) {
-    await db.diaryEntry.create({ data: { projectId, day: berlinDateTime(addDaysYmd(todayYmd(), off)), weather, weatherSource: "manuell", crew: crew.map(([name, hours]) => ({ name, userId: users[name], hours })), work, material, obstacles, visitors, authorName: "Mehmet Yılmaz" } });
+  // Kopf wie im Formular des Auftraggebers (Bautagesbericht)
+  await db.project.update({ where: { id: projectId }, data: { diaryHead: { client: "GOLDBECK Montage GmbH Bereich Süd", clientNo: "GB-S-24117", trade: "Stahlbau – Treppe und Podest", startNo: 38 } } });
+  const reports = [
+    { equipment: { telestapler: "1 × 3 Std." }, temp: 11 },
+    { equipment: {}, temp: 9, rain: true, sun: false, snow: false, changes: [{ men: 1, hours: 2, crane: null, platforms: null, text: "Abdecken der Konsolen wegen Regen (Behinderung)" }] },
+    { equipment: { autokran: "1 × 4 Std.", scherenbuehne: "1 × 8 Std." }, temp: 12, changes: [{ men: 2, hours: 1.5, crane: 1, platforms: null, text: "Zusätzliches Umsetzen Wangen wegen Gerüst" }], orders: "Anfahrtspauschale 78,–" },
+    { equipment: { scherenbuehne: "1 × 7,5 Std." }, temp: 13, changes: [{ men: 2, hours: 3, crane: null, platforms: 3, text: "Zusatzhandlauf Wandseite aufmessen (Nachtrag)" }], orders: "Fachbauleiter Hr. Schmidt: Handlauf Wandseite zusätzlich ausführen, Nachtragsangebot bis Freitag" },
+  ];
+  for (const [k, [off, weather, crew, work, material, obstacles, visitors]] of diary.entries()) {
+    const report = { no: 38 + k, foreman: "Mehmet Yılmaz", trade: "Stahlbau – Treppe und Podest", earlyFrom: "07:00", earlyTo: k === 1 ? "13:00" : "16:00", ...reports[k] };
+    await db.diaryEntry.create({ data: { projectId, day: berlinDateTime(addDaysYmd(todayYmd(), off)), weather, weatherSource: "manuell", crew: crew.map(([name, hours]) => ({ name, userId: users[name], hours, role: name === "Mehmet Yılmaz" ? "Richtmeister" : "Monteur" })), work, material, obstacles, visitors, report, authorName: "Mehmet Yılmaz" } });
   }
 }
 
