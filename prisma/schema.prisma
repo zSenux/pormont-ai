@@ -46,6 +46,8 @@ model User {
   /// Urlaub & Krank: Abwesenheiten und Urlaubsanspruch je Jahr (leer = URLAUB_TAGE bzw. 30)
   absences       Absence[]
   vacationDays   Int?
+  /// Mängel, die diesem Mitarbeiter zugewiesen sind
+  defects        Defect[]         @relation("DefectAssignee")
 
   /// Telefon-Jarvis: Handynummer im Format +49… (Anrufer-Erkennung) und PIN (scrypt).
   /// Eindeutigkeit prüft die App beim Speichern – kein @unique, sonst bricht `prisma db push`
@@ -253,6 +255,11 @@ model Project {
   production ProductionJob[]
   assemblies Assembly[]
   drawings   Drawing[]
+  /// Bautagebuch (ein Eintrag je Tag) und Mängel
+  diary      DiaryEntry[]
+  defects    Defect[]
+  /// Gewährleistung bis (leer = Abnahme der Montage + GEWAEHRLEISTUNG_JAHRE, Standard 5 Jahre BGB)
+  warrantyUntil DateTime?
 
   @@index([status])
   @@index([customerId])
@@ -444,8 +451,15 @@ model StoredFile {
   notes ProjectNote[]
   /// Zeichnung: diese Datei ist ein Index (Version) einer Zeichnung
   drawingVersions DrawingVersion[]
+  /// Foto im Bautagebuch bzw. zu einem Mangel (meta.phase vorher/nachher)
+  diaryId    String?
+  diary      DiaryEntry? @relation(fields: [diaryId], references: [id], onDelete: SetNull)
+  defectId   String?
+  defect     Defect?     @relation(fields: [defectId], references: [id], onDelete: SetNull)
 
   @@index([kind, createdAt])
+  @@index([diaryId])
+  @@index([defectId])
   @@index([projectId])
   @@index([sha256])
   @@index([assemblyId])
@@ -1384,4 +1398,127 @@ model Absence {
 
   @@index([userId, from])
   @@index([status, from])
+}
+
+/// Bautagebuch: ein Eintrag je Projekt und Tag (Wetter, Personal, Arbeiten, Behinderungen, Fotos) – PDF für den Bauherrn
+model DiaryEntry {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Tag (00:00 Berliner Zeit als UTC)
+  day         DateTime
+  /// Wetter als Text, z. B. „bewölkt, 8–14 °C, 2 mm Regen, Wind 25 km/h“
+  weather     String?
+  weatherCode Int?
+  tempMin     Float?
+  tempMax     Float?
+  rainMm      Float?
+  windKmh     Float?
+  /// open-meteo | manuell
+  weatherSource String?
+  /// Personal [{ name, userId?, hours }]
+  crew        Json         @default("[]")
+  /// ausgeführte Arbeiten
+  work        String?
+  /// Material, Lieferungen, Geräte
+  material    String?
+  /// Behinderungen, Besonderheiten, Mehrleistungen
+  obstacles   String?
+  /// Besucher, Anordnungen des Bauherrn/Bauleiters
+  visitors    String?
+  authorName  String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  files       StoredFile[]
+
+  @@unique([projectId, day])
+  @@index([day])
+}
+
+/// Mangel (Mängelmanagement): MG-2026-0001, Foto vorher/nachher, Zuständiger, Frist, Gewährleistung
+model Defect {
+  id          String       @id @default(cuid())
+  /// MG-2026-0001 (Nummernkreis „MANGEL-<Jahr>“)
+  number      String       @unique
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  /// Ort/Bauteil, z. B. „Treppe EG, Podest links“
+  location    String?
+  /// GERING | MITTEL | SCHWER
+  severity    String       @default("MITTEL")
+  /// OFFEN | IN_ARBEIT | BEHOBEN | ERLEDIGT | ABGELEHNT
+  status      String       @default("OFFEN")
+  /// INTERN | KUNDE | ABNAHME | GEWAEHRLEISTUNG
+  source      String       @default("INTERN")
+  /// Gewährleistungsfall (nach der Abnahme gemeldet)
+  warranty    Boolean      @default(false)
+  assigneeId  String?
+  assignee    User?        @relation("DefectAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  dueDate     DateTime?
+  reportedBy  String?
+  fixNote     String?
+  fixedAt     DateTime?
+  fixedBy     String?
+  closedAt    DateTime?
+  closedBy    String?
+  /// Kosten der Beseitigung (netto, Cent) – fließt nicht in Rechnungen
+  costCents   Int?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  files       StoredFile[]
+
+  @@index([status, dueDate])
+  @@index([projectId])
+  @@index([assigneeId])
+}
+
+/// Öffentliche Ausschreibung aus TED (EU-Amtsblatt), RSS (z. B. service.bund.de) oder von Hand erfasst
+model Tender {
+  id          String    @id @default(cuid())
+  /// TED | RSS | MANUELL
+  source      String
+  /// z. B. TED-Veröffentlichungsnummer „123456-2026“ bzw. Link/GUID aus dem Feed
+  externalId  String
+  title       String
+  buyer       String?
+  place       String?
+  postalCode  String?
+  cpv         String?
+  description String?
+  url         String?
+  publishedAt DateTime?
+  deadline    DateTime?
+  /// Passung 0–100 (Stichwörter, CPV, Region)
+  score       Int       @default(0)
+  matched     String?
+  /// NEU | INTERESSANT | ANGEBOT | ABGELEHNT
+  status      String    @default("NEU")
+  note        String?
+  projectId   String?
+  decidedBy   String?
+  foundAt     DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([source, externalId])
+  @@index([status, deadline])
+  @@index([foundAt])
+}
+
+/// Liquiditätsplanung: wiederkehrende oder einmalige Zahlungen (Löhne, Miete, Leasing, Steuern …)
+model CashItem {
+  id          String    @id @default(cuid())
+  name        String
+  /// Eingang positiv, Ausgang negativ (Cent)
+  amountCents Int
+  /// EINMALIG | WOECHENTLICH | MONATLICH | QUARTALSWEISE | JAEHRLICH
+  interval    String    @default("MONATLICH")
+  /// erste Fälligkeit
+  startDate   DateTime
+  endDate     DateTime?
+  active      Boolean   @default(true)
+  note        String?
+  createdBy   String?
+  createdAt   DateTime  @default(now())
 }

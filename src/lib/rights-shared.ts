@@ -14,7 +14,7 @@ export const AREA_LABEL: Record<Area, string> = {
   montage: "Montage",
   lager: "Lager",
   einkauf: "Einkauf/Lieferanten",
-  akquise: "Akquise",
+  akquise: "Akquise & Ausschreibungen",
   pc: "Computer-Steuerung",
 };
 
@@ -69,6 +69,9 @@ export const PATH_AREA: Record<string, Area> = {
   "/lieferanten": "einkauf",
   "/bestellungen": "einkauf",
   "/akquise": "akquise",
+  "/ausschreibungen": "akquise",
+  "/maengel": "projekte",
+  "/bautagebuch": "projekte",
   "/pc": "pc",
 };
 
@@ -87,6 +90,7 @@ export const TOOL_AREA: Record<string, Area> = {
   lager: "lager", bestellungen: "einkauf",
   nachkalkulation: "projekte", projekte: "projekte", projekt_notiz: "projekte", projekt_planung: "projekte", zeichnungen: "projekte",
   auftraege: "auftraege", fertigung: "fertigung", montage: "montage", akquise: "akquise", am_pc: "pc",
+  bautagebuch: "projekte", maengel: "projekte", ausschreibungen: "akquise", liquiditaet: "buchhaltung", angebot_diktat: "buchhaltung",
 };
 
 /** Freigabe-Karten (PendingAction) → Bereich, den der Freigebende braucht */

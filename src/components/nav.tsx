@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, ClipboardList, Factory, Wrench, PenTool, ShoppingCart, Palmtree, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck, Warehouse } from "lucide-react";
+import { BookOpen, Gavel, ShieldAlert, Calendar, ClipboardList, Factory, Wrench, PenTool, ShoppingCart, Palmtree, CheckSquare, Clock, FileText, FolderSearch, HardHat, Home, Mail, Menu, Monitor, Receipt, Settings, Sparkles, Target, Truck, Warehouse } from "lucide-react";
 import { clsx } from "clsx";
 import { PATH_AREA, type Area } from "@/lib/rights-shared";
 
@@ -22,10 +22,13 @@ const DESKTOP = [
   { href: "/zeichnungen", label: "Zeichnungen", icon: PenTool },
   { href: "/fertigung", label: "Fertigung", icon: Factory },
   { href: "/montage", label: "Montage", icon: Wrench },
+  { href: "/bautagebuch", label: "Bautagebuch", icon: BookOpen },
+  { href: "/maengel", label: "Mängel", icon: ShieldAlert },
   { href: "/stunden", label: "Stunden", icon: Clock },
   { href: "/abwesenheiten", label: "Urlaub", icon: Palmtree },
   { href: "/spesen", label: "Spesen", icon: Receipt },
   { href: "/akquise", label: "Akquise", icon: Target },
+  { href: "/ausschreibungen", label: "Ausschreibungen", icon: Gavel },
   { href: "/lieferanten", label: "Lieferanten", icon: Truck },
   { href: "/bestellungen", label: "Bestellungen", icon: ShoppingCart },
   { href: "/lager", label: "Lager", icon: Warehouse },
@@ -42,7 +45,7 @@ const MOBILE = [
   { href: "/mail", label: "Mail", icon: Mail },
   { href: "/jarvis", label: "Jarvis", icon: Sparkles, center: true },
   { href: "/kalender", label: "Kalender", icon: Calendar },
-  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/auftraege", "/zeichnungen", "/fertigung", "/montage", "/projekte", "/stunden", "/abwesenheiten", "/spesen", "/akquise", "/lieferanten", "/bestellungen", "/lager", "/buchhaltung", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
+  { href: "/einstellungen", label: "Mehr", icon: Menu, also: ["/bautagebuch", "/maengel", "/ausschreibungen", "/auftraege", "/zeichnungen", "/fertigung", "/montage", "/projekte", "/stunden", "/abwesenheiten", "/spesen", "/akquise", "/lieferanten", "/bestellungen", "/lager", "/buchhaltung", "/belege", "/dokumente", "/aufgaben", "/pc", "/datenuebernahme"] },
 ];
 
 const active = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
@@ -52,13 +55,13 @@ export function TopNav({ name, areas }: { name: string; areas: readonly Area[] }
   return (
     <header className="sticky top-0 z-30 hidden border-b print:hidden border-line bg-white/90 backdrop-blur md:block">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-6">
-        <Link href="/" className="flex items-center gap-2" aria-label="Startseite">
+        <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="Startseite">
           <img src="/logo.svg" alt="ProMont GmbH" className="h-11 w-auto" />
-          <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
+          <span className="chip hidden border-brand/20 bg-brand-soft text-brand 2xl:inline-flex">Jarvis</span>
         </Link>
-        <nav className="flex flex-1 items-center gap-1">
+        <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]">
           {DESKTOP.filter((i) => allowed(areas, i.href)).map((i) => (
-            <Link key={i.href} href={i.href} title={i.label} className={clsx("flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
+            <Link key={i.href} href={i.href} title={i.label} className={clsx("flex shrink-0 items-center gap-2 rounded-full px-2.5 py-2 text-sm font-medium transition", active(path, i.href) ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink")}>
               <i.icon className="size-4" />
               {/* 15 Bereiche: Beschriftung nur am aktiven Punkt (sonst Tooltip), damit die Leiste nicht überläuft */}
               <span className={i.href !== "/einstellungen" && active(path, i.href) ? "hidden lg:inline" : "sr-only"}>{i.label}</span>

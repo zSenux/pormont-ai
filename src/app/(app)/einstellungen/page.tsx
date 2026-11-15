@@ -2,7 +2,7 @@ import Link from "next/link";
 import { areasOf, AREA_LABEL, canPath, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-shared";
 import { setUserFunktion } from "@/app/actions";
 import { headers } from "next/headers";
-import { Factory, Wrench, PenTool, ShoppingCart, Palmtree, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
+import { BookOpen, Gavel, Mic, ShieldAlert, Factory, Wrench, PenTool, ShoppingCart, Palmtree, ClipboardList, Calendar, Camera, CheckSquare, Clock, Database, FileText, FolderSearch, HardHat, LogOut, Monitor, MonitorSmartphone, PhoneCall, Receipt, Target, Truck, Warehouse } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -54,10 +54,14 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
       <h1 className="page-title"><span className="md:hidden">Mehr</span><span className="hidden md:inline">Einstellungen</span></h1>
       <nav className="grid grid-cols-3 gap-3 md:hidden" aria-label="Bereiche">
         {[
+          { href: "/buchhaltung/angebot-sprache", label: "Angebot sprechen", icon: Mic },
+          { href: "/bautagebuch", label: "Bautagebuch", icon: BookOpen },
+          { href: "/maengel", label: "Mängel", icon: ShieldAlert },
           { href: "/stunden", label: "Stunden", icon: Clock },
           { href: "/abwesenheiten", label: "Urlaub & Krank", icon: Palmtree },
           { href: "/spesen", label: "Spesen", icon: Receipt },
           { href: "/akquise", label: "Akquise", icon: Target },
+          { href: "/ausschreibungen", label: "Ausschreibungen", icon: Gavel },
           { href: "/lieferanten", label: "Lieferanten", icon: Truck },
           { href: "/bestellungen", label: "Bestellungen", icon: ShoppingCart },
           { href: "/lager", label: "Lager", icon: Warehouse },
