@@ -127,7 +127,15 @@ export async function docData(d: DocWithRefs, config?: BookConfig): Promise<DocD
     const rows = ids.length ? await db.salesDoc.findMany({ where: { id: { in: ids }, number: { not: null } }, orderBy: [{ date: "asc" }, { number: "asc" }] }) : [];
     deductions = rows.map((x) => ({ id: x.id, number: x.number!, date: ymdOf(x.date)!, netCents: x.netCents, taxCents: x.taxCents, grossCents: x.grossCents }));
   }
+  // Angebotsvorlage: Ansicht(en) aus der 3D-Vorschau
+  const views = d.kind === "ANGEBOT"
+    ? (await db.productConfig.findMany({ where: { docId: d.id, image: { not: null } }, orderBy: { createdAt: "asc" }, select: { title: true, image: true, token: true, baseUrl: true } })).map((v) => {
+        const base = process.env.PUBLIC_URL?.replace(/\/$/, "") || v.baseUrl;
+        return { title: v.title, jpg: v.image!, url: base ? `${base}/3d/${v.token}` : null };
+      })
+    : [];
   return {
+    views,
     kind: d.kind,
     invoiceType: (d.kind === "RECHNUNG" ? d.invoiceType : "NORMAL") as InvoiceType,
     deductions,

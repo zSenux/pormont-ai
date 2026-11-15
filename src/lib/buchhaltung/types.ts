@@ -51,6 +51,8 @@ export type DocData = {
   preceding?: { number: string; date: string } | null;
   projectName?: string | null;
   config: BookConfig;
+  /** Angebot aus einer Angebotsvorlage: 3D-Ansicht(en) als JPEG, mit Kunden-Link */
+  views?: { title: string; jpg: Uint8Array; url: string | null }[];
 };
 
 export const KIND_LABEL: Record<DocKind, string> = { ANGEBOT: "Angebot", RECHNUNG: "Rechnung", GUTSCHRIFT: "Gutschrift" };

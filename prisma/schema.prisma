@@ -1038,6 +1038,8 @@ model SalesDoc {
 
   /// EPS: Auftrag aus diesem Angebot
   orders   Order[]
+  /// Angebotsvorlage (Konfiguration mit 3D-Ansicht), aus der dieses Angebot entstand
+  configs  ProductConfig[]
   payments Payment[]
   dunnings Dunning[]
   events   SalesDocEvent[]
@@ -1521,4 +1523,31 @@ model CashItem {
   note        String?
   createdBy   String?
   createdAt   DateTime  @default(now())
+}
+
+/// Angebotsvorlage: konfiguriertes Standardprodukt (Geländer, Treppe, Vordach, Tor) mit Kalkulation und 3D-Ansicht
+model ProductConfig {
+  id          String    @id @default(cuid())
+  /// GELAENDER | TREPPE | VORDACH | TOR
+  product     String
+  title       String
+  /// Eingaben (Maße, Profile, Oberfläche) – daraus entstehen Stückliste und 3D-Modell
+  params      Json
+  /// Kalkulation beim Anlegen (Stückliste, Kosten, Werte) – Nachweis zum Angebot
+  calc        Json
+  /// Ansicht als JPEG (aus der 3D-Vorschau im Browser) – kommt ins Angebots-PDF
+  image       Bytes?
+  /// Kunden-Link /3d/<token> (ohne Preise)
+  token       String    @unique
+  /// Adresse der App beim Anlegen (für den Link im PDF, wenn PUBLIC_URL fehlt)
+  baseUrl     String?
+  docId       String?
+  doc         SalesDoc? @relation(fields: [docId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([docId])
+  @@index([createdAt])
 }
