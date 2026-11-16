@@ -9,9 +9,10 @@ export function BookTabs({ admin }: { admin: boolean }) {
   const art = useSearchParams().get("art");
   const tabs = [
     { href: "/buchhaltung", label: "Übersicht", on: path === "/buchhaltung" },
+    { href: "/buchhaltung/belege?art=alle", label: "Belegliste", on: path.startsWith("/buchhaltung/belege") && art === "alle" },
     { href: "/buchhaltung/belege?art=angebote", label: "Angebote", on: path.startsWith("/buchhaltung/belege") && art === "angebote" },
     { href: "/buchhaltung/angebot-sprache", label: "🎙️ Angebot sprechen", on: path.startsWith("/buchhaltung/angebot-sprache") },
-    { href: "/buchhaltung/belege?art=rechnungen", label: "Rechnungen", on: path.startsWith("/buchhaltung/belege") && art !== "angebote" && art !== "gutschriften" },
+    { href: "/buchhaltung/belege?art=rechnungen", label: "Rechnungen", on: path.startsWith("/buchhaltung/belege") && art !== "angebote" && art !== "gutschriften" && art !== "alle" },
     { href: "/buchhaltung/belege?art=gutschriften", label: "Gutschriften", on: path.startsWith("/buchhaltung/belege") && art === "gutschriften" },
     { href: "/buchhaltung/vorlagen", label: "Vorlagen", on: path.startsWith("/buchhaltung/vorlagen") },
     { href: "/buchhaltung/mahnwesen", label: "Mahnungen", on: path.startsWith("/buchhaltung/mahnwesen") },

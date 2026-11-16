@@ -366,7 +366,8 @@ export function lexwareBookings(t: Table): Table {
 
 /** Umsatz netto aus dem Archiv (alte Rechnungen aus Lexware usw.) – doppelt hochgeladene Belege zählen einmal */
 export async function archiveRevenue(from: string, to: string) {
-  const recs = await db.erpRecord.findMany({ where: { kind: "rechnung", date: { gte: berlinDateTime(from, "00:00"), lte: berlinDateTime(to, "23:59") } }, select: { number: true, date: true, amount: true, fields: true } });
+  // In die Buchhaltung übernommene (lexId) zählen dort als Rechnung – hier nicht doppelt
+  const recs = await db.erpRecord.findMany({ where: { kind: "rechnung", lexId: null, date: { gte: berlinDateTime(from, "00:00"), lte: berlinDateTime(to, "23:59") } }, select: { number: true, date: true, amount: true, fields: true } });
   const seen = new Set<string>();
   let cents = 0;
   let count = 0;
@@ -519,7 +520,7 @@ export async function changeTableKind(importId: string, table: string, kind: Erp
 // ---------- Übernahme ----------
 
 /** Sperre je Import (eine Übernahme gleichzeitig, hängende Sperren verfallen nach 30 Min.) */
-export async function claim(importId: string, what: "kunde" | "artikel" | "projekt") {
+export async function claim(importId: string, what: "kunde" | "artikel" | "projekt" | "rechnung") {
   const stale = new Date(Date.now() - 30 * 60_000);
   const r = await db.erpImport.updateMany({ where: { id: importId, OR: [{ busy: null }, { busySince: { lt: stale } }] }, data: { busy: what, busySince: new Date() } });
   return r.count > 0;
@@ -607,6 +608,92 @@ export async function transferArticles(importId: string) {
   }
 }
 
+/** Tage, ab denen eine alte Rechnung ohne bekannten Zahlstatus als bezahlt gilt */
+export const ASSUME_PAID_DAYS = 30;
+
+/**
+ * Alte Rechnungen als übernommene Belege in die Buchhaltung (`imported`, `finalizedBy` „Lexware“, Nummer bleibt):
+ * dann zählen sie überall mit – Umsatz, Jahresauswertung, Kundenakte, Rechnungslisten, offene Posten.
+ * Keine Positionen im Export → eine Sammelposition je Beleg, Beträge exakt aus netto/USt.
+ * Zahlstatus: „bezahlt“/„offen“ aus der Liste; unbekannt → älter als 30 Tage bezahlt, sonst offen.
+ */
+export async function transferInvoices(importId: string, userName: string) {
+  const stats = { created: 0, linked: 0, open: 0 };
+  try {
+    const recs = await db.erpRecord.findMany({ where: { importId, kind: "rechnung", lexId: null }, orderBy: { date: "asc" } });
+    const today = Date.now();
+    for (const r of recs) {
+      try {
+        const f = r.fields as Record<string, string>;
+        const raw = r.raw as Record<string, unknown>;
+        if (!r.number) throw new Error("Rechnungsnummer fehlt.");
+        if (!r.date) throw new Error("Rechnungsdatum fehlt.");
+        const gross = r.amount;
+        if (gross === null) throw new Error("Betrag fehlt.");
+        const net = parseAmount(f.netto) ?? gross;
+        const grossCents = Math.round(gross * 100);
+        const netCents = Math.round(net * 100);
+        const taxCents = grossCents - netCents;
+        const same = await db.salesDoc.findFirst({ where: { kind: "RECHNUNG", number: r.number }, select: { id: true, imported: true } });
+        if (same?.imported) {
+          await db.erpRecord.update({ where: { id: r.id }, data: { lexId: same.id, error: null } });
+          stats.linked++;
+          continue;
+        }
+        const number = same ? `${r.number} (Lexware)` : r.number;
+        // Kunde: gleicher Name in der Buchhaltung, sonst über die Kundennummer aus dem Kunden-Import
+        let customer = r.party ? await db.customer.findFirst({ where: { name: { equals: r.party, mode: "insensitive" } } }) : null;
+        if (!customer && f.kundennr) {
+          const k = await db.erpRecord.findFirst({ where: { kind: "kunde", number: f.kundennr, lexId: { not: null } }, select: { lexId: true } });
+          if (k?.lexId && !k.lexId.includes("-")) customer = await db.customer.findUnique({ where: { id: k.lexId } });
+        }
+        const rate = netCents ? Math.round((taxCents / netCents) * 100) : 0;
+        const taxRate = (Math.abs(rate - 19) <= 1 ? 19 : Math.abs(rate - 7) <= 1 ? 7 : rate === 0 ? 0 : 19) as 19 | 7 | 0;
+        const reverseCharge = taxCents === 0 && /13b|ohne ust/i.test(String(raw.Steuersatz ?? ""));
+        const status = /bezahlt|paid|ausgeglichen|erledigt/i.test(r.status ?? "") ? "BEZAHLT" : /offen|unbezahlt|open/i.test(r.status ?? "") ? "OFFEN" : today - r.date.getTime() > ASSUME_PAID_DAYS * 86_400_000 ? "BEZAHLT" : "OFFEN";
+        const guessed = !/bezahlt|paid|ausgeglichen|erledigt|offen|open/i.test(r.status ?? "");
+        const pdf = r.fileId ? (await db.storedFile.findUnique({ where: { id: r.fileId }, select: { data: true } }))?.data ?? null : null;
+        const doc = await db.$transaction(async (tx) => {
+          const d = await tx.salesDoc.create({
+            data: {
+              kind: "RECHNUNG",
+              status,
+              number,
+              customerId: customer?.id ?? null,
+              address: { name: customer?.name ?? r.party ?? "", street: customer?.street ?? null, zip: customer?.zip ?? null, city: customer?.city ?? null, country: customer?.country ?? "DE", email: customer?.email ?? null, vatId: customer?.vatId ?? null, customerNo: customer?.number ?? null } as object,
+              title: r.name?.slice(0, 200) ?? null,
+              date: r.date!,
+              dueDate: r.dueDate,
+              reverseCharge,
+              lines: [{ articleId: null, name: (r.name || `Leistung lt. Rechnung ${r.number}`).slice(0, 300), description: "Aus Lexware übernommen – Positionen siehe Original-Rechnung.", qty: 1, unit: "psch", price: net, discount: 0, taxRate: reverseCharge ? 0 : taxRate }] as object[],
+              netCents,
+              taxCents,
+              grossCents,
+              paidCents: status === "BEZAHLT" ? grossCents : 0,
+              finalizedAt: r.date,
+              finalizedBy: "Lexware",
+              pdf: pdf ? new Uint8Array(pdf) : null,
+              imported: true,
+              createdBy: userName,
+            },
+          });
+          if (status === "BEZAHLT") await tx.payment.create({ data: { docId: d.id, day: r.date!, amountCents: grossCents, note: guessed ? `Zahlstatus aus Lexware unbekannt – älter als ${ASSUME_PAID_DAYS} Tage, als bezahlt angenommen` : "Zahlungsstand aus Lexware übernommen", userName } });
+          await tx.salesDocEvent.create({ data: { docId: d.id, text: `Aus Lexware übernommen (Datenübernahme, Archiv-Datensatz ${r.id})${guessed ? ` – Zahlstatus unbekannt, ${status === "BEZAHLT" ? "als bezahlt angenommen" : "offen gelassen"}` : ""}`, userName } });
+          await tx.erpRecord.update({ where: { id: r.id }, data: { lexId: d.id, error: null } });
+          return d;
+        });
+        stats.created++;
+        if (doc.status === "OFFEN") stats.open++;
+      } catch (e) {
+        await db.erpRecord.update({ where: { id: r.id }, data: { error: errText(e) } });
+      }
+    }
+  } finally {
+    await release(importId);
+  }
+  return stats;
+}
+
 const PROJECT_STATUS = (s?: string) => (!s ? "LAEUFT" : /fertig|abgeschl|erledigt|done|beendet/i.test(s) ? "FERTIG" : /plan|angebot|offen|neu/i.test(s) ? "PLANUNG" : /pause|ruht/i.test(s) ? "PAUSIERT" : "LAEUFT") as "LAEUFT" | "FERTIG" | "PLANUNG" | "PAUSIERT";
 
 /** Projekte als Jarvis-Projekte anlegen (lokal, gleiche Namen werden verknüpft) */
@@ -692,10 +779,12 @@ export async function attachPdf(opts: { importId?: string | null; fileName: stri
   await db.storedFile.update({ where: { id: file.id }, data: { meta: { importId: imp.id } } });
   await db.erpImport.update({ where: { id: imp.id }, data: { rows: { increment: 1 } } });
   const cands = numberCandidates(name);
-  const recs = cands.length ? await db.erpRecord.findMany({ where: { number: { in: cands }, fileId: null, kind: { in: DOC_KINDS }, import: { format: { not: "pdf" } } }, select: { id: true, kind: true, number: true, party: true }, take: 20 }) : [];
+  const recs = cands.length ? await db.erpRecord.findMany({ where: { number: { in: cands }, fileId: null, kind: { in: DOC_KINDS }, import: { format: { not: "pdf" } } }, select: { id: true, kind: true, number: true, party: true, lexId: true }, take: 20 }) : [];
   const hit = pick(name, recs);
   if (hit) {
     await db.erpRecord.update({ where: { id: hit.id }, data: { fileId: file.id } });
+    // Schon in die Buchhaltung übernommen → Original-PDF auch dort
+    if (hit.kind === "rechnung" && hit.lexId && !hit.lexId.includes("-")) await db.salesDoc.updateMany({ where: { id: hit.lexId, imported: true, pdf: null }, data: { pdf: new Uint8Array(opts.data) } });
     return { importId: imp.id, duplicate: false, matched: { id: hit.id, label: [ERP_KIND_LABEL[hit.kind as ErpKind], hit.number, hit.party].filter(Boolean).join(" · ") } };
   }
   const text = (file.text ?? "").slice(0, 3000);
@@ -766,7 +855,8 @@ export async function searchRecords(q: { text?: string; kind?: ErpKind; offen?: 
   const words = (q.text ?? "").toLowerCase().split(/\s+/).filter((w) => w.length > 1).slice(0, 6);
   const and: object[] = words.map((w) => ({ search: { contains: w } }));
   // „offen“ = Rechnung ohne Status „bezahlt“/„storniert“ (Status leer zählt als offen)
-  if (q.offen) and.push({ kind: "rechnung" }, { OR: [{ status: null }, ...["offen", "nicht", "unbezahlt", "überfällig", "faellig", "fällig", "open", "overdue"].map((w) => ({ status: { contains: w, mode: "insensitive" } })), { NOT: { OR: ["bezahlt", "paid", "storn", "erledigt", "ausgeglichen", "zahlung unbekannt"].map((w) => ({ status: { contains: w, mode: "insensitive" } })) } }] });
+  // Schon in die Buchhaltung übernommene Rechnungen stehen dort in den offenen Posten – hier nicht doppelt
+  if (q.offen) and.push({ kind: "rechnung", lexId: null }, { OR: [{ status: null }, ...["offen", "nicht", "unbezahlt", "überfällig", "faellig", "fällig", "open", "overdue"].map((w) => ({ status: { contains: w, mode: "insensitive" } })), { NOT: { OR: ["bezahlt", "paid", "storn", "erledigt", "ausgeglichen", "zahlung unbekannt"].map((w) => ({ status: { contains: w, mode: "insensitive" } })) } }] });
   return db.erpRecord.findMany({
     where: { ...(q.kind ? { kind: q.kind } : {}), ...(and.length ? { AND: and } : {}) },
     orderBy: [{ date: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],

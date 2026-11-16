@@ -113,7 +113,7 @@ export function KindForm({ importId, table, kind }: { importId: string; table: s
   );
 }
 
-export function TransferButton({ importId, what, label, confirm }: { importId: string; what: "kunde" | "artikel" | "projekt"; label: string; confirm: string }) {
+export function TransferButton({ importId, what, label, confirm }: { importId: string; what: "kunde" | "artikel" | "projekt" | "rechnung"; label: string; confirm: string }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok?: string; error?: string } | undefined>();
   const router = useRouter();

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth/user";
-import { changeTableKind, claim, deleteErpImport, ERP_KINDS, ErpImportError, transferArticles, transferCustomers, transferProjects } from "@/lib/erp-import";
+import { ASSUME_PAID_DAYS, changeTableKind, claim, deleteErpImport, ERP_KINDS, ErpImportError, transferArticles, transferCustomers, transferInvoices, transferProjects } from "@/lib/erp-import";
 
 // Datenübernahme aus dem alten Programm: Übernahme in die Buchhaltung/Jarvis nur per Klick eines Admins (mit Rückfrage im Browser)
 
@@ -25,13 +25,19 @@ export async function setTableKind(importId: string, table: string, _prev: Resul
   return { ok: "Neu zugeordnet." };
 }
 
-export async function startTransfer(importId: string, what: "kunde" | "artikel" | "projekt"): Promise<Result> {
+export async function startTransfer(importId: string, what: "kunde" | "artikel" | "projekt" | "rechnung"): Promise<Result> {
   const user = await requireAdmin();
   const id = z.cuid().parse(importId);
-  const kind = z.enum(["kunde", "artikel", "projekt"]).parse(what);
+  const kind = z.enum(["kunde", "artikel", "projekt", "rechnung"]).parse(what);
   const open = await db.erpRecord.count({ where: { importId: id, kind, ...(kind === "projekt" ? { projectId: null } : { lexId: null }) } });
   if (!open) return { ok: "Es ist nichts mehr zu übernehmen." };
   if (!(await claim(id, kind))) return { error: "Für diese Datei läuft gerade schon eine Übernahme." };
+  if (kind === "rechnung") {
+    const r = await transferInvoices(id, user.name);
+    revalidatePath("/datenuebernahme");
+    revalidatePath("/buchhaltung");
+    return { ok: `${r.created} Rechnungen in die Buchhaltung übernommen${r.linked ? `, ${r.linked} waren schon da` : ""}. ${r.open} davon offen (jünger als ${ASSUME_PAID_DAYS} Tage bzw. laut Liste offen), die übrigen als bezahlt.` };
+  }
   if (kind === "projekt") {
     const n = await transferProjects(id, user.id);
     revalidatePath("/datenuebernahme");
