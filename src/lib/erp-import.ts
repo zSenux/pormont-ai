@@ -324,6 +324,48 @@ export function vorgangsart(v: unknown) {
   return s ? VORGANG.find(([re]) => re.test(s)) : undefined;
 }
 
+// Lexware faktura+auftrag „Buchungsdaten“ (Export für die Fibu): eine Zeile je Steuersatz, Kunde und Belegart nur im
+// Buchungstext („RG202638 USt.19.00% Midas … mbH“). → eine Zeile je Beleg mit Kunde, Art und Summe. Ob bezahlt ist, steht
+// dort nicht drin („Zahlung unbekannt“ zählt nicht als offen).
+const BOOKING_TEXT = /^([A-Za-zÄÖÜ]{1,4})[-\s]?(\S*\d\S*)\s+(?:USt\.?|MwSt\.?|VSt\.?)\s*[\d.,]+\s*%\s*(.*)$/i;
+export function lexwareBookings(t: Table): Table {
+  const headers = new Set(t.rows.flatMap((r) => Object.keys(r)).map(norm));
+  if (!headers.has("buchungstext") || !(headers.has("buchungsbetrag") || headers.has("buchungsbetrageuro")) || !(headers.has("sollkonto") || headers.has("habenkonto"))) return t;
+  const get = (r: Record<string, unknown>, n: string) => {
+    const k = Object.keys(r).find((x) => norm(x) === n);
+    return k === undefined ? "" : String(r[k] ?? "").trim();
+  };
+  const groups = new Map<string, Record<string, unknown>>();
+  const sums = new Map<string, number>();
+  const taxes = new Map<string, string[]>();
+  for (const r of t.rows) {
+    const text = get(r, "buchungstext");
+    const m = BOOKING_TEXT.exec(text);
+    const nr = get(r, "belegnummer") || m?.[2] || text;
+    const amount = parseAmount(get(r, "buchungsbetrageuro") || get(r, "buchungsbetrag")) ?? 0;
+    const prefix = (m?.[1] ?? "").toUpperCase();
+    const art = /^(GS|G|GU|ST)$/.test(prefix) || /gutschrift|storno/i.test(text) ? "Gutschrift" : "Rechnung";
+    const key = `${art}|${nr}`;
+    sums.set(key, Math.round(((sums.get(key) ?? 0) + amount) * 100) / 100);
+    const rate = /(\d[\d.,]*)\s*%/.exec(text)?.[1];
+    if (rate) taxes.set(key, [...(taxes.get(key) ?? []), `${rate.replace(".", ",")} %: ${amount.toFixed(2).replace(".", ",")}`]);
+    if (!groups.has(key))
+      groups.set(key, {
+        Belegnummer: nr,
+        Belegdatum: get(r, "belegdatum"),
+        Vorgangsart: art,
+        Kunde: m?.[3]?.trim() || "",
+        Status: "Zahlung unbekannt",
+        Buchungstext: text,
+      });
+  }
+  const rows = [...groups.entries()].map(([key, row]) => {
+    const tx = taxes.get(key) ?? [];
+    return Object.fromEntries(Object.entries({ ...row, "Betrag brutto": sums.get(key)!.toFixed(2).replace(".", ","), ...(tx.length > 1 ? { "Anteile je Steuersatz": tx.join(" · ") } : {}) }).filter(([, v]) => v !== ""));
+  });
+  return { name: t.name, rows };
+}
+
 export function splitByType(t: Table): Table[] {
   const headers = [...new Set(t.rows.flatMap((r) => Object.keys(r)))];
   for (const h of headers.filter((x) => TYPE_COL.test(norm(x)))) {
@@ -420,7 +462,7 @@ function recordFrom(kind: ErpKind, mapping: Record<string, string>, row: Record<
 export async function importExport(opts: { fileName: string; data: Buffer; userName: string }) {
   const parsed = parseExport(opts.fileName, opts.data);
   const format = parsed.format;
-  const tables = parsed.tables.flatMap(splitByType);
+  const tables = parsed.tables.map(lexwareBookings).flatMap(splitByType);
   const total = tables.reduce((n, t) => n + t.rows.length, 0);
   if (total > MAX_ROWS) throw new ErpImportError(`Zu viele Zeilen (${total.toLocaleString("de-DE")}) – höchstens ${MAX_ROWS.toLocaleString("de-DE")} je Datei. Bitte aufteilen.`);
   const infos: TableInfo[] = tables.map((t) => {
@@ -708,7 +750,7 @@ export async function searchRecords(q: { text?: string; kind?: ErpKind; offen?: 
   const words = (q.text ?? "").toLowerCase().split(/\s+/).filter((w) => w.length > 1).slice(0, 6);
   const and: object[] = words.map((w) => ({ search: { contains: w } }));
   // „offen“ = Rechnung ohne Status „bezahlt“/„storniert“ (Status leer zählt als offen)
-  if (q.offen) and.push({ kind: "rechnung" }, { OR: [{ status: null }, ...["offen", "nicht", "unbezahlt", "überfällig", "faellig", "fällig", "open", "overdue"].map((w) => ({ status: { contains: w, mode: "insensitive" } })), { NOT: { OR: ["bezahlt", "paid", "storn", "erledigt", "ausgeglichen"].map((w) => ({ status: { contains: w, mode: "insensitive" } })) } }] });
+  if (q.offen) and.push({ kind: "rechnung" }, { OR: [{ status: null }, ...["offen", "nicht", "unbezahlt", "überfällig", "faellig", "fällig", "open", "overdue"].map((w) => ({ status: { contains: w, mode: "insensitive" } })), { NOT: { OR: ["bezahlt", "paid", "storn", "erledigt", "ausgeglichen", "zahlung unbekannt"].map((w) => ({ status: { contains: w, mode: "insensitive" } })) } }] });
   return db.erpRecord.findMany({
     where: { ...(q.kind ? { kind: q.kind } : {}), ...(and.length ? { AND: and } : {}) },
     orderBy: [{ date: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
