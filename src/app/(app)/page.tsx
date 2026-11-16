@@ -6,6 +6,7 @@ import { firstName, requireUser } from "@/lib/auth/user";
 import { AREA_LABEL, canArea, type Area } from "@/lib/rights-shared";
 import { berlinDateTime, berlinParts, formatDate, formatDateTime, formatEuro, todayYmd } from "@/lib/berlin";
 import { customerName, isOverdue, openInvoices, revenue, openCentsOf } from "@/lib/buchhaltung/docs";
+import { archiveRevenue } from "@/lib/erp-import";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { COMPANY } from "@/lib/company";
 import { timeHm, todayEvents } from "@/lib/calendar";
@@ -163,10 +164,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
 
 async function BookTiles() {
   const today = todayYmd();
-  const [open, month, quotes] = await Promise.all([openInvoices(), revenue(`${today.slice(0, 7)}-01`, today), db.salesDoc.count({ where: { kind: "ANGEBOT", status: "OFFEN" } })]);
+  const [open, own, old, quotes] = await Promise.all([openInvoices(), revenue(`${today.slice(0, 7)}-01`, today), archiveRevenue(`${today.slice(0, 7)}-01`, today), db.salesDoc.count({ where: { kind: "ANGEBOT", status: "OFFEN" } })]);
+  // Alte Rechnungen aus dem Archiv (z. B. Lexware) zählen mit, bis alles in Jarvis geschrieben wird
+  const month = { netCents: own.netCents + old.netCents, count: own.count + old.count };
   const notDue = open.list.filter((d) => !isOverdue(d));
   const tiles = [
-    { label: "Umsatz diesen Monat", value: fmtEuroCents(month.netCents), hint: `${month.count} Rechnungen (netto)`, icon: Wallet, href: "/buchhaltung", tone: "text-brand" },
+    { label: "Umsatz diesen Monat", value: fmtEuroCents(month.netCents), hint: `${month.count} Rechnungen (netto)${old.count ? `, davon ${old.count} aus Lexware` : ""}`, icon: Wallet, href: "/buchhaltung", tone: "text-brand" },
     { label: "Überfällig", value: fmtEuroCents(open.overdueCents), hint: `${open.overdue.length} Rechnungen`, icon: AlertTriangle, href: "/buchhaltung/belege?art=rechnungen&status=ueberfaellig", tone: open.overdue.length ? "text-bad" : "text-ok" },
     { label: "Offen (noch nicht fällig)", value: fmtEuroCents(notDue.reduce((s, d) => s + openCentsOf(d), 0)), hint: `${notDue.length} Rechnungen · ${quotes} offene Angebote`, icon: FileText, href: "/buchhaltung/belege?art=rechnungen&status=offen", tone: "text-ink" },
   ];

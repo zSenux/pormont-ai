@@ -9,6 +9,7 @@ import { PHASES } from "@/lib/phases-shared";
 import { ProgressBar } from "@/components/progress-bar";
 import { dueFollowUps } from "@/lib/crm";
 import { revenue } from "@/lib/buchhaltung/docs";
+import { archiveRevenue } from "@/lib/erp-import";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { todayYmd } from "@/lib/berlin";
 import { lateItems } from "@/lib/automation";
@@ -228,7 +229,11 @@ export async function SalesRow() {
     return { ym, from: `${ym}-01`, to: last < today ? last : today, label: d.toLocaleDateString("de-DE", { month: "short", timeZone: "UTC" }) };
   });
   const [rev, quotes] = await Promise.all([
-    Promise.all(months.map((x) => revenue(x.from, x.to))),
+    // eigene Rechnungen + alte Rechnungen aus dem Archiv (Lexware)
+    Promise.all(months.map(async (x) => {
+      const [own, old] = await Promise.all([revenue(x.from, x.to), archiveRevenue(x.from, x.to)]);
+      return { netCents: own.netCents + old.netCents, count: own.count + old.count };
+    })),
     db.salesDoc.groupBy({ by: ["status"], where: { kind: "ANGEBOT", status: { in: ["OFFEN", "ANGENOMMEN", "ABGELEHNT"] } }, _sum: { netCents: true }, _count: true }),
   ]);
   const max = Math.max(1, ...rev.map((r) => r.netCents));
