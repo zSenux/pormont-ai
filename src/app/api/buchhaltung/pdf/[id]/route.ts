@@ -1,8 +1,7 @@
 import { canArea } from "@/lib/rights-shared";
 import { currentUser } from "@/lib/auth/user";
 import { db } from "@/lib/db";
-import { docData } from "@/lib/buchhaltung/docs";
-import { renderDocPdf } from "@/lib/buchhaltung/pdf";
+import { previewDraftPdf } from "@/lib/buchhaltung/docs";
 import { docLabel } from "@/lib/buchhaltung/types";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +21,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (d.status !== "ENTWURF") {
     if (!d.pdf) return new Response("Zu diesem Beleg gibt es kein PDF (Original aus Lexware nicht übernommen).", { status: 404 });
     body = new Uint8Array(d.pdf);
-  } else body = await renderDocPdf(await docData(d), null);
+  } else body = await previewDraftPdf(d.id);
   const name = fileName(`${docLabel(d)}_${d.number ?? "Entwurf"}.pdf`);
   const download = new URL(req.url).searchParams.has("download");
   return new Response(Buffer.from(body), {
