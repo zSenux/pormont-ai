@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Check, KeyRound, Loader2 } from "lucide-react";
+import { Check, KeyRound, Loader2, LogIn } from "lucide-react";
 import { saveConnections } from "@/app/actions";
 
 type State = { set: boolean; source: "env" | "app" | null; value: string | null };
@@ -20,6 +20,13 @@ export type ConnectionProps = {
   twilioToken: State;
   twilioNumber: State;
   webhookUrl: string;
+  msClientId: State;
+  msSecret: State;
+  msTenant: State;
+  msMailbox: State;
+  /** Angemeldetes Microsoft-Konto (null = noch nicht angemeldet) */
+  msAccount: string | null;
+  msRedirectUri: string;
 };
 
 function Msg({ s }: { s?: { ok?: string; error?: string } }) {
@@ -137,16 +144,21 @@ export function ConnectionsForm(p: ConnectionProps) {
               <option value="strato">Strato</option>
               <option value="gmx">GMX</option>
               <option value="ionos">IONOS</option>
+              <option value="microsoft">Microsoft 365 / Outlook</option>
               <option value="custom">Anderer (eigener Server)</option>
             </select>
           </div>
-          <div>
-            <label className="label" htmlFor="MAIL_USER">E-Mail-Adresse</label>
-            <input id="MAIL_USER" name="MAIL_USER" type="email" autoComplete="off" defaultValue={p.mailUser.value ?? ""} placeholder="info@promont.gmbh" className="input" />
-          </div>
-          <div className="sm:col-span-2">
-            <SecretField name="MAIL_PASSWORD" label="Passwort des Postfachs" state={p.mailPassword} placeholder="Passwort" help={provider === "gmx" ? "Bei GMX vorher in den GMX-Einstellungen „POP3/IMAP Abruf“ erlauben." : "Das gleiche Passwort wie im Mail-Programm."} />
-          </div>
+          {provider !== "microsoft" && (
+            <div>
+              <label className="label" htmlFor="MAIL_USER">E-Mail-Adresse</label>
+              <input id="MAIL_USER" name="MAIL_USER" type="email" autoComplete="off" defaultValue={p.mailUser.value ?? ""} placeholder="info@promont.gmbh" className="input" />
+            </div>
+          )}
+          {provider !== "microsoft" && (
+            <div className="sm:col-span-2">
+              <SecretField name="MAIL_PASSWORD" label="Passwort des Postfachs" state={p.mailPassword} placeholder="Passwort" help={provider === "gmx" ? "Bei GMX vorher in den GMX-Einstellungen „POP3/IMAP Abruf“ erlauben." : "Das gleiche Passwort wie im Mail-Programm."} />
+            </div>
+          )}
           <div className="sm:col-span-2">
             <label className="label" htmlFor="MAIL_FROM_NAME">Absendername</label>
             <input id="MAIL_FROM_NAME" name="MAIL_FROM_NAME" defaultValue={p.mailFromName.value ?? "ProMont GmbH"} className="input" />
@@ -160,8 +172,9 @@ export function ConnectionsForm(p: ConnectionProps) {
             </>
           )}
         </div>
+        {provider === "microsoft" && <MicrosoftFields p={p} saved={p.mailProvider.value === "microsoft"} />}
         {p.mailUser.set && !mailLocked && (
-          <ClearButton value="MAIL">Postfach trennen</ClearButton>
+          <ClearButton value="MAIL">{provider === "microsoft" && p.msAccount ? "Von Microsoft abmelden" : "Postfach trennen"}</ClearButton>
         )}
       </fieldset>
 
@@ -171,5 +184,49 @@ export function ConnectionsForm(p: ConnectionProps) {
         <p className="text-xs text-steel">Schlüssel und Passwörter werden verschlüsselt gespeichert und nie wieder angezeigt.</p>
       </div>
     </form>
+  );
+}
+
+/** Microsoft 365: App-Registrierung (einmalig) + Anmeldung im Browser – kein Passwort in Jarvis */
+function MicrosoftFields({ p, saved }: { p: ConnectionProps; saved: boolean }) {
+  const ready = saved && p.msClientId.set && p.msSecret.set;
+  return (
+    <div className="space-y-4 rounded-lg border border-line bg-mist/50 p-4">
+      <p className="text-xs text-steel">
+        Einmalig im <a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noreferrer" className="font-medium text-brand">Microsoft Entra Admin Center → App-Registrierungen</a> eine App „Jarvis ProMont“ anlegen und als Umleitungs-URI (Plattform „Web“) genau diese Adresse eintragen:
+      </p>
+      <code className="block select-all break-all rounded bg-white px-3 py-2 text-xs">{p.msRedirectUri}</code>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label" htmlFor="MS_CLIENT_ID">Anwendungs-ID (Client-ID)</label>
+          <input id="MS_CLIENT_ID" name="MS_CLIENT_ID" disabled={p.msClientId.source === "env"} defaultValue={p.msClientId.value ?? ""} placeholder="1234abcd-…" autoComplete="off" spellCheck={false} className="input font-mono" />
+        </div>
+        <div>
+          <label className="label" htmlFor="MS_TENANT">Verzeichnis-ID (Mandant)</label>
+          <input id="MS_TENANT" name="MS_TENANT" disabled={p.msTenant.source === "env"} defaultValue={p.msTenant.value ?? ""} placeholder="1234abcd-…" autoComplete="off" spellCheck={false} className="input font-mono" />
+          <p className="mt-1 text-xs text-steel">Steht in der Übersicht der App. Nötig, wenn die App „nur dieses Verzeichnis“ erlaubt.</p>
+        </div>
+        <div className="sm:col-span-2">
+          <SecretField name="MS_CLIENT_SECRET" label="Geheimer Clientschlüssel (Wert)" state={p.msSecret} placeholder="Wert des Clientschlüssels" help="Unter „Zertifikate & Geheimnisse“ → Neuer geheimer Clientschlüssel – die Spalte „Wert“ kopieren (nicht die „Geheimnis-ID“). Läuft je nach Wahl nach 6–24 Monaten ab." />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="MS_MAILBOX">Geteiltes Postfach (optional)</label>
+          <input id="MS_MAILBOX" name="MS_MAILBOX" type="email" disabled={p.msMailbox.source === "env"} defaultValue={p.msMailbox.value ?? ""} placeholder="z. B. info@promont.gmbh" autoComplete="off" className="input" />
+          <p className="mt-1 text-xs text-steel">Nur ausfüllen, wenn Jarvis ein gemeinsames Postfach nutzen soll, in das sich niemand direkt anmeldet. Das angemeldete Konto braucht dafür „Vollzugriff“ und „Senden als“.</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
+        {p.msAccount ? (
+          <p className="flex items-center gap-1 text-sm text-ok"><Check className="size-4" /> Angemeldet als {p.msAccount}</p>
+        ) : (
+          <p className="text-sm text-steel">{ready ? "Noch nicht angemeldet." : "Erst Anwendungs-ID und Clientschlüssel speichern, dann anmelden."}</p>
+        )}
+        {ready ? (
+          <a href="/api/mail/microsoft/start" className="btn-secondary"><LogIn className="size-4" /> {p.msAccount ? "Anderes Konto / neu anmelden" : "Mit Microsoft anmelden"}</a>
+        ) : (
+          <span className="btn-secondary pointer-events-none opacity-50" aria-disabled="true"><LogIn className="size-4" /> Mit Microsoft anmelden</span>
+        )}
+      </div>
+    </div>
   );
 }

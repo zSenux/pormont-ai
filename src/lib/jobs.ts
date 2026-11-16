@@ -124,7 +124,7 @@ async function morningBriefing() {
 async function newMails() {
   if (!mailConfigured()) return;
   const state = await db.jobState.findUnique({ where: { key: "mail:last" } });
-  const last = state ? (JSON.parse(state.value) as { uid: number; validity: string }) : null;
+  const last = state ? (JSON.parse(state.value) as { uid: number | string; validity: string }) : null;
   const r = await mailsSince(last);
   await db.jobState.upsert({ where: { key: "mail:last" }, create: { key: "mail:last", value: JSON.stringify({ uid: r.maxUid, validity: r.validity }) }, update: { value: JSON.stringify({ uid: r.maxUid, validity: r.validity }) } });
   const fresh = r.mails.filter((m) => !m.seen);
