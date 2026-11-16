@@ -18,6 +18,7 @@ import { headers } from "next/headers";
 import { DocConfigPanel, type DocConfig } from "@/components/vorlagen/doc-panel";
 import type { Product } from "@/lib/vorlagen/model";
 import { DocEditor } from "./editor";
+import { PdfFromUrl } from "@/components/pdf-preview";
 import { DownPaymentForm, PaymentForm, ResultButton, SendDocForm, SendDunningForm } from "./panels";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +58,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
       ? (await db.salesDoc.findMany({ where: { kind: "RECHNUNG", invoiceType: "ABSCHLAG", customerId: d.customerId, status: { in: ["OFFEN", "BEZAHLT"] }, OR: [{ finalId: null }, { finalId: d.id }] }, orderBy: { date: "asc" } })).map((x) => ({ id: x.id, number: x.number!, date: ymdOf(x.date)!, title: x.title, netCents: x.netCents, taxCents: x.taxCents, grossCents: x.grossCents, paid: x.status === "BEZAHLT" }))
       : [];
     return (
-      <main className="space-y-4">
+      <main data-wide className="space-y-4">
         <Link href={`/buchhaltung/belege?art=${back}`} className="flex items-center gap-1 text-sm text-steel hover:text-brand"><ArrowLeft className="size-4" /> {back === "angebote" ? "Angebote" : back === "gutschriften" ? "Gutschriften" : "Rechnungen"}</Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="page-title">{label} <span className="text-steel">(Entwurf)</span></h1>
@@ -135,6 +136,8 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
               {d.sentAt && <div className="flex justify-between gap-2 sm:col-span-2"><dt className="text-steel">Zuletzt gesendet</dt><dd>{formatDateTime(d.sentAt)} an {d.sentTo}</dd></div>}
             </dl>
           </section>
+
+          {d.pdf && <PdfFromUrl url={`/api/buchhaltung/pdf/${d.id}`} downloadUrl={`/api/buchhaltung/pdf/${d.id}?download=1`} title={d.imported ? "Original-PDF aus Lexware" : `${label} ${d.number} als PDF`} />}
 
           <section className="card p-4">
             <h2 className="font-semibold">{d.title || "Positionen"}</h2>
