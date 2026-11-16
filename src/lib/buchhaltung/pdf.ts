@@ -169,6 +169,7 @@ class Letter {
       if (!first) this.text(this.opts.headerLabel, LEFT, H - this.paper.top + 6 * MM, { size: 9, color: STEEL });
     } else if (first) {
       this.page.drawImage(this.logo, { x: RIGHT - logoW, y: H - 12 * MM - logoH, width: logoW, height: logoH });
+      this.text(COMPANY.subtitle, RIGHT, H - 12 * MM - logoH - 4.5 * MM, { size: 7.5, color: STEEL, align: "right" });
     } else {
       const sw = 32 * MM;
       this.page.drawImage(this.logo, { x: RIGHT - sw, y: H - 12 * MM - (sw * this.logo.height) / this.logo.width, width: sw, height: (sw * this.logo.height) / this.logo.width });
@@ -193,12 +194,12 @@ class Letter {
     p.drawLine({ start: { x: LEFT, y: FOOTER_TOP - 2 * MM }, end: { x: RIGHT, y: FOOTER_TOP - 2 * MM }, thickness: 0.5, color: LINE });
     const b = this.opts.bank;
     const cols: string[][] = [
-      [COMPANY.name, COMPANY.street, `${COMPANY.zip} ${COMPANY.city}`],
-      [`Tel. ${COMPANY.phone}`, COMPANY.email, COMPANY.website.replace(/^https?:\/\//, "")],
+      [COMPANY.name, COMPANY.street, `${COMPANY.zip} ${COMPANY.city}`, `GF ${managers()}`],
       b.iban ? [b.bankName || "Bankverbindung", `IBAN ${fmtIban(b.iban)}`, b.bic ? `BIC ${b.bic}` : ""] : ["Bankverbindung", "bitte in den Einstellungen", "eintragen"],
-      [`Geschäftsführer: ${managers()}`, `${COMPANY.register}`, `USt-IdNr. ${COMPANY.vatId}`, b.taxNumber ? `Steuernummer ${b.taxNumber}` : ""],
+      [COMPANY.register.replace(/,\s*HRB.*$/, ""), `HRB ${COMPANY.register.replace(/^.*HRB\s*/, "")}`, `USt-IdNr. ${COMPANY.vatId}`, b.taxNumber ? `Steuernummer ${b.taxNumber}` : ""],
+      [`Tel. ${COMPANY.phone}`, `Mobil ${COMPANY.mobile}`, COMPANY.email, COMPANY.web],
     ];
-    const widths = [34, 33, 44, 54].map((m) => m * MM);
+    const widths = [46, 46, 39, 34].map((m) => m * MM);
     let x = LEFT;
     cols.forEach((c, i) => {
       c.forEach((line, j) => {

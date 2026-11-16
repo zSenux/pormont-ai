@@ -61,7 +61,8 @@ export async function OrderDoc({ id, kind }: { id: string; kind: "bestaetigung" 
           </div>
           <div className="shrink-0 text-right text-sm">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt={COMPANY.name} className="mb-3 ml-auto h-10 w-auto" />
+            <img src="/logo.svg" alt={COMPANY.name} className="ml-auto h-10 w-auto" />
+            <p className="mb-3 mt-1 text-[10px] text-steel">{COMPANY.subtitle}</p>
             <dl className="grid grid-cols-[auto_auto] justify-end gap-x-3 text-xs">
               <dt className="text-steel">{ab ? "Auftrag" : "Lieferschein"}</dt><dd className="font-semibold">{docNo}</dd>
               <dt className="text-steel">Datum</dt><dd>{today}</dd>
@@ -151,10 +152,11 @@ export async function OrderDoc({ id, kind }: { id: string; kind: "bestaetigung" 
           </section>
         )}
 
-        <footer className="grid gap-2 border-t border-line pt-3 text-[10px] text-steel sm:grid-cols-3">
+        <footer className="grid gap-2 border-t border-line pt-3 text-[10px] text-steel sm:grid-cols-4">
           <p>{COMPANY.name}<br />{COMPANY.street}<br />{COMPANY.zip} {COMPANY.city}</p>
-          <p>Tel. {COMPANY.phone}<br />{COMPANY.email}<br />{COMPANY.website.replace(/^https?:\/\//, "")}</p>
-          <p>{COMPANY.register}<br />USt-IdNr. {COMPANY.vatId}{config?.iban && <><br />IBAN {fmtIban(config.iban)}{config.bankName && ` · ${config.bankName}`}</>}</p>
+          <p>{config?.iban ? <>{config.bankName || "Bankverbindung"}<br />IBAN {fmtIban(config.iban)}{config.bic && <><br />BIC {config.bic}</>}</> : "Bankverbindung"}</p>
+          <p>{COMPANY.register}<br />USt-IdNr. {COMPANY.vatId}</p>
+          <p>Tel. {COMPANY.phone}<br />Mobil {COMPANY.mobile}<br />{COMPANY.email}<br />{COMPANY.web}</p>
         </footer>
       </article>
     </main>

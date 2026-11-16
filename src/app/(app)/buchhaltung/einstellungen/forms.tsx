@@ -13,7 +13,7 @@ export function ConfigForm({ c }: { c: BookConfig }) {
     <StateForm action={saveBookConfigAction} submit="Speichern">
       <h3 className="text-sm font-semibold">Bankverbindung und Steuer (steht im Fuß jedes Belegs)</h3>
       <div className="grid gap-2 sm:grid-cols-2">
-        <label className="text-xs text-steel sm:col-span-2">IBAN<input name="iban" defaultValue={c.iban} placeholder="DE00 0000 0000 0000 0000 00" className="input mt-0.5 font-mono" /></label>
+        <label className="text-xs text-steel sm:col-span-2">IBAN<input name="iban" defaultValue={c.iban} placeholder="leer = Standard von ProMont" className="input mt-0.5 font-mono" /></label>
         <label className="text-xs text-steel">BIC<input name="bic" defaultValue={c.bic} className="input mt-0.5 font-mono" /></label>
         <label className="text-xs text-steel">Bank<input name="bankName" defaultValue={c.bankName} placeholder="z. B. Sparkasse Rhein Neckar Nord" className="input mt-0.5" /></label>
         <label className="text-xs text-steel">Steuernummer (Finanzamt)<input name="taxNumber" defaultValue={c.taxNumber} placeholder="z. B. 38/123/45678" className="input mt-0.5" /></label>
