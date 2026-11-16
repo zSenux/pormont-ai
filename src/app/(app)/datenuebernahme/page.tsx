@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { Archive, Database, FileSpreadsheet, Search, Trash2 } from "lucide-react";
+import { Archive, Database, FileSpreadsheet, FileText, Search, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatDateTime, formatEuro } from "@/lib/berlin";
-import { ERP_KIND_LABEL, ERP_KINDS, searchRecords, type ErpKind, type TableInfo } from "@/lib/erp-import";
+import { ERP_KIND_LABEL, ERP_KINDS, parseAmount, searchRecords, type ErpKind, type TableInfo } from "@/lib/erp-import";
 import { deleteImport } from "@/app/actions/datenuebernahme";
 import { ActionButton } from "@/components/confirm-button";
-import { ExportUpload, KindForm, TransferButton } from "./forms";
+import { ExportUpload, KindForm, PdfUpload, TransferButton } from "./forms";
 
 export const metadata = { title: "Datenübernahme" };
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 const FIELD_LABEL: Record<string, string> = {
   nummer: "Nummer", name: "Name", anrede: "Anrede", vorname: "Vorname", nachname: "Nachname/Ansprechpartner", email: "E-Mail", telefon: "Telefon", strasse: "Straße", plz: "PLZ", ort: "Ort", notiz: "Notiz",
   beschreibung: "Beschreibung", einheit: "Einheit", preis: "Preis netto", ust: "USt", kunde: "Kunde", datum: "Datum", faellig: "Fällig/gültig bis", brutto: "Betrag brutto", netto: "Betrag netto", status: "Status", titel: "Titel/Betreff",
-  adresse: "Adresse/Baustelle", start: "Beginn", ende: "Ende",
+  adresse: "Adresse/Baustelle", kundennr: "Kundennr.", offen: "Offener Betrag", start: "Beginn", ende: "Ende",
 };
 
 const zeilen = (n: number) => `${n.toLocaleString("de-DE")} ${n === 1 ? "Zeile" : "Zeilen"}`;
@@ -36,7 +36,10 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
   const done = await db.erpRecord.groupBy({ by: ["importId", "table"], where: { OR: [{ lexId: { not: null } }, { projectId: { not: null } }] }, _count: { _all: true } });
   const failed = await db.erpRecord.groupBy({ by: ["importId", "table"], where: { error: { not: null }, lexId: null, projectId: null }, _count: { _all: true } });
   const openInvoices = await searchRecords({ offen: true, take: 5000 });
-  const openSum = openInvoices.reduce((s, r) => s + (r.amount ?? 0), 0);
+  const pdfIds = imports.filter((i) => i.format === "pdf").map((i) => i.id);
+  const pdfLeft = pdfIds.length ? await db.erpRecord.groupBy({ by: ["importId"], where: { importId: { in: pdfIds } }, _count: { _all: true } }) : [];
+  // Offener Rest, wenn die Liste ihn mitliefert (z. B. „Offener Betrag“ bei Lexware), sonst der Rechnungsbetrag
+  const openSum = openInvoices.reduce((s, r) => s + (parseAmount((r.fields as Record<string, string> | null)?.offen) ?? r.amount ?? 0), 0);
   const n = (k: ErpKind) => stats.find((s) => s.kind === k)?._count._all ?? 0;
   const tableCount = (list: typeof done, importId: string, table: string) => list.find((x) => x.importId === importId && x.table === table)?._count._all ?? 0;
 
@@ -63,7 +66,16 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
             <li>Kunden und Artikel per Knopf in die Buchhaltung, Projekte nach Jarvis übernehmen. Doppelte werden erkannt und nur verknüpft.</li>
             <li>Alte Rechnungen und Angebote bleiben als Archiv – sie bekommen keine neue Rechnungsnummer. Jarvis findet sie trotzdem („Was hat Müller 2025 bezahlt?“).</li>
           </ol>
+          <details className="rounded-xl border border-line p-3 text-sm">
+            <summary className="cursor-pointer font-medium">So geht es mit Lexware faktura+auftrag (Desktop)</summary>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-steel">
+              <li><b>Datei → Exportieren</b> (je nach Version „Datenexport“): <b>Kunden</b>, <b>Artikel</b> und <b>Aufträge/Vorgänge</b> nacheinander als CSV bzw. Text mit Semikolon speichern. Haken bei <b>„Feldnamen in der ersten Zeile“</b> setzen, alle Felder auswählen.</li>
+              <li>Geht auch: die Auftragsübersicht mit Filter „alle Vorgänge“ über alle Jahre nach Excel exportieren. Eine gemischte Liste teilt Jarvis selbst nach Vorgangsart auf (Angebote, Rechnungen, Gutschriften, Lieferscheine …).</li>
+              <li>Die Belege selbst: in der Auftragsübersicht markieren und als PDF in einen Ordner drucken (Belegnummer im Dateinamen), dann unten alle PDFs auf einmal hochladen.</li>
+            </ol>
+          </details>
           <ExportUpload />
+          <div className="border-t border-line pt-3"><PdfUpload /></div>
         </section>
       )}
 
@@ -91,6 +103,7 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
                       {r.party && r.name ? <span className="text-steel"> · {r.name}</span> : null}
                       <span className="block text-xs text-steel">{ERP_KIND_LABEL[r.kind as ErpKind]}{r.date ? ` · ${formatDate(r.date)}` : ""}{r.status ? ` · ${r.status}` : ""}{r.lexId ? (r.lexId.includes("-") ? " · in Lexware" : " · übernommen") : ""}{r.projectId ? " · als Projekt" : ""}</span>
                     </span>
+                    {r.fileId && <span className="chip shrink-0 bg-brand-soft px-2 py-0.5 text-[11px] text-brand"><FileText className="size-3" /> PDF</span>}
                     {r.amount !== null && <span className="shrink-0 font-semibold">{formatEuro(r.amount)}</span>}
                   </Link>
                 </li>
@@ -110,15 +123,24 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
               <div className="flex flex-wrap items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold [overflow-wrap:anywhere]">{imp.fileName}</p>
-                  <p className="text-xs text-steel">{imp.format.toUpperCase()} · {zeilen(imp.rows)} · {formatDateTime(imp.createdAt)}{imp.userName ? ` · ${imp.userName}` : ""}</p>
+                  <p className="text-xs text-steel">{imp.format.toUpperCase()} · {imp.format === "pdf" ? `${imp.rows.toLocaleString("de-DE")} Dateien` : zeilen(imp.rows)} · {formatDateTime(imp.createdAt)}{imp.userName ? ` · ${imp.userName}` : ""}</p>
                 </div>
                 {imp.busy && <span className="chip bg-amber-50 px-2 py-0.5 text-[11px] text-warn">Übernahme läuft …</span>}
                 {admin && (
-                  <ActionButton action={deleteImport.bind(null, imp.id)} confirm={`„${imp.fileName}“ mit allen Datensätzen aus dem Archiv löschen? Bereits übernommene Kunden, Artikel und Projekte bleiben dort.`} className="btn-secondary px-2 py-1.5" title="Import löschen">
+                  <ActionButton action={deleteImport.bind(null, imp.id)} confirm={imp.format === "pdf" ? `„${imp.fileName}“ mit allen PDFs löschen?` : `„${imp.fileName}“ mit allen Datensätzen aus dem Archiv löschen? Bereits übernommene Kunden, Artikel und Projekte bleiben dort.`} className="btn-secondary px-2 py-1.5" title="Import löschen">
                     <Trash2 className="size-4" />
                   </ActionButton>
                 )}
               </div>
+              {imp.format === "pdf" && (() => {
+                const left = pdfLeft.find((x) => x.importId === imp.id)?._count._all ?? 0;
+                return (
+                  <p className="text-sm text-steel">
+                    {imp.rows.toLocaleString("de-DE")} PDFs · <span className="text-ok">{(imp.rows - left).toLocaleString("de-DE")} einem Beleg aus der Liste zugeordnet</span>
+                    {left ? <> · <Link href={`/datenuebernahme?q=${encodeURIComponent("pdf")}&art=sonstiges`} className="text-brand">{left.toLocaleString("de-DE")} noch ohne passenden Datensatz</Link> (werden zugeordnet, sobald die Liste hochgeladen ist)</> : null}
+                  </p>
+                );
+              })()}
               <ul className="space-y-3">
                 {tables.map((t) => {
                   const total = counts.find((c) => c.importId === imp.id && c.table === t.name)?._count._all ?? t.rows;
