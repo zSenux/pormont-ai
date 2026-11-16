@@ -327,7 +327,7 @@ export function vorgangsart(v: unknown) {
 // Lexware faktura+auftrag „Buchungsdaten“ (Export für die Fibu): eine Zeile je Steuersatz, Kunde und Belegart nur im
 // Buchungstext („RG202638 USt.19.00% Midas … mbH“). → eine Zeile je Beleg mit Kunde, Art und Summe. Ob bezahlt ist, steht
 // dort nicht drin („Zahlung unbekannt“ zählt nicht als offen).
-const BOOKING_TEXT = /^([A-Za-zÄÖÜ]{1,4})[-\s]?(\S*\d\S*)\s+(?:USt\.?|MwSt\.?|VSt\.?)\s*[\d.,]+\s*%\s*(.*)$/i;
+const BOOKING_TEXT = /^([A-Za-zÄÖÜ]{1,4})[-\s]?(\d\S*)\s+(?:((?:USt|MwSt|VSt)\.?\s*(\d[\d.,]*)\s*%)\s*)?(.*)$/i;
 export function lexwareBookings(t: Table): Table {
   const headers = new Set(t.rows.flatMap((r) => Object.keys(r)).map(norm));
   if (!headers.has("buchungstext") || !(headers.has("buchungsbetrag") || headers.has("buchungsbetrageuro")) || !(headers.has("sollkonto") || headers.has("habenkonto"))) return t;
@@ -335,9 +335,9 @@ export function lexwareBookings(t: Table): Table {
     const k = Object.keys(r).find((x) => norm(x) === n);
     return k === undefined ? "" : String(r[k] ?? "").trim();
   };
-  const groups = new Map<string, Record<string, unknown>>();
-  const sums = new Map<string, number>();
-  const taxes = new Map<string, string[]>();
+  // Je Beleg: Erlöszeile (netto, „RG202638 Midas …“) + Steuerzeile („RG202638 USt.19.00% Midas …“) → netto, USt, brutto
+  const docs = new Map<string, { row: Record<string, unknown>; net: number; tax: number; rates: Set<string>; texts: string[] }>();
+  const eur = (n: number) => n.toFixed(2).replace(".", ",");
   for (const r of t.rows) {
     const text = get(r, "buchungstext");
     const m = BOOKING_TEXT.exec(text);
@@ -346,24 +346,40 @@ export function lexwareBookings(t: Table): Table {
     const prefix = (m?.[1] ?? "").toUpperCase();
     const art = /^(GS|G|GU|ST)$/.test(prefix) || /gutschrift|storno/i.test(text) ? "Gutschrift" : "Rechnung";
     const key = `${art}|${nr}`;
-    sums.set(key, Math.round(((sums.get(key) ?? 0) + amount) * 100) / 100);
-    const rate = /(\d[\d.,]*)\s*%/.exec(text)?.[1];
-    if (rate) taxes.set(key, [...(taxes.get(key) ?? []), `${rate.replace(".", ",")} %: ${amount.toFixed(2).replace(".", ",")}`]);
-    if (!groups.has(key))
-      groups.set(key, {
-        Belegnummer: nr,
-        Belegdatum: get(r, "belegdatum"),
-        Vorgangsart: art,
-        Kunde: m?.[3]?.trim() || "",
-        Status: "Zahlung unbekannt",
-        Buchungstext: text,
-      });
+    const d = docs.get(key) ?? { row: { Belegnummer: nr, Belegdatum: get(r, "belegdatum"), Vorgangsart: art, Status: "Zahlung unbekannt" }, net: 0, tax: 0, rates: new Set<string>(), texts: [] };
+    if (m?.[3]) {
+      d.tax += amount;
+      d.rates.add(`${m[4].replace(/\.?0+$/, "").replace(".", ",")} %`);
+    } else d.net += amount;
+    const kunde = m?.[5]?.trim();
+    if (kunde && !d.row.Kunde) d.row.Kunde = kunde;
+    if (d.texts.length < 4) d.texts.push(text);
+    docs.set(key, d);
   }
-  const rows = [...groups.entries()].map(([key, row]) => {
-    const tx = taxes.get(key) ?? [];
-    return Object.fromEntries(Object.entries({ ...row, "Betrag brutto": sums.get(key)!.toFixed(2).replace(".", ","), ...(tx.length > 1 ? { "Anteile je Steuersatz": tx.join(" · ") } : {}) }).filter(([, v]) => v !== ""));
-  });
+  const rows = [...docs.values()].map((d) =>
+    Object.fromEntries(
+      Object.entries({ ...d.row, "Betrag netto": eur(d.net), USt: eur(d.tax), "Betrag brutto": eur(d.net + d.tax), Steuersatz: [...d.rates].join(", ") || (d.tax ? "" : "ohne USt (z. B. § 13b)"), Buchungstext: d.texts.join(" | ") }).filter(([, v]) => v !== "" && v !== undefined),
+    ),
+  );
   return { name: t.name, rows };
+}
+
+/** Umsatz netto aus dem Archiv (alte Rechnungen aus Lexware usw.) – doppelt hochgeladene Belege zählen einmal */
+export async function archiveRevenue(from: string, to: string) {
+  const recs = await db.erpRecord.findMany({ where: { kind: "rechnung", date: { gte: berlinDateTime(from, "00:00"), lte: berlinDateTime(to, "23:59") } }, select: { number: true, date: true, amount: true, fields: true } });
+  const seen = new Set<string>();
+  let cents = 0;
+  let count = 0;
+  for (const r of recs) {
+    const key = r.number ? `${r.number}|${r.date?.toISOString().slice(0, 10)}` : null;
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    const net = parseAmount((r.fields as Record<string, string> | null)?.netto) ?? r.amount;
+    if (net === null) continue;
+    cents += Math.round(net * 100);
+    count++;
+  }
+  return { netCents: cents, count };
 }
 
 export function splitByType(t: Table): Table[] {
