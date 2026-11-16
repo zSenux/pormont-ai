@@ -69,6 +69,7 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
           <details className="rounded-xl border border-line p-3 text-sm">
             <summary className="cursor-pointer font-medium">So geht es mit Lexware faktura+auftrag (Desktop)</summary>
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-steel">
+              <li><b>Am besten: Datei → Export → „Daten Betriebsprüfung“</b>, Zeitraum wählen (z. B. alle Jahre bis heute). Lexware legt einen Ordner <i>Betrprue_…</i> an – den Ordner als ZIP packen (Rechtsklick → Senden an → ZIP-komprimierter Ordner) und hier hochladen. Darin sind alle Rechnungen, Stornos und Korrekturen mit Positionen, Zahlstatus und Kundenanschrift. Angebote und Auftragsbestätigungen sind in diesem Export nicht enthalten.</li>
               <li><b>Datei → Exportieren</b> (je nach Version „Datenexport“): <b>Kunden</b>, <b>Artikel</b> und <b>Aufträge/Vorgänge</b> nacheinander als CSV bzw. Text mit Semikolon speichern. Haken bei <b>„Feldnamen in der ersten Zeile“</b> setzen, alle Felder auswählen.</li>
               <li>Geht auch: die Auftragsübersicht mit Filter „alle Vorgänge“ über alle Jahre nach Excel exportieren. Eine gemischte Liste teilt Jarvis selbst nach Vorgangsart auf (Angebote, Rechnungen, Gutschriften, Lieferscheine …).</li>
               <li>Die Belege selbst: in der Auftragsübersicht markieren und als PDF in einen Ordner drucken (Belegnummer im Dateinamen), dann unten alle PDFs auf einmal hochladen.</li>
@@ -123,7 +124,7 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
               <div className="flex flex-wrap items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold [overflow-wrap:anywhere]">{imp.fileName}</p>
-                  <p className="text-xs text-steel">{imp.format.toUpperCase()} · {imp.format === "pdf" ? `${imp.rows.toLocaleString("de-DE")} Dateien` : zeilen(imp.rows)} · {formatDateTime(imp.createdAt)}{imp.userName ? ` · ${imp.userName}` : ""}</p>
+                  <p className="text-xs text-steel">{imp.format === "gdpdu" ? "Lexware Betriebsprüfung" : imp.format.toUpperCase()} · {imp.format === "pdf" ? `${imp.rows.toLocaleString("de-DE")} Dateien` : zeilen(imp.rows)} · {formatDateTime(imp.createdAt)}{imp.userName ? ` · ${imp.userName}` : ""}</p>
                 </div>
                 {imp.busy && <span className="chip bg-amber-50 px-2 py-0.5 text-[11px] text-warn">Übernahme läuft …</span>}
                 {admin && (

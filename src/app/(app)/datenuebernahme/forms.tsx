@@ -44,9 +44,9 @@ export function ExportUpload() {
       <label className={`btn-primary w-fit cursor-pointer ${busy ? "pointer-events-none opacity-60" : ""}`}>
         {busy ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
         {busy ? "Wird eingelesen …" : "Exportdatei hochladen"}
-        <input ref={input} type="file" className="sr-only" accept=".csv,.txt,.tsv,.asc,.json,.xlsx,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => send(e.target.files?.[0])} />
+        <input ref={input} type="file" className="sr-only" accept=".csv,.txt,.tsv,.asc,.json,.xlsx,.zip,application/zip,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => send(e.target.files?.[0])} />
       </label>
-      <p className="text-xs text-steel">Excel (.xlsx, alle Blätter), CSV oder JSON, bis 25 MB. Mehrere Dateien nacheinander hochladen geht auch (z. B. kunden.csv, rechnungen.csv).</p>
+      <p className="text-xs text-steel">Excel (.xlsx, alle Blätter), CSV, JSON oder der Lexware-Export „Daten Betriebsprüfung“ als ZIP, bis 25 MB. Mehrere Dateien nacheinander hochladen geht auch (z. B. kunden.csv, rechnungen.csv).</p>
       {msg?.error && <p className="text-sm text-bad" role="alert">{msg.error}</p>}
       {msg?.ok && <p className="flex items-start gap-1 text-sm text-ok"><Check className="mt-0.5 size-4 shrink-0" /> {msg.ok}</p>}
     </div>

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { berlinDateTime } from "@/lib/berlin";
 import { decodeText, splitCsv } from "@/lib/catalog";
 import { articleInput, createCustomer, customerInput } from "@/lib/buchhaltung/customers";
+import { readLines } from "@/lib/buchhaltung/money";
 import { FileError, storeFile } from "@/lib/files";
 
 // Datenübernahme aus einem alten Programm (ERP/Rechnungsprogramm): Exportdatei (CSV, Excel .xlsx oder JSON) hochladen,
@@ -182,8 +183,114 @@ function fromXlsx(buf: Buffer): Table[] {
   return tables;
 }
 
+// --- Lexware „Daten Betriebsprüfung“ (GDPdU/IDEA-Export: ZIP mit index.xml + Tab-getrennten Textdateien) ---
+// Verkauf_BP = Belegköpfe (Rechnung, Storno, Rechnungskorrektur, Lieferschein …) mit Zahlstatus, Kunde und Anschrift,
+// Positionen_vk_BP = Positionen je Beleg. Beides wird zu einer Zeile je Beleg mit den Positionen zusammengeführt.
+const entities = (s: string) =>
+  s
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Math.min(0x10ffff, Number(n))))
+    .replace(/&amp;/g, "&");
+
+type GdpduTable = { url: string; name: string; description: string; from: number; sep: string; columns: string[] };
+
+export function gdpduIndex(xml: string): GdpduTable[] {
+  return [...xml.matchAll(/<Table>([\s\S]*?)<\/Table>/g)].map((m) => {
+    const t = m[1];
+    const columns = [...t.matchAll(/<(?:VariableColumn|VariablePrimaryKey)>\s*<Name>([\s\S]*?)<\/Name>/g)].map((c) => entities(c[1]).trim());
+    const sepRaw = /<ColumnDelimiter>([\s\S]*?)<\/ColumnDelimiter>/.exec(t)?.[1] ?? "\t";
+    return {
+      url: entities(/<URL>([\s\S]*?)<\/URL>/.exec(t)?.[1] ?? "").trim(),
+      name: (/<Name>([\s\S]*?)<\/Name>/.exec(t.replace(/<VariableLength>[\s\S]*$/, ""))?.[1] ?? "").trim(),
+      description: (/<Description>([\s\S]*?)<\/Description>/.exec(t)?.[1] ?? "").trim(),
+      from: Number(/<Range>\s*<From>(\d+)<\/From>/.exec(t)?.[1] ?? 1),
+      sep: sepRaw === "&#9;" ? "\t" : entities(sepRaw) || "\t",
+      columns,
+    };
+  });
+}
+
+function fromGdpdu(files: Map<string, () => Buffer>): Table[] {
+  const byBase = new Map([...files.entries()].map(([n, f]) => [n.split("/").pop()!.toLowerCase(), f]));
+  const index = byBase.get("index.xml");
+  if (!index) throw new ErpImportError("Im ZIP fehlt die index.xml.");
+  const defs = gdpduIndex(decodeText(index()));
+  const read = (d: GdpduTable) => {
+    const f = byBase.get(d.url.split(/[\\/]/).pop()!.toLowerCase());
+    if (!f) return [];
+    const lines = decodeText(f()).split(/\r?\n/).slice(Math.max(0, d.from - 1)).filter((l) => l.trim() !== "");
+    return lines.map((l) => Object.fromEntries(l.split(d.sep).map((v, i) => [d.columns[i] ?? `Spalte ${i + 1}`, entities(v).trim()]).filter(([, v]) => v !== "")) as Record<string, string>);
+  };
+  const isHead = (d: GdpduTable) => /verkauf_bp$/i.test(d.name) || /^belege im verkauf/i.test(d.description);
+  const isPos = (d: GdpduTable) => /positionen_vk/i.test(d.name) || /belegpositionen verkauf/i.test(d.description);
+  const heads = defs.filter(isHead).flatMap(read);
+  if (!heads.length) {
+    // Unbekannter GDPdU-Export: alle Tabellen so übernehmen, wie sie sind
+    const tables = defs.map((d) => ({ name: d.description || d.name, rows: read(d) })).filter((t) => t.rows.length);
+    if (!tables.length) throw new ErpImportError("Der Betriebsprüfungs-Export enthält keine Daten.");
+    return tables;
+  }
+  const key = (typ: string, nr: string) => `${typ.toLowerCase()}|${nr}`;
+  const positions = new Map<string, Record<string, unknown>[]>();
+  for (const p of defs.filter(isPos).flatMap(read)) {
+    const k = key(p.Belegtyp ?? "", p.Belegnummer ?? "");
+    const list = positions.get(k) ?? [];
+    list.push({ Bezeichnung: p.Bezeichnung ?? "", Einheit: p.Einheit ?? "", Menge: p.Menge ?? "", Rabatt: p.Rabatt_Prozent_Position ?? "", Netto: p.Positionspreis_netto ?? "", USt: p.Ust_Betrag ?? "", Satz: p.Ust_Satz_Prozent ?? "" });
+    positions.set(k, list);
+  }
+  const eur = (n: number) => n.toFixed(2).replace(".", ",");
+  const docs: Record<string, unknown>[] = [];
+  const other: Record<string, unknown>[] = [];
+  for (const h of heads) {
+    const typ = h.Belegtyp ?? "";
+    const pos = positions.get(key(typ, h.Belegnummer ?? "")) ?? [];
+    const net = parseAmount(h["Belegsumme-netto"]) ?? 0;
+    const tax = parseAmount(h.Beleg_Ust_Betrag) ?? 0;
+    const zahl = (h.Zahlstatus ?? "").toLowerCase();
+    const storno = /storno|gutschrift/i.test(typ);
+    const first = String(pos[0]?.Bezeichnung ?? "").replace(/^[-–\s]+/, "").replace(/\s+/g, " ").slice(0, 120);
+    const row: Record<string, unknown> = {
+      Vorgangsart: typ,
+      // Nummern sind je Belegart eigene Kreise (Rechnung 1 ≠ Rechnungskorrektur 1)
+      Belegnummer: /korrektur/i.test(typ) ? `RK-${h.Belegnummer}` : h.Belegnummer,
+      Belegdatum: h.Belegdatum,
+      Kunde: h.Kundenname,
+      Kundennummer: h.Kundennummer,
+      Betreff: first || undefined,
+      Status: storno ? "Storno" : /teil/.test(zahl) ? "teilbezahlt" : /nicht|unbezahlt|offen/.test(zahl) ? "offen" : /bezahlt/.test(zahl) ? "bezahlt" : zahl || undefined,
+      "Betrag netto": eur(net),
+      USt: eur(tax),
+      "Betrag brutto": eur(net + tax),
+      Zahldatum: h.Zahldatum,
+      Zahlbetrag: h.Zahlbetrag,
+      Leistungsdatum: h.Leistungsdatum || h.Lieferdatum,
+      Strasse: h.Adresszeile2 || h.Adresszeile1,
+      PLZ: h.Postleitzahl,
+      Ort: h.Ort,
+      Land: h.Land,
+      "USt-IdNr.": h["USt.-Ident.-Nr."],
+      "§ 13b": h["USt. Paragraph 13b"] === "ja" || h["EG USt. Paragraph 13b"] === "ja" ? "ja" : undefined,
+      "Weitergeführt aus": h["Weitergefuehrt aus"],
+      Positionen: pos.length ? pos : undefined,
+    };
+    const clean = Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined && v !== ""));
+    (/rechnung|storno|gutschrift|korrektur/i.test(typ) ? docs : other).push(clean);
+  }
+  const tables: Table[] = [];
+  if (docs.length) tables.push({ name: "Lexware Verkauf · Rechnungen und Stornos", rows: docs, kind: "rechnung" });
+  if (other.length) tables.push({ name: "Lexware Verkauf · Lieferscheine und Sonstiges", rows: other, kind: "sonstiges" });
+  return tables;
+}
+
 export function parseExport(fileName: string, buf: Buffer): { format: string; tables: Table[] } {
   const lower = fileName.toLowerCase();
+  if (buf.subarray(0, 2).toString() === "PK" && !lower.endsWith(".xlsx")) {
+    const files = unzip(buf);
+    if ([...files.keys()].some((n) => /(^|\/)index\.xml$/i.test(n))) return { format: "gdpdu", tables: fromGdpdu(files) };
+  }
   if (buf.subarray(0, 2).toString() === "PK" || lower.endsWith(".xlsx")) return { format: "xlsx", tables: fromXlsx(buf) };
   if (lower.endsWith(".xls")) throw new ErpImportError("Altes Excel-Format (.xls) – bitte als .xlsx oder CSV speichern.");
   const head = buf.subarray(0, 200).toString("utf8").replace(/^﻿/, "").trimStart();
@@ -384,6 +491,7 @@ export async function archiveRevenue(from: string, to: string) {
 }
 
 export function splitByType(t: Table): Table[] {
+  if (t.kind) return [t];
   const headers = [...new Set(t.rows.flatMap((r) => Object.keys(r)))];
   for (const h of headers.filter((x) => TYPE_COL.test(norm(x)))) {
     const vals = t.rows.map((r) => r[h]).filter((v) => v !== undefined && v !== null && String(v).trim() !== "");
@@ -611,65 +719,128 @@ export async function transferArticles(importId: string) {
 /** Tage, ab denen eine alte Rechnung ohne bekannten Zahlstatus als bezahlt gilt */
 export const ASSUME_PAID_DAYS = 30;
 
+/** Positionen aus dem Betriebsprüfungs-Export → Belegpositionen (Positionspreis ist die Zeilensumme netto) */
+function linesFromPositions(raw: unknown, reverseCharge: boolean) {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((p: Record<string, unknown>) => {
+    const text = String(p.Bezeichnung ?? "").replace(/\s+\n/g, "\n").trim();
+    const total = parseAmount(p.Netto);
+    if (!text && !total) return [];
+    const qtyRaw = parseAmount(p.Menge);
+    const qty = qtyRaw && Math.abs(qtyRaw) > 0 ? Math.abs(qtyRaw) : 1;
+    const net = Math.abs(total ?? 0);
+    const rate = Math.round(parseAmount(p.Satz) ?? 19);
+    const name = (text || "Position").split("\n")[0].slice(0, 300);
+    const rest = text.length > name.length ? text.slice(name.length).trim() : "";
+    return [{
+      articleId: null,
+      name,
+      description: rest ? rest.slice(0, 4000) : null,
+      qty,
+      unit: (String(p.Einheit ?? "").trim() || (qty === 1 ? "psch" : "Stk")).slice(0, 30),
+      price: Math.round((net / qty) * 10000) / 10000,
+      discount: 0,
+      taxRate: (reverseCharge ? 0 : rate === 7 ? 7 : rate === 0 ? 0 : 19) as 19 | 7 | 0,
+    }];
+  });
+}
+
 /**
  * Alte Rechnungen als übernommene Belege in die Buchhaltung (`imported`, `finalizedBy` „Lexware“, Nummer bleibt):
  * dann zählen sie überall mit – Umsatz, Jahresauswertung, Kundenakte, Rechnungslisten, offene Posten.
- * Keine Positionen im Export → eine Sammelposition je Beleg, Beträge exakt aus netto/USt.
- * Zahlstatus: „bezahlt“/„offen“ aus der Liste; unbekannt → älter als 30 Tage bezahlt, sonst offen.
+ * Mit Positionen (Betriebsprüfungs-Export) werden diese übernommen, sonst eine Sammelposition je Beleg; Beträge immer exakt
+ * aus netto/USt des Belegkopfs. Stornos werden Gutschriften und die stornierte Rechnung wird „storniert“.
+ * Zahlstatus: bezahlt/teilbezahlt/offen aus der Liste (mit Zahldatum/-betrag); unbekannt → älter als 30 Tage bezahlt, sonst offen.
+ * Fehlt der Kunde in der Buchhaltung, wird er mit der Anschrift und Kd-Nr. aus Lexware angelegt.
  */
 export async function transferInvoices(importId: string, userName: string) {
-  const stats = { created: 0, linked: 0, open: 0 };
+  const stats = { created: 0, linked: 0, open: 0, credits: 0, customers: 0 };
   try {
-    const recs = await db.erpRecord.findMany({ where: { importId, kind: "rechnung", lexId: null }, orderBy: { date: "asc" } });
+    const all = await db.erpRecord.findMany({ where: { importId, kind: "rechnung", lexId: null }, orderBy: { date: "asc" } });
+    const isStorno = (r: (typeof all)[number]) => /storno|gutschrift/i.test(String((r.raw as Record<string, unknown>).Vorgangsart ?? "")) || /^storno$/i.test(r.status ?? "");
+    // Erst die Rechnungen, dann die Stornos (die verweisen auf ihre Rechnung)
+    const recs = [...all.filter((r) => !isStorno(r)), ...all.filter(isStorno)];
     const today = Date.now();
     for (const r of recs) {
       try {
         const f = r.fields as Record<string, string>;
         const raw = r.raw as Record<string, unknown>;
-        if (!r.number) throw new Error("Rechnungsnummer fehlt.");
-        if (!r.date) throw new Error("Rechnungsdatum fehlt.");
+        const storno = isStorno(r);
+        const kind = storno ? "GUTSCHRIFT" : "RECHNUNG";
+        if (!r.number) throw new Error("Belegnummer fehlt.");
+        if (!r.date) throw new Error("Belegdatum fehlt.");
         const gross = r.amount;
         if (gross === null) throw new Error("Betrag fehlt.");
         const net = parseAmount(f.netto) ?? gross;
-        const grossCents = Math.round(gross * 100);
-        const netCents = Math.round(net * 100);
+        // Gutschriften werden wie in Jarvis mit positiven Beträgen gespeichert
+        const grossCents = Math.round((storno ? Math.abs(gross) : gross) * 100);
+        const netCents = Math.round((storno ? Math.abs(net) : net) * 100);
         const taxCents = grossCents - netCents;
-        const same = await db.salesDoc.findFirst({ where: { kind: "RECHNUNG", number: r.number }, select: { id: true, imported: true } });
+        const reverseCharge = taxCents === 0 && (String(raw["§ 13b"] ?? "") === "ja" || /13b|ohne ust/i.test(String(raw.Steuersatz ?? "")));
+        const posLines = linesFromPositions(raw.Positionen, reverseCharge);
+        const same = await db.salesDoc.findFirst({ where: { kind, number: r.number }, select: { id: true, imported: true, lines: true, netCents: true } });
         if (same?.imported) {
+          // Schon übernommen (z. B. aus den Buchungsdaten mit Sammelposition) → Positionen nachtragen, wenn die Summe passt
+          const old = readLines(same.lines);
+          if (posLines.length && old.length <= 1 && Math.abs(same.netCents - netCents) <= 1) await db.salesDoc.update({ where: { id: same.id }, data: { lines: posLines as object[] } });
           await db.erpRecord.update({ where: { id: r.id }, data: { lexId: same.id, error: null } });
           stats.linked++;
           continue;
         }
         const number = same ? `${r.number} (Lexware)` : r.number;
-        // Kunde: gleicher Name in der Buchhaltung, sonst über die Kundennummer aus dem Kunden-Import
-        let customer = r.party ? await db.customer.findFirst({ where: { name: { equals: r.party, mode: "insensitive" } } }) : null;
+        // Kunde: Kd-Nr. aus Lexware, gleicher Name, Kunden-Import – sonst neu mit der Anschrift aus dem Beleg
+        const kdnr = /^\d{1,9}$/.test(f.kundennr ?? "") ? Number(f.kundennr) : null;
+        let customer = kdnr ? await db.customer.findUnique({ where: { number: kdnr } }) : null;
+        if (customer && r.party && customer.name.toLowerCase().slice(0, 4) !== r.party.toLowerCase().slice(0, 4)) customer = null;
+        if (!customer && r.party) customer = await db.customer.findFirst({ where: { name: { equals: r.party, mode: "insensitive" } } });
         if (!customer && f.kundennr) {
           const k = await db.erpRecord.findFirst({ where: { kind: "kunde", number: f.kundennr, lexId: { not: null } }, select: { lexId: true } });
           if (k?.lexId && !k.lexId.includes("-")) customer = await db.customer.findUnique({ where: { id: k.lexId } });
         }
+        if (!customer && r.party && raw.Ort) {
+          const country = String(raw.Land ?? "DE").trim();
+          customer = await createCustomer(
+            customerInput.parse({ kind: "FIRMA", company: r.party.slice(0, 150), street: String(raw.Strasse ?? "").slice(0, 150) || null, zip: String(raw.PLZ ?? "").slice(0, 10) || null, city: String(raw.Ort ?? "").slice(0, 80) || null, country: /^[A-Z]{2}$/i.test(country) ? country : "DE", vatId: String(raw["USt-IdNr."] ?? "") || null, notes: "Aus Lexware-Belegen angelegt (Datenübernahme)." }),
+            { number: kdnr, lexId: null },
+          );
+          stats.customers++;
+        }
         const rate = netCents ? Math.round((taxCents / netCents) * 100) : 0;
         const taxRate = (Math.abs(rate - 19) <= 1 ? 19 : Math.abs(rate - 7) <= 1 ? 7 : rate === 0 ? 0 : 19) as 19 | 7 | 0;
-        const reverseCharge = taxCents === 0 && /13b|ohne ust/i.test(String(raw.Steuersatz ?? ""));
-        const status = /bezahlt|paid|ausgeglichen|erledigt/i.test(r.status ?? "") ? "BEZAHLT" : /offen|unbezahlt|open/i.test(r.status ?? "") ? "OFFEN" : today - r.date.getTime() > ASSUME_PAID_DAYS * 86_400_000 ? "BEZAHLT" : "OFFEN";
-        const guessed = !/bezahlt|paid|ausgeglichen|erledigt|offen|open/i.test(r.status ?? "");
+        const st = (r.status ?? "").toLowerCase();
+        const known = !storno && /bezahlt|paid|ausgeglichen|erledigt|offen|open|teil/.test(st);
+        const partial = /teil/.test(st);
+        const status = storno ? "OFFEN" : partial || /nicht|unbezahlt|offen|open/.test(st) ? "OFFEN" : /bezahlt|paid|ausgeglichen|erledigt/.test(st) ? "BEZAHLT" : today - r.date.getTime() > ASSUME_PAID_DAYS * 86_400_000 ? "BEZAHLT" : "OFFEN";
+        const payDay = parseDate(raw.Zahldatum) ?? r.date;
+        const paidCents = storno ? 0 : status === "BEZAHLT" ? grossCents : partial ? Math.min(grossCents, Math.round((parseAmount(raw.Zahlbetrag) ?? 0) * 100)) : 0;
+        const service = parseDate(raw.Leistungsdatum);
+        // Storno: zugehörige Rechnung („RG202462“) finden
+        const srcNo = storno ? String(raw["Weitergeführt aus"] ?? "").replace(/^[A-Za-z]{1,3}[-\s]?/, "") : "";
+        const source = srcNo ? await db.salesDoc.findFirst({ where: { kind: "RECHNUNG", number: srcNo, imported: true } }) : null;
         const pdf = r.fileId ? (await db.storedFile.findUnique({ where: { id: r.fileId }, select: { data: true } }))?.data ?? null : null;
+        const lines = posLines.length
+          ? posLines
+          : [{ articleId: null, name: (r.name || `Leistung lt. ${storno ? "Storno" : "Rechnung"} ${r.number}`).slice(0, 300), description: "Aus Lexware übernommen – Positionen siehe Original-Beleg.", qty: 1, unit: "psch", price: netCents / 100, discount: 0, taxRate: reverseCharge ? 0 : taxRate }];
         const doc = await db.$transaction(async (tx) => {
           const d = await tx.salesDoc.create({
             data: {
-              kind: "RECHNUNG",
+              kind,
               status,
               number,
               customerId: customer?.id ?? null,
-              address: { name: customer?.name ?? r.party ?? "", street: customer?.street ?? null, zip: customer?.zip ?? null, city: customer?.city ?? null, country: customer?.country ?? "DE", email: customer?.email ?? null, vatId: customer?.vatId ?? null, customerNo: customer?.number ?? null } as object,
-              title: r.name?.slice(0, 200) ?? null,
+              address: { name: customer?.name ?? r.party ?? "", street: customer?.street ?? (raw.Strasse as string) ?? null, zip: customer?.zip ?? (raw.PLZ as string) ?? null, city: customer?.city ?? (raw.Ort as string) ?? null, country: customer?.country ?? "DE", email: customer?.email ?? null, vatId: customer?.vatId ?? (raw["USt-IdNr."] as string) ?? null, customerNo: customer?.number ?? null } as object,
+              title: (storno && source ? `Storno zu Rechnung ${source.number}` : r.name)?.slice(0, 200) ?? null,
               date: r.date!,
+              serviceFrom: service,
+              serviceTo: service,
               dueDate: r.dueDate,
               reverseCharge,
-              lines: [{ articleId: null, name: (r.name || `Leistung lt. Rechnung ${r.number}`).slice(0, 300), description: "Aus Lexware übernommen – Positionen siehe Original-Rechnung.", qty: 1, unit: "psch", price: net, discount: 0, taxRate: reverseCharge ? 0 : taxRate }] as object[],
+              lines: lines as object[],
               netCents,
               taxCents,
               grossCents,
-              paidCents: status === "BEZAHLT" ? grossCents : 0,
+              paidCents,
+              sourceId: source?.id ?? null,
               finalizedAt: r.date,
               finalizedBy: "Lexware",
               pdf: pdf ? new Uint8Array(pdf) : null,
@@ -677,13 +848,19 @@ export async function transferInvoices(importId: string, userName: string) {
               createdBy: userName,
             },
           });
-          if (status === "BEZAHLT") await tx.payment.create({ data: { docId: d.id, day: r.date!, amountCents: grossCents, note: guessed ? `Zahlstatus aus Lexware unbekannt – älter als ${ASSUME_PAID_DAYS} Tage, als bezahlt angenommen` : "Zahlungsstand aus Lexware übernommen", userName } });
-          await tx.salesDocEvent.create({ data: { docId: d.id, text: `Aus Lexware übernommen (Datenübernahme, Archiv-Datensatz ${r.id})${guessed ? ` – Zahlstatus unbekannt, ${status === "BEZAHLT" ? "als bezahlt angenommen" : "offen gelassen"}` : ""}`, userName } });
+          if (paidCents > 0)
+            await tx.payment.create({ data: { docId: d.id, day: payDay, amountCents: paidCents, note: known ? `Zahlung aus Lexware übernommen${partial ? " (teilbezahlt)" : ""}` : `Zahlstatus aus Lexware unbekannt – älter als ${ASSUME_PAID_DAYS} Tage, als bezahlt angenommen`, userName } });
+          if (source) {
+            await tx.salesDoc.updateMany({ where: { id: source.id, status: { in: ["OFFEN", "BEZAHLT"] } }, data: { status: "STORNIERT" } });
+            await tx.salesDocEvent.create({ data: { docId: source.id, text: `In Lexware storniert (Storno ${r.number})`, userName } });
+          }
+          await tx.salesDocEvent.create({ data: { docId: d.id, text: `Aus Lexware übernommen (Datenübernahme, Archiv-Datensatz ${r.id})${!storno && !known ? ` – Zahlstatus unbekannt, ${status === "BEZAHLT" ? "als bezahlt angenommen" : "offen gelassen"}` : ""}`, userName } });
           await tx.erpRecord.update({ where: { id: r.id }, data: { lexId: d.id, error: null } });
           return d;
         });
         stats.created++;
-        if (doc.status === "OFFEN") stats.open++;
+        if (storno) stats.credits++;
+        else if (doc.status === "OFFEN") stats.open++;
       } catch (e) {
         await db.erpRecord.update({ where: { id: r.id }, data: { error: errText(e) } });
       }

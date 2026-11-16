@@ -36,7 +36,7 @@ export async function startTransfer(importId: string, what: "kunde" | "artikel" 
     const r = await transferInvoices(id, user.name);
     revalidatePath("/datenuebernahme");
     revalidatePath("/buchhaltung");
-    return { ok: `${r.created} Rechnungen in die Buchhaltung übernommen${r.linked ? `, ${r.linked} waren schon da` : ""}. ${r.open} davon offen (jünger als ${ASSUME_PAID_DAYS} Tage bzw. laut Liste offen), die übrigen als bezahlt.` };
+    return { ok: `${r.created - r.credits} Rechnungen${r.credits ? ` und ${r.credits} Stornos (als Gutschrift)` : ""} in die Buchhaltung übernommen${r.linked ? `, ${r.linked} waren schon da` : ""}${r.customers ? `, ${r.customers} fehlende Kunden angelegt` : ""}. ${r.open} Rechnungen offen (laut Lexware bzw. jünger als ${ASSUME_PAID_DAYS} Tage ohne Zahlstatus), die übrigen bezahlt.` };
   }
   if (kind === "projekt") {
     const n = await transferProjects(id, user.id);
