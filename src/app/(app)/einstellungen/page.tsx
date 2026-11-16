@@ -158,7 +158,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
         <PushToggle vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null} />
       </section>
 
-      <section className="card space-y-3 p-5">
+      <section id="apps" className="card scroll-mt-20 space-y-3 p-5">
         <h2 className="flex items-center gap-2 font-semibold"><MonitorSmartphone className="size-4" /> Apps</h2>
         <p className="text-sm text-steel"><b>iPhone/iPad:</b> In Safari öffnen → Teilen → „Zum Home-Bildschirm“. Jarvis startet dann wie eine App im Vollbild.</p>
         <p className="text-sm text-steel"><b>Windows:</b> Installer herunterladen und öffnen, Server-Adresse eintragen. <kbd className="chip border-line bg-mist">Strg + Leertaste</kbd> öffnet Jarvis von überall. Falls Windows „Der Computer wurde geschützt“ meldet: „Weitere Informationen“ → „Trotzdem ausführen“.</p>
