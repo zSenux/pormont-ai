@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 const FIELD_LABEL: Record<string, string> = {
   nummer: "Nummer", name: "Name", anrede: "Anrede", vorname: "Vorname", nachname: "Nachname/Ansprechpartner", email: "E-Mail", telefon: "Telefon", strasse: "Straße", plz: "PLZ", ort: "Ort", notiz: "Notiz",
   beschreibung: "Beschreibung", einheit: "Einheit", preis: "Preis netto", ust: "USt", kunde: "Kunde", datum: "Datum", faellig: "Fällig/gültig bis", brutto: "Betrag brutto", netto: "Betrag netto", status: "Status", titel: "Titel/Betreff",
-  adresse: "Adresse/Baustelle", kundennr: "Kundennr.", offen: "Offener Betrag", start: "Beginn", ende: "Ende",
+  adresse: "Adresse/Baustelle", kundennr: "Kundennr.", ansprechpartner: "Ansprechpartner", offen: "Offener Betrag", start: "Beginn", ende: "Ende",
 };
 
 const zeilen = (n: number) => `${n.toLocaleString("de-DE")} ${n === 1 ? "Zeile" : "Zeilen"}`;
