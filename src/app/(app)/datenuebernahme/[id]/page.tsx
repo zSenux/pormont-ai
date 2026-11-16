@@ -17,6 +17,8 @@ export default async function ErpRecordPage({ params }: { params: Promise<{ id: 
   if (!id.success) notFound();
   const r = await db.erpRecord.findUnique({ where: { id: id.data }, include: { import: { select: { fileName: true } } } });
   if (!r) notFound();
+  const posRaw = (r.raw as Record<string, unknown> | null)?.Positionen;
+  const positions = Array.isArray(posRaw) ? (posRaw as Record<string, unknown>[]) : [];
   // lexId: Lexware-UUID (frühere Übernahme) oder ID in der eigenen Buchhaltung
   const fromLex = Boolean(r.lexId?.includes("-"));
   const lexLink = r.lexId && fromLex && r.kind === "kunde" ? permalink("contacts", r.lexId) : null;
@@ -39,9 +41,22 @@ export default async function ErpRecordPage({ params }: { params: Promise<{ id: 
         </section>
       )}
       <section className="card p-4">
+        {positions.length > 0 && (
+          <div className="mb-4 overflow-x-auto">
+            <h2 className="font-semibold">Positionen</h2>
+            <table className="mt-2 w-full min-w-[32rem] text-sm tabular-nums">
+              <thead><tr className="text-left text-xs text-steel"><th className="py-1 pr-2">Bezeichnung</th><th className="pr-2 text-right">Menge</th><th className="pr-2">Einheit</th><th className="pr-2 text-right">USt</th><th className="text-right">Netto</th></tr></thead>
+              <tbody>
+                {positions.map((p, i) => (
+                  <tr key={i} className="border-t border-line align-top"><td className="py-1.5 pr-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{String(p.Bezeichnung ?? "")}</td><td className="pr-2 text-right">{String(p.Menge ?? "")}</td><td className="pr-2">{String(p.Einheit ?? "")}</td><td className="pr-2 text-right">{p.Satz !== undefined ? `${String(p.Satz)} %` : ""}</td><td className="text-right whitespace-nowrap">{String(p.Netto ?? "")} €</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         <h2 className="font-semibold">Alle Felder aus dem alten Programm</h2>
         <dl className="mt-2 divide-y divide-line text-sm">
-          {rawEntries(r.raw).map(([k, v]) => (
+          {rawEntries(r.raw).filter(([k]) => k !== "Positionen" || !positions.length).map(([k, v]) => (
             <div key={k} className="grid gap-1 py-2 sm:grid-cols-[12rem_1fr]">
               <dt className="text-steel [overflow-wrap:anywhere]">{k}</dt>
               <dd className="whitespace-pre-wrap [overflow-wrap:anywhere]">{v}</dd>

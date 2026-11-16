@@ -147,7 +147,8 @@ function Field({ l, v }: { l: string; v?: string | number | null }) {
 }
 
 function Detail({ tab, c }: { tab: Tab; c: Sel }) {
-  const invoices = c.docs.filter((d) => (d.kind === "RECHNUNG" || d.kind === "GUTSCHRIFT") && d.status !== "ENTWURF" && d.status !== "STORNIERT");
+  // Wie in der Auswertung: stornierte Rechnungen zählen, ihre Storno-Gutschrift wird abgezogen
+  const invoices = c.docs.filter((d) => (d.kind === "RECHNUNG" || d.kind === "GUTSCHRIFT") && d.status !== "ENTWURF");
   if (tab === "details") {
     const addr = [c.name, c.kind === "FIRMA" && c.contactName ? `z. Hd. ${c.contactName}` : null, c.street, [c.zip, c.city].filter(Boolean).join(" "), c.country !== "DE" ? c.country : "Deutschland"].filter(Boolean);
     return (
@@ -202,7 +203,7 @@ function Detail({ tab, c }: { tab: Tab; c: Sel }) {
   if (tab === "artikel") {
     const by = new Map<string, { name: string; unit: string; qty: number; net: number; n: number }>();
     for (const d of invoices) {
-      if (d.kind !== "RECHNUNG") continue;
+      if (d.kind !== "RECHNUNG" || d.status === "STORNIERT") continue;
       for (const l of readLines(d.lines)) {
         const key = `${l.articleId ?? l.name.toLowerCase()}|${l.unit}`;
         const e = by.get(key) ?? { name: l.name, unit: l.unit, qty: 0, net: 0, n: 0 };
@@ -238,7 +239,7 @@ function Detail({ tab, c }: { tab: Tab; c: Sel }) {
       e.net += sign * (d.netCents - d.prepaidNet);
       e.gross += sign * (d.grossCents - d.prepaidCents);
       if (d.kind === "RECHNUNG" && d.status === "OFFEN") e.open += openCentsOf(d);
-      e.n += d.kind === "RECHNUNG" ? 1 : 0;
+      e.n += d.kind === "RECHNUNG" && d.status !== "STORNIERT" ? 1 : 0;
       years.set(y, e);
     }
     const list = [...years.entries()].sort((a, b) => b[0] - a[0]);
