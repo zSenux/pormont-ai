@@ -44,8 +44,8 @@ async function lexwareState() {
   }
 }
 
-export default async function EinstellungenPage({ searchParams }: { searchParams: Promise<{ willkommen?: string }> }) {
-  const { willkommen } = await searchParams;
+export default async function EinstellungenPage({ searchParams }: { searchParams: Promise<{ willkommen?: string; microsoft?: string; ok?: string }> }) {
+  const { willkommen, microsoft, ok: msOk } = await searchParams;
   const me = await requireUser();
   const winApp = await latestWindowsRelease();
   const [lex, mail, users, memories, devices] = await Promise.all([
@@ -90,12 +90,15 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
 
       <section id="verbindungen" className="card scroll-mt-20 space-y-3 p-5">
         <h2 className="font-semibold">Verbindungen</h2>
+        {microsoft && me.role === "ADMIN" && (
+          <p role="status" className={`rounded-lg px-3 py-2 text-sm ${msOk ? "bg-green-50 text-ok" : "bg-red-50 text-bad"}`}>Microsoft 365: {microsoft.slice(0, 300)}</p>
+        )}
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${lex.ok ? "bg-ok" : "bg-bad"}`} /> Lexware Office: {lex.text}</p>
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${mail.ok ? "bg-ok" : "bg-bad"}`} /> E-Mail-Postfach: {mail.text}</p>
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${ai ? "bg-ok" : "bg-bad"}`} /> KI (Claude): {ai ? "bereit" : "Schlüssel fehlt"}</p>
         <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${process.env.TWILIO_AUTH_TOKEN ? "bg-ok" : "bg-line"}`} /> Telefon-Jarvis: {process.env.TWILIO_AUTH_TOKEN ? `bereit${process.env.TWILIO_NUMBER ? ` (${process.env.TWILIO_NUMBER})` : ""}` : "nicht eingerichtet (optional)"}</p>
         {me.role === "ADMIN" ? (
-          <details className="border-t border-line pt-4" open={Boolean(willkommen) || !lex.ok || !mail.ok || !ai}>
+          <details className="border-t border-line pt-4" open={Boolean(willkommen) || Boolean(microsoft) || !lex.ok || !mail.ok || !ai}>
             <summary className="cursor-pointer text-sm font-medium text-brand">Schlüssel und Postfach eintragen</summary>
             <div className="mt-4">
               <ConnectionsForm
@@ -113,6 +116,12 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
                 twilioToken={settingState("TWILIO_AUTH_TOKEN")}
                 twilioNumber={settingState("TWILIO_NUMBER")}
                 webhookUrl={`${origin}/api/telefon/anruf`}
+                msClientId={settingState("MS_CLIENT_ID")}
+                msSecret={settingState("MS_CLIENT_SECRET")}
+                msTenant={settingState("MS_TENANT")}
+                msMailbox={settingState("MS_MAILBOX")}
+                msAccount={settingState("MAIL_PROVIDER").value === "microsoft" && process.env.MS_REFRESH_TOKEN ? (process.env.MAIL_USER ?? null) : null}
+                msRedirectUri={`${origin}/api/mail/microsoft/callback`}
               />
             </div>
           </details>
