@@ -4,7 +4,7 @@ import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatDateTime, formatEuro } from "@/lib/berlin";
-import { ERP_KIND_LABEL, ERP_KINDS, parseAmount, searchRecords, type ErpKind, type TableInfo } from "@/lib/erp-import";
+import { ASSUME_PAID_DAYS, ERP_KIND_LABEL, ERP_KINDS, parseAmount, searchRecords, type ErpKind, type TableInfo } from "@/lib/erp-import";
 import { deleteImport } from "@/app/actions/datenuebernahme";
 import { ActionButton } from "@/components/confirm-button";
 import { ExportUpload, KindForm, PdfUpload, TransferButton } from "./forms";
@@ -174,7 +174,13 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
                         {admin && !imp.busy && moved < total && t.kind === "projekt" && (
                           <TransferButton importId={imp.id} what="projekt" label="Als Projekte anlegen" confirm={`${total - moved} Projekte in Jarvis anlegen? Gleichnamige Projekte werden nur verknüpft.`} />
                         )}
-                        {(t.kind === "rechnung" || t.kind === "angebot") && <span className="text-steel">bleibt als Archiv (Jarvis findet es)</span>}
+                        {t.kind === "rechnung" && (
+                          <span className="text-steel">{moved.toLocaleString("de-DE")} von {total.toLocaleString("de-DE")} in der Buchhaltung{errors ? <span className="text-bad"> · {errors} mit Fehler</span> : null}</span>
+                        )}
+                        {admin && !imp.busy && moved < total && t.kind === "rechnung" && (
+                          <TransferButton importId={imp.id} what="rechnung" label="In die Buchhaltung übernehmen" confirm={`${total - moved} alte Rechnungen als „aus Lexware übernommen“ in die Buchhaltung? Sie behalten ihre Nummer, zählen dann in Umsatz, Jahresauswertung, Kundenakte und Rechnungsliste. Ohne Zahlstatus gelten Rechnungen älter als ${ASSUME_PAID_DAYS} Tage als bezahlt, neuere als offen.`} />
+                        )}
+                        {t.kind === "angebot" && <span className="text-steel">bleibt als Archiv (Jarvis findet es)</span>}
                       </div>
                     </li>
                   );

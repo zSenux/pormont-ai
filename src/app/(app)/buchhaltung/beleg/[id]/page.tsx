@@ -161,7 +161,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
           {configs.map((c) => <DocConfigPanel key={c.id} config={c} draft={false} origin={origin} />)}
 
           {d.status !== "STORNIERT" && d.pdf && (
-            <details className="card p-4" open={!d.sentAt}>
+            <details id="senden" className="card scroll-mt-20 p-4" open={!d.sentAt}>
               <summary className="cursor-pointer font-semibold">{d.sentAt ? "Erneut per Mail senden" : `${label} per Mail senden`}</summary>
               <div className="mt-3"><SendDocForm docId={d.id} d={mail} xmlOption={d.kind !== "ANGEBOT" && !d.imported} label={`${label} senden`} /></div>
             </details>

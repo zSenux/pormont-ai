@@ -5,7 +5,7 @@ import { BookTabs } from "./tabs";
 export default async function BuchhaltungLayout({ children }: { children: React.ReactNode }) {
   const user = await requireArea("buchhaltung");
   return (
-    <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 md:py-10">
+    <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 md:py-10 has-[[data-wide]]:max-w-[100rem]">
       <Suspense>
         <BookTabs admin={user.role === "ADMIN"} />
       </Suspense>
