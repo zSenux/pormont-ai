@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { MailOpen } from "lucide-react";
 import { markMail } from "@/app/actions";
 
-export function UnreadButton({ uid }: { uid: number }) {
+export function UnreadButton({ uid }: { uid: string }) {
   const [pending, start] = useTransition();
   const router = useRouter();
   return (

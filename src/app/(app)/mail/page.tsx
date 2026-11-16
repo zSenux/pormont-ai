@@ -4,7 +4,7 @@ import { clsx } from "clsx";
 import { requireUser } from "@/lib/auth/user";
 import { formatDateTime } from "@/lib/berlin";
 import { listMails, MailError } from "@/lib/mail/client";
-import { mailConfig } from "@/lib/mail/config";
+import { mailAddress, mailConfig } from "@/lib/mail/config";
 
 export const metadata = { title: "Mail" };
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="page-title">Mail</h1>
-          <p className="mt-1 text-sm text-steel">{cfg ? `${cfg.user} · ${cfg.provider}` : "Postfach noch nicht verbunden"}</p>
+          <p className="mt-1 text-sm text-steel">{cfg ? `${mailAddress(cfg)} · ${cfg.provider}` : "Postfach noch nicht verbunden"}</p>
         </div>
         {cfg && (
           <Link href="/jarvis?q=Fasse%20meine%20ungelesenen%20Mails%20zusammen%20und%20sag%20mir%2C%20was%20wichtig%20ist." className="btn-primary">
@@ -44,8 +44,8 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
         <div className="card space-y-2 p-5 text-sm">
           <p className="font-semibold">So wird das Postfach verbunden</p>
           <p className="text-steel">
-            Der Administrator trägt auf dem Server <code>MAIL_PROVIDER</code> (strato oder gmx), <code>MAIL_USER</code> (die E-Mail-Adresse) und <code>MAIL_PASSWORD</code> ein. Bei GMX muss vorher in den GMX-Einstellungen
-            „POP3/IMAP Abruf“ erlaubt sein.
+            Ein Administrator verbindet das Postfach unter <Link href="/einstellungen#verbindungen" className="font-medium text-brand">Einstellungen → Verbindungen</Link>: Strato, GMX oder IONOS mit E-Mail-Adresse und Passwort,
+            oder Microsoft 365 / Outlook per „Mit Microsoft anmelden“.
           </p>
         </div>
       )}
