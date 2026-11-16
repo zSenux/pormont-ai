@@ -14,6 +14,7 @@ import { berlinDateTime } from "@/lib/berlin";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { clearSetupCode, saveSettings } from "@/lib/settings";
 import { normalizePhone } from "@/lib/phone";
+import { MAIL_ID } from "@/lib/mail/types";
 
 // ---------- Anmeldung ----------
 
@@ -101,7 +102,11 @@ const connectionInput = z.object({
   ANTHROPIC_API_KEY: optional,
   LEXWARE_API_KEY: optional,
   GOOGLE_PLACES_API_KEY: optional,
-  MAIL_PROVIDER: z.enum(["strato", "gmx", "ionos", "custom"]).optional(),
+  MAIL_PROVIDER: z.enum(["strato", "gmx", "ionos", "custom", "microsoft"]).optional(),
+  MS_CLIENT_ID: z.union([z.literal(""), z.string().trim().regex(/^[0-9a-f-]{36}$/i, "Anwendungs-ID (Client-ID) hat das Format 1234abcd-…-… (36 Zeichen).")]).optional(),
+  MS_CLIENT_SECRET: optional,
+  MS_TENANT: z.union([z.literal(""), z.string().trim().regex(/^([0-9a-f-]{36}|[a-z0-9.-]+\.[a-z]{2,}|common|organizations)$/i, "Verzeichnis-ID: Mandanten-ID (36 Zeichen) oder Domain wie promont.gmbh.")]).optional(),
+  MS_MAILBOX: z.union([z.literal(""), z.email("Geteiltes Postfach: bitte eine gültige E-Mail-Adresse.")]).optional(),
   MAIL_USER: z.union([z.literal(""), z.email("Bitte eine gültige E-Mail-Adresse für das Postfach eingeben.")]).optional(),
   MAIL_PASSWORD: optional,
   MAIL_FROM_NAME: z.string().max(80).optional(),
@@ -124,9 +129,14 @@ export async function saveConnections(_prev: { ok?: string; error?: string } | u
     values.MAIL_PROVIDER = MAIL_PROVIDER;
     if (MAIL_PROVIDER !== "custom") Object.assign(values, { MAIL_IMAP_HOST: null, MAIL_IMAP_PORT: null, MAIL_SMTP_HOST: null, MAIL_SMTP_PORT: null });
   }
-  const removable = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PASSWORD", "TWILIO_AUTH_TOKEN"] as const;
+  const removable = ["ANTHROPIC_API_KEY", "LEXWARE_API_KEY", "GOOGLE_PLACES_API_KEY", "MAIL_PASSWORD", "TWILIO_AUTH_TOKEN", "MS_CLIENT_SECRET"] as const;
   for (const k of removable) if (clear === k) values[k] = null;
-  if (clear === "MAIL") Object.assign(values, { MAIL_USER: null, MAIL_PASSWORD: null });
+  if (clear === "MAIL") Object.assign(values, { MAIL_USER: null, MAIL_PASSWORD: null, MS_REFRESH_TOKEN: null });
+  // Wechsel zwischen Microsoft und IMAP-Anbieter: Microsoft-Anmeldung verwerfen (Passwort bleibt für den Rückweg)
+  const before = (process.env.MAIL_PROVIDER ?? "").toLowerCase();
+  if (MAIL_PROVIDER && (MAIL_PROVIDER === "microsoft") !== (before === "microsoft")) {
+    values.MS_REFRESH_TOKEN = null;
+  }
   await saveSettings(values);
   revalidatePath("/", "layout");
   return { ok: clear ? "Entfernt." : "Gespeichert. Die Verbindungen werden unten neu geprüft." };
@@ -286,10 +296,10 @@ export async function sendTestPush() {
   return { sent: await sendPush({ title: "Jarvis", body: "Benachrichtigungen funktionieren ✓", url: "/", userId: u.id, tag: "test" }) };
 }
 
-export async function markMail(uid: number, seen: boolean) {
+export async function markMail(uid: string, seen: boolean) {
   await requireUser();
-  const u = z.number().int().positive().parse(uid);
+  const u = z.string().regex(MAIL_ID).parse(uid);
   const { setFlag } = await import("@/lib/mail/client");
-  await setFlag(u, "\\Seen", seen);
+  await setFlag(u, "seen", seen);
   revalidatePath("/mail");
 }

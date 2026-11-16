@@ -1,6 +1,7 @@
 import { canArea } from "@/lib/rights-shared";
 import { currentUser } from "@/lib/auth/user";
 import { mailAttachment, MailError } from "@/lib/mail/client";
+import { validMailId } from "@/lib/mail/types";
 
 // Anhang immer als Download (nie im Browser ausführen)
 export async function GET(_req: Request, { params }: { params: Promise<{ uid: string; n: string }> }) {
@@ -8,10 +9,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ uid: st
   if (!me) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
   if (!canArea(me, "mail")) return new Response("Keine Berechtigung.", { status: 403 });
   const { uid, n } = await params;
-  const u = Number(uid), i = Number(n);
-  if (!Number.isInteger(u) || u <= 0 || !Number.isInteger(i) || i < 0 || i > 100) return Response.json({ error: "Ungültig." }, { status: 400 });
+  const i = Number(n);
+  if (!validMailId(uid) || !Number.isInteger(i) || i < 0 || i > 100) return Response.json({ error: "Ungültig." }, { status: 400 });
   try {
-    const a = await mailAttachment(u, i);
+    const a = await mailAttachment(uid, i);
     const name = a.filename.replace(/[\r\n"\\]/g, "_");
     return new Response(new Uint8Array(a.content), {
       headers: {

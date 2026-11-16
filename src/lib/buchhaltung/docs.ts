@@ -265,6 +265,28 @@ export async function updateDraft(id: string, input: DraftInput, user: Actor) {
   void user;
 }
 
+/**
+ * PDF-Vorschau eines Entwurfs – mit den ungespeicherten Eingaben aus dem Editor, ohne etwas zu speichern.
+ * Fälligkeit und Leistungsdatum werden so gezeigt, wie sie beim Festschreiben entstehen.
+ */
+export async function previewDraftPdf(id: string, input: DraftInput = {}): Promise<Uint8Array> {
+  const i = draftInput.parse(input);
+  const cur = await db.salesDoc.findUnique({ where: { id }, include: { customer: true, project: { select: { name: true } } } });
+  if (!cur) throw new BookError("Beleg nicht gefunden.");
+  if (cur.status !== "ENTWURF") throw new BookError("Die Vorschau gibt es nur für Entwürfe.");
+  if (cur.kind !== "RECHNUNG") i.invoiceType = undefined;
+  if ((i.invoiceType ?? cur.invoiceType) !== "SCHLUSS") i.deductionIds = i.invoiceType ? [] : undefined;
+  const lines = i.lines ?? readLines(cur.lines);
+  const d = { ...cur, ...draftData({ ...i, lines, reverseCharge: i.reverseCharge ?? cur.reverseCharge }) } as typeof cur;
+  if (i.customerId !== undefined && i.customerId !== cur.customerId) d.customer = i.customerId ? await db.customer.findUnique({ where: { id: i.customerId } }) : null;
+  if (i.projectId !== undefined && i.projectId !== cur.projectId) d.project = i.projectId ? await db.project.findUnique({ where: { id: i.projectId }, select: { name: true } }) : null;
+  const cfg = await bookConfig();
+  const dateYmd = ymdOf(d.date)!;
+  if (d.kind === "RECHNUNG") d.dueDate = dayOf(addDaysYmd(dateYmd, d.paymentDays ?? d.customer?.paymentDays ?? cfg.paymentDays));
+  if (d.kind !== "ANGEBOT") d.serviceFrom = d.serviceFrom ?? d.date;
+  return renderDocPdf(await docData(d, cfg), null);
+}
+
 export async function deleteDraft(id: string) {
   const r = await db.salesDoc.deleteMany({ where: { id, status: "ENTWURF" } });
   if (!r.count) throw new BookError("Nur Entwürfe können gelöscht werden.");

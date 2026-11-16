@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth/user";
 import { formatDateTime } from "@/lib/berlin";
 import { readMail, MailError } from "@/lib/mail/client";
 import { mailConfigured } from "@/lib/mail/config";
+import { validMailId } from "@/lib/mail/types";
 import { UnreadButton } from "./unread-button";
 
 export const metadata = { title: "Mail" };
@@ -14,8 +15,8 @@ const ask = (q: string) => `/jarvis?q=${encodeURIComponent(q)}`;
 
 export default async function MailDetail({ params }: { params: Promise<{ uid: string }> }) {
   await requireUser();
-  const uid = Number((await params).uid);
-  if (!Number.isInteger(uid) || uid <= 0 || !mailConfigured()) notFound();
+  const uid = (await params).uid;
+  if (!validMailId(uid) || !mailConfigured()) notFound();
   let m;
   try {
     m = await readMail(uid, true);

@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Check, Eye, Loader2, Lock, Plus, Save, Trash2, UserPlus } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ExternalLink, Eye, EyeOff, FileDown, Loader2, Lock, Plus, Save, Trash2, UserPlus, X } from "lucide-react";
 import { computeTotals, fmtEuroCents, lineNetCents, UNIT_SUGGESTIONS, type Line } from "@/lib/buchhaltung/money";
 import { deleteDraftAction, finalizeAction, saveDraftAction } from "@/app/actions/buchhaltung";
 import type { DraftInput } from "@/lib/buchhaltung/docs";
+import { PdfPages } from "@/components/pdf-preview";
 
 type Customer = { id: string; name: string; number: number | null; city: string | null; vatId: string | null; complete: boolean };
 type Article = { id: string; name: string; number: string | null; unit: string; priceNet: number; taxRate: number; description: string | null };
@@ -127,21 +128,74 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
     };
   }
 
-  function run(kind: "save" | "preview" | "final") {
+  function run(kind: "save" | "final") {
     if (bad) return setMsg({ error: "Bitte Mengen und Preise als Zahl eintragen (z. B. 12,5)." });
     if (kind === "final" && !window.confirm(`${doc.kind === "ANGEBOT" ? "Angebot" : f.invoiceType === "ABSCHLAG" ? "Abschlagsrechnung" : f.invoiceType === "SCHLUSS" ? "Schlussrechnung" : "Rechnung"} jetzt festschreiben?\n\nDanach bekommt der Beleg seine Nummer und kann nicht mehr geändert werden (GoBD). Korrektur nur noch per Storno.`)) return;
-    // Vorschau-Fenster sofort öffnen (sonst blockt Safari das Pop-up), Adresse nach dem Speichern setzen
-    const win = kind === "preview" ? window.open("about:blank", "_blank") : null;
     start(async () => {
       const r = kind === "final" ? await finalizeAction(doc.id, payload()) : await saveDraftAction(doc.id, payload());
       setMsg(r ?? null);
-      if (kind === "preview") {
-        if (r?.ok && win) win.location.href = `/api/buchhaltung/pdf/${doc.id}?t=${Date.now()}`;
-        else win?.close();
-      }
       if (r?.ok) router.refresh();
     });
   }
+
+  // ---------- Live-Vorschau: PDF mit Briefpapier und Fußzeile, aus den ungespeicherten Eingaben ----------
+  const wide = useWide();
+  const [side, setSide] = useState(true);
+  const [sheet, setSheet] = useState(false);
+  const showPreview = wide ? side : sheet;
+  const [pdf, setPdf] = useState<{ data: ArrayBuffer; url: string } | null>(null);
+  const [pv, setPv] = useState<{ busy: boolean; error?: string }>({ busy: false });
+  const hasPdf = useRef(false);
+  const previewKey = bad ? null : JSON.stringify(payload());
+  useEffect(() => {
+    if (!showPreview || !previewKey) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      setPv({ busy: true });
+      try {
+        const r = await fetch(`/api/buchhaltung/vorschau/${doc.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: previewKey, signal: ctrl.signal, cache: "no-store" });
+        if (!r.ok) throw new Error(((await r.json().catch(() => null)) as { error?: string } | null)?.error ?? `Fehler ${r.status}`);
+        const data = await r.arrayBuffer();
+        const url = URL.createObjectURL(new Blob([data], { type: "application/pdf" }));
+        hasPdf.current = true;
+        setPdf((old) => {
+          if (old) URL.revokeObjectURL(old.url);
+          return { data, url };
+        });
+        setPv({ busy: false });
+      } catch (e) {
+        if (!ctrl.signal.aborted) setPv({ busy: false, error: e instanceof Error ? e.message : "Vorschau fehlgeschlagen." });
+      }
+    }, hasPdf.current ? 700 : 0);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [previewKey, showPreview, doc.id]);
+  const lastUrl = useRef<string | null>(null);
+  useEffect(() => {
+    lastUrl.current = pdf?.url ?? null;
+  }, [pdf]);
+  useEffect(() => () => {
+    if (lastUrl.current) URL.revokeObjectURL(lastUrl.current);
+  }, []);
+  const fileName = `${doc.kind === "ANGEBOT" ? "Angebot" : doc.kind === "GUTSCHRIFT" ? "Gutschrift" : "Rechnung"}_Entwurf.pdf`;
+  const previewPanel = (onClose: () => void, bodyClass: string) => (
+    <section className="card flex flex-col overflow-hidden" aria-label="PDF-Vorschau">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <h2 className="font-semibold">Vorschau</h2>
+        <span className="mr-auto flex items-center gap-1 text-xs text-steel">{pv.busy ? <><Loader2 className="size-3.5 animate-spin" /> aktualisiert …</> : pv.error ? <span className="text-bad">{pv.error}</span> : pdf ? "live, so geht der Beleg raus" : null}</span>
+        {pdf && <a href={pdf.url} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-steel hover:bg-mist hover:text-brand" title="In neuem Tab öffnen"><ExternalLink className="size-4" /></a>}
+        {pdf && <a href={pdf.url} download={fileName} className="rounded-lg p-1.5 text-steel hover:bg-mist hover:text-brand" title="Herunterladen"><FileDown className="size-4" /></a>}
+        <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-steel hover:bg-mist" title="Vorschau schließen" aria-label="Vorschau schließen"><X className="size-4" /></button>
+      </div>
+      <div className={`overflow-y-auto bg-mist p-3 ${bodyClass}`}>
+        {!pdf && (pv.busy || !pv.error) && <p className="flex items-center gap-2 py-10 text-sm text-steel"><Loader2 className="size-4 animate-spin" /> PDF wird erstellt …</p>}
+        {bad && <p className="mb-2 text-sm text-warn">Mengen und Preise als Zahl eintragen – dann aktualisiert sich die Vorschau.</p>}
+        <PdfPages data={pdf?.data ?? null} />
+      </div>
+    </section>
+  );
 
   function addArticle(label: string) {
     const a = articles.find((x) => articleLabel(x) === label);
@@ -159,7 +213,8 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
   });
 
   return (
-    <div className="space-y-4">
+    <div className={wide && side ? "grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,38rem)]" : undefined}>
+    <div className="min-w-0 space-y-4">
       <section className="card grid gap-3 p-4 sm:grid-cols-2">
         <label className="block sm:col-span-2">
           <span className="label">Kunde</span>
@@ -341,13 +396,33 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
 
       <div className="sticky bottom-20 z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-white/95 p-3 shadow-lg backdrop-blur md:bottom-4">
         <button type="button" onClick={() => run("save")} disabled={pending} className="btn-secondary">{pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Speichern</button>
-        <button type="button" onClick={() => run("preview")} disabled={pending} className="btn-secondary"><Eye className="size-4" /> Vorschau</button>
+        <button type="button" onClick={() => (wide ? setSide((v) => !v) : setSheet(true))} className="btn-secondary">{wide && side ? <><EyeOff className="size-4" /> Vorschau aus</> : <><Eye className="size-4" /> Vorschau</>}</button>
         {doc.kind !== "GUTSCHRIFT" && <button type="button" onClick={() => run("final")} disabled={pending} className="btn-primary"><Lock className="size-4" /> Festschreiben</button>}
         <button type="button" onClick={() => { if (window.confirm("Entwurf löschen?")) start(() => deleteDraftAction(doc.id)); }} disabled={pending} className="btn-danger ml-auto"><Trash2 className="size-4" /><span className="hidden sm:inline">Entwurf löschen</span></button>
         {msg?.error && <p className="w-full text-sm text-bad" role="alert">{msg.error}</p>}
         {msg?.ok && <p className="flex w-full items-center gap-1 text-sm text-ok"><Check className="size-4" /> {msg.ok}</p>}
       </div>
     </div>
+    {wide && side && <aside className="sticky top-20 min-w-0">{previewPanel(() => setSide(false), "max-h-[calc(100vh-8.5rem)]")}</aside>}
+    {!wide && sheet && (
+      <div className="fixed inset-0 z-[70] flex flex-col bg-ink/60 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))]" role="dialog" aria-modal="true" aria-label="PDF-Vorschau">
+        <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col [&>section]:min-h-0 [&>section]:flex-1">{previewPanel(() => setSheet(false), "flex-1")}</div>
+      </div>
+    )}
+    </div>
+  );
+}
+
+/** Breiter Bildschirm (ab 1280 px): Vorschau steht neben dem Formular, sonst als Vollbild-Fenster */
+function useWide() {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia("(min-width: 1280px)");
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia("(min-width: 1280px)").matches,
+    () => false,
   );
 }
 
