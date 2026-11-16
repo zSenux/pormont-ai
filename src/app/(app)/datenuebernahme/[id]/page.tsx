@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileText } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -29,8 +29,9 @@ export default async function ErpRecordPage({ params }: { params: Promise<{ id: 
         <h1 className="page-title [overflow-wrap:anywhere]">{[r.number, r.party ?? r.name].filter(Boolean).join(" · ") || "(ohne Namen)"}</h1>
         <p className="mt-1 text-sm text-steel">{[r.party && r.name ? r.name : null, r.date ? formatDate(r.date) : null, r.status, r.amount !== null ? formatEuro(r.amount) : null].filter(Boolean).join(" · ")}</p>
       </div>
-      {(lexLink || ownLink || r.projectId || r.error) && (
+      {(lexLink || ownLink || r.projectId || r.error || r.fileId) && (
         <section className="card flex flex-wrap items-center gap-3 p-4 text-sm">
+          {r.fileId && <a href={`/api/dateien/${r.fileId}`} target="_blank" rel="noreferrer" className="btn-primary"><FileText className="size-4" /> Beleg-PDF öffnen</a>}
           {lexLink && <a href={lexLink} target="_blank" rel="noreferrer" className="btn-secondary"><ExternalLink className="size-4" /> In Lexware öffnen</a>}
           {ownLink && <Link href={ownLink} className="btn-secondary">In der Buchhaltung öffnen</Link>}
           {r.projectId && <Link href={`/projekte/${r.projectId}`} className="btn-secondary">Projekt öffnen</Link>}

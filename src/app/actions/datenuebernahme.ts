@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth/user";
-import { changeTableKind, claim, ERP_KINDS, ErpImportError, transferArticles, transferCustomers, transferProjects } from "@/lib/erp-import";
+import { changeTableKind, claim, deleteErpImport, ERP_KINDS, ErpImportError, transferArticles, transferCustomers, transferProjects } from "@/lib/erp-import";
 
 // Datenübernahme aus dem alten Programm: Übernahme in die Buchhaltung/Jarvis nur per Klick eines Admins (mit Rückfrage im Browser)
 
@@ -44,7 +44,7 @@ export async function startTransfer(importId: string, what: "kunde" | "artikel" 
 
 export async function deleteImport(importId: string) {
   await requireAdmin();
-  await db.erpImport.delete({ where: { id: z.cuid().parse(importId) } });
+  await deleteErpImport(z.cuid().parse(importId));
   revalidatePath("/datenuebernahme");
   redirect("/datenuebernahme");
 }

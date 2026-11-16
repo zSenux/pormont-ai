@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { berlinDateTime } from "@/lib/berlin";
 import { decodeText, splitCsv } from "@/lib/catalog";
 import { articleInput, createCustomer, customerInput } from "@/lib/buchhaltung/customers";
+import { FileError, storeFile } from "@/lib/files";
 
 // Datenübernahme aus einem alten Programm (ERP/Rechnungsprogramm): Exportdatei (CSV, Excel .xlsx oder JSON) hochladen,
 // Tabellen und Spalten werden erkannt (Kunden, Artikel, Rechnungen, Angebote, Projekte) und als durchsuchbares Archiv
@@ -21,7 +22,7 @@ export const ERP_KINDS = ["kunde", "artikel", "rechnung", "angebot", "projekt", 
 export type ErpKind = (typeof ERP_KINDS)[number];
 export const ERP_KIND_LABEL: Record<ErpKind, string> = { kunde: "Kunden", artikel: "Artikel/Leistungen", rechnung: "Rechnungen", angebot: "Angebote", projekt: "Projekte", sonstiges: "Sonstiges" };
 
-export type Table = { name: string; rows: Record<string, unknown>[] };
+export type Table = { name: string; rows: Record<string, unknown>[]; kind?: ErpKind };
 export type TableInfo = { name: string; kind: ErpKind; headers: string[]; mapping: Record<string, string>; rows: number };
 
 // ---------- Einlesen ----------
@@ -192,47 +193,53 @@ export function parseExport(fileName: string, buf: Buffer): { format: string; ta
 
 // ---------- Erkennen ----------
 
-const FIELDS: Record<Exclude<ErpKind, "sonstiges">, Record<string, RegExp>> = {
+// Je Feld eine oder mehrere Regeln in Vorrang-Reihenfolge (z. B. „Firma“ vor „Name“). Spaltennamen aus
+// Lexware faktura+auftrag (Kunden-/Artikel-/Vorgangsexport) sind mit drin.
+type Rule = RegExp | RegExp[];
+const FIELDS: Record<Exclude<ErpKind, "sonstiges">, Record<string, Rule>> = {
   kunde: {
-    nummer: /^(kundennr|kundennummer|kdnr|kundenid|debitorennr|debitor|nr|nummer|id|customerid|customernumber|number)$/,
-    name: /^(firma|firmenname|name|kunde|kundenname|company|companyname|customer|customername|unternehmen|bezeichnung|name1)$/,
-    anrede: /^(anrede|salutation)$/,
+    nummer: /^(kundennr|kundennummer|kdnr|kundenid|debitorennr|debitor|debitorennummer|adressnr|adressnummer|nr|nummer|id|customerid|customernumber|number)$/,
+    name: [/^(firma|firmenname|firma1|company|companyname|unternehmen|name1)$/, /^(name|kunde|kundenname|customer|customername|bezeichnung|anzeigename|suchname)$/],
+    anrede: /^(anrede|salutation|briefanrede)$/,
     vorname: /^(vorname|firstname)$/,
-    nachname: /^(nachname|lastname|ansprechpartner|kontakt|kontaktperson|contact|contactperson|name2)$/,
-    email: /^(email|mail|emailadresse|emailaddress)$/,
-    telefon: /^(telefon|tel|phone|telefonnummer|mobil|handy|mobile|telefon1)$/,
-    strasse: /^(strasse|str|adresse|anschrift|street|address|strassehausnummer|adressestrasse|addressstreet)$/,
-    plz: /^(plz|postleitzahl|zip|zipcode|postalcode|adresseplz|addresszip)$/,
-    ort: /^(ort|stadt|city|wohnort|adresseort|addresscity)$/,
-    notiz: /^(notiz|notizen|bemerkung|bemerkungen|note|notes|info|hinweis)$/,
+    nachname: [/^(nachname|lastname|ansprechpartner|kontakt|kontaktperson|contact|contactperson|name2|firma2)$/, /^name$/],
+    email: /^(email|mail|emailadresse|emailaddress|email1|emailgeschaeftlich)$/,
+    telefon: /^(telefon|tel|phone|telefonnummer|mobil|handy|mobile|telefon1|telefonnummer1|telefongeschaeftlich|mobiltelefon)$/,
+    strasse: /^(strasse|str|adresse|anschrift|street|address|strassehausnummer|strassehausnr|strasse1|adressestrasse|addressstreet|rechnungsadressestrasse)$/,
+    plz: /^(plz|postleitzahl|zip|zipcode|postalcode|adresseplz|addresszip|plz1|rechnungsadresseplz)$/,
+    ort: /^(ort|stadt|city|wohnort|adresseort|addresscity|ort1|rechnungsadresseort)$/,
+    notiz: /^(notiz|notizen|bemerkung|bemerkungen|note|notes|info|hinweis|memo)$/,
   },
   artikel: {
-    nummer: /^(artikelnr|artikelnummer|artnr|nr|nummer|id|sku|positionsnr|leistungsnr)$/,
-    name: /^(bezeichnung|artikel|artikelbezeichnung|name|titel|title|leistung|produkt|kurztext|position)$/,
-    beschreibung: /^(beschreibung|langtext|description|details|text)$/,
-    einheit: /^(einheit|me|mengeneinheit|unit|unitname)$/,
-    preis: /^(vk|ek)?(preis|vk|nettopreis|einzelpreis|ep|price|netprice|stundensatz|verkaufspreis|listenpreis)(netto|eur|euro|ineur)?$/,
-    ust: /^(ust|mwst|steuersatz|ustsatz|mwstsatz|tax|taxrate|steuer)$/,
+    nummer: /^(artikelnr|artikelnummer|artnr|nr|nummer|id|sku|positionsnr|leistungsnr|matchcode)$/,
+    name: /^(bezeichnung|bezeichnung1|artikel|artikelbezeichnung|kurzbezeichnung|name|titel|title|leistung|produkt|kurztext|position)$/,
+    beschreibung: /^(beschreibung|langtext|description|details|text|bezeichnung2|artikeltext)$/,
+    einheit: /^(einheit|me|mengeneinheit|unit|unitname|verkaufseinheit)$/,
+    preis: [/^(vkpreis|verkaufspreis|vk|vknetto|vkpreisnetto|verkaufspreisnetto|preisvk|vkpreisnettoeur)\d?$/, /^(preis|nettopreis|einzelpreis|ep|price|netprice|stundensatz|listenpreis|preisnetto)\d?(netto|eur|euro|ineur)?$/],
+    ust: /^(ust|mwst|steuersatz|ustsatz|mwstsatz|tax|taxrate|steuer|steuersatzin|ustin|mwstin|umsatzsteuer)$/,
   },
   rechnung: {
-    nummer: /^(rechnungsnr|rechnungsnummer|renr|rgnr|belegnr|belegnummer|nr|nummer|id|number|invoicenumber|invoiceno)$/,
-    kunde: /^(kunde|kundenname|firma|empfaenger|name|customer|customername|auftraggeber|kundefirma|kundename)$/,
-    datum: /^(datum|rechnungsdatum|belegdatum|date|erstellt|erstelltam|createdat|invoicedate)$/,
-    faellig: /^(faellig|faelligam|faelligkeit|zahlungsziel|duedate|faelligkeitsdatum)$/,
-    brutto: /^(brutto|betrag|summe|gesamt|gesamtbetrag|bruttobetrag|endbetrag|total|amount|betragbrutto|summebrutto|gesamtbrutto|totalgross|rechnungsbetrag)$/,
-    netto: /^(netto|nettobetrag|summenetto|betragnetto|gesamtnetto|subtotal|totalnet)$/,
-    status: /^(status|zustand|bezahlt|zahlstatus|paid)$/,
-    titel: /^(titel|betreff|bezeichnung|title|subject|projekt|bauvorhaben|leistung)$/,
+    nummer: [/^(rechnungsnr|rechnungsnummer|renr|rgnr|invoicenumber|invoiceno)$/, /^(vorgangsnr|vorgangsnummer|belegnr|belegnummer|dokumentnr|dokumentnummer|auftragsnr|auftragsnummer|nr|nummer|id|number)$/],
+    kunde: /^(kunde|kundenname|firma|empfaenger|name|name1|customer|customername|auftraggeber|kundefirma|kundename|rechnungsempfaenger)$/,
+    kundennr: /^(kundennr|kundennummer|kdnr|debitor|debitorennr)$/,
+    datum: /^(datum|rechnungsdatum|belegdatum|vorgangsdatum|auftragsdatum|date|erstellt|erstelltam|createdat|invoicedate)$/,
+    faellig: /^(faellig|faelligam|faelligkeit|zahlungsziel|duedate|faelligkeitsdatum|faelligbis)$/,
+    brutto: /^(brutto|betrag|summe|gesamt|gesamtbetrag|bruttobetrag|bruttosumme|endbetrag|endsumme|total|amount|betragbrutto|summebrutto|gesamtbrutto|gesamtsummebrutto|totalgross|rechnungsbetrag)$/,
+    netto: /^(netto|nettobetrag|nettosumme|summenetto|betragnetto|gesamtnetto|subtotal|totalnet)$/,
+    offen: /^(offen|offenerbetrag|offenbetrag|restbetrag|rest|offeneposten|nochoffen)$/,
+    status: /^(status|zustand|bezahlt|zahlstatus|zahlungsstatus|erledigt|ausgeglichen|paid)$/,
+    titel: /^(titel|betreff|bezeichnung|title|subject|projekt|bauvorhaben|leistung|bemerkung)$/,
   },
   angebot: {
-    nummer: /^(angebotsnr|angebotsnummer|angnr|belegnr|belegnummer|nr|nummer|id|number|quotenumber)$/,
-    kunde: /^(kunde|kundenname|firma|empfaenger|name|customer|customername|auftraggeber|kundefirma|kundename)$/,
-    datum: /^(datum|angebotsdatum|belegdatum|date|erstellt|erstelltam|createdat)$/,
+    nummer: [/^(angebotsnr|angebotsnummer|angnr|quotenumber)$/, /^(vorgangsnr|vorgangsnummer|belegnr|belegnummer|dokumentnr|dokumentnummer|nr|nummer|id|number)$/],
+    kunde: /^(kunde|kundenname|firma|empfaenger|name|name1|customer|customername|auftraggeber|kundefirma|kundename)$/,
+    kundennr: /^(kundennr|kundennummer|kdnr|debitor|debitorennr)$/,
+    datum: /^(datum|angebotsdatum|belegdatum|vorgangsdatum|date|erstellt|erstelltam|createdat)$/,
     faellig: /^(gueltigbis|gueltig|bindefrist|validuntil|ablauf)$/,
-    brutto: /^(brutto|betrag|summe|gesamt|gesamtbetrag|bruttobetrag|endbetrag|total|amount|betragbrutto|summebrutto|angebotssumme)$/,
-    netto: /^(netto|nettobetrag|summenetto|betragnetto|gesamtnetto|subtotal)$/,
-    status: /^(status|zustand|angenommen)$/,
-    titel: /^(titel|betreff|bezeichnung|title|subject|projekt|bauvorhaben|leistung)$/,
+    brutto: /^(brutto|betrag|summe|gesamt|gesamtbetrag|bruttobetrag|bruttosumme|endbetrag|endsumme|total|amount|betragbrutto|summebrutto|gesamtsummebrutto|angebotssumme)$/,
+    netto: /^(netto|nettobetrag|nettosumme|summenetto|betragnetto|gesamtnetto|subtotal)$/,
+    status: /^(status|zustand|angenommen|erledigt)$/,
+    titel: /^(titel|betreff|bezeichnung|title|subject|projekt|bauvorhaben|leistung|bemerkung)$/,
   },
   projekt: {
     nummer: /^(projektnr|projektnummer|auftragsnr|auftragsnummer|nr|nummer|id)$/,
@@ -248,14 +255,14 @@ const FIELDS: Record<Exclude<ErpKind, "sonstiges">, Record<string, RegExp>> = {
 
 // Spalten, die eine Art eindeutig verraten
 const STRONG: Partial<Record<ErpKind, RegExp>> = {
-  rechnung: /^(rechnungsnr|rechnungsnummer|renr|rgnr|rechnungsdatum|invoicenumber|rechnungsbetrag)$/,
+  rechnung: /^(rechnungsnr|rechnungsnummer|renr|rgnr|rechnungsdatum|invoicenumber|rechnungsbetrag|offenerbetrag|restbetrag)$/,
   angebot: /^(angebotsnr|angebotsnummer|angebotsdatum|gueltigbis|bindefrist|angebotssumme|quotenumber)$/,
-  artikel: /^(artikelnr|artikelnummer|artnr|einheit|mengeneinheit|vkpreis|einzelpreis|sku)$/,
+  artikel: /^(artikelnr|artikelnummer|artnr|einheit|mengeneinheit|vkpreis|vkpreis1|verkaufspreis|einzelpreis|sku)$/,
   kunde: /^(kundennr|kundennummer|plz|postleitzahl|email|telefon|ansprechpartner)$/,
   projekt: /^(projektnr|projektnummer|baustelle|bauherr|beginn|fertigstellung)$/,
 };
 const NAME_HINT: Partial<Record<ErpKind, RegExp>> = {
-  kunde: /kunde|customer|client|kontakt|debitor/i,
+  kunde: /kunde|customer|client|kontakt|debitor|adress/i,
   artikel: /artikel|leistung|product|produkt|item|material|preisliste/i,
   rechnung: /rechnung|invoice|faktur/i,
   angebot: /angebot|quote|offer|kostenvoranschlag/i,
@@ -264,16 +271,28 @@ const NAME_HINT: Partial<Record<ErpKind, RegExp>> = {
 
 export function mapColumns(kind: ErpKind, headers: string[]) {
   const mapping: Record<string, string> = {};
-  if (kind === "sonstiges") return mapping;
+  // Sonstiges (z. B. Gutschriften, Lieferscheine): Nummer, Kunde, Datum, Betrag wie bei Rechnungen erkennen – nur fürs Archiv
+  const fields = FIELDS[kind === "sonstiges" ? "rechnung" : kind];
   const used = new Set<string>();
-  for (const [field, re] of Object.entries(FIELDS[kind])) {
-    const h = headers.find((x) => !used.has(x) && re.test(norm(x)));
-    if (h) (mapping[field] = h), used.add(h);
+  for (const [field, rule] of Object.entries(fields)) {
+    for (const re of Array.isArray(rule) ? rule : [rule]) {
+      const h = headers.find((x) => !used.has(x) && re.test(norm(x)));
+      if (h) {
+        (mapping[field] = h), used.add(h);
+        break;
+      }
+    }
   }
   return mapping;
 }
 
+// Positionslisten (eine Zeile je Belegposition) sind keine Artikel – sonst würde „Artikel übernehmen“ jede Position anlegen
+const DOC_REF = /^(vorgangsnr|vorgangsnummer|belegnr|belegnummer|rechnungsnr|rechnungsnummer|auftragsnr|auftragsnummer|angebotsnr|angebotsnummer|dokumentnr)$/;
+const POS_COL = /^(pos|posnr|position|positionsnr|positionsnummer|menge|anzahl)$/;
+
 export function detectKind(tableName: string, headers: string[]): ErpKind {
+  const n = headers.map(norm);
+  if ((/position/i.test(tableName) || n.some((h) => POS_COL.test(h))) && n.some((h) => DOC_REF.test(h)) && n.some((h) => /artikel|einzelpreis|^menge$/.test(h))) return "sonstiges";
   let best: ErpKind = "sonstiges";
   let bestScore = 1;
   for (const kind of ERP_KINDS) {
@@ -284,6 +303,44 @@ export function detectKind(tableName: string, headers: string[]): ErpKind {
     if (score > bestScore) (best = kind), (bestScore = score);
   }
   return best;
+}
+
+// Gemischte Vorgangsliste (z. B. Lexware faktura+auftrag: Angebote, Aufträge, Lieferscheine, Rechnungen, Gutschriften
+// in einer Datei) → je Vorgangsart eine eigene Tabelle
+const TYPE_COL = /^(vorgangsart|vorgangstyp|belegart|belegtyp|auftragsart|dokumentart|dokumenttyp|art|typ|vorgang|beleg)$/;
+const VORGANG: [RegExp, string, ErpKind][] = [
+  [/gutschrift|storno|korrektur/i, "Gutschriften", "sonstiges"],
+  [/angebot|kostenvoranschlag|^kva$/i, "Angebote", "angebot"],
+  [/auftragsbest|^ab$/i, "Auftragsbestätigungen", "sonstiges"],
+  [/lieferschein|^ls$/i, "Lieferscheine", "sonstiges"],
+  [/rechnung|faktura|^re$|^rg$/i, "Rechnungen", "rechnung"],
+  [/auftrag/i, "Aufträge", "sonstiges"],
+  [/bestellung|anfrage|proforma/i, "Sonstige Vorgänge", "sonstiges"],
+];
+export function vorgangsart(v: unknown) {
+  const s = (v === null || v === undefined ? "" : String(v)).trim();
+  return s ? VORGANG.find(([re]) => re.test(s)) : undefined;
+}
+
+export function splitByType(t: Table): Table[] {
+  const headers = [...new Set(t.rows.flatMap((r) => Object.keys(r)))];
+  for (const h of headers.filter((x) => TYPE_COL.test(norm(x)))) {
+    const vals = t.rows.map((r) => r[h]).filter((v) => v !== undefined && v !== null && String(v).trim() !== "");
+    if (vals.length < Math.max(1, t.rows.length * 0.8)) continue;
+    const known = vals.filter((v) => vorgangsart(v)).length;
+    if (known < vals.length * 0.8) continue;
+    const groups = new Map<string, Table>();
+    for (const r of t.rows) {
+      const m = vorgangsart(r[h]);
+      const label = m?.[1] ?? "Sonstige Vorgänge";
+      const g = groups.get(label) ?? { name: `${t.name} · ${label}`.slice(0, 120), rows: [], kind: m?.[2] ?? "sonstiges" };
+      g.rows.push(r);
+      groups.set(label, g);
+    }
+    if (groups.size < 2 && !groups.has("Rechnungen") && !groups.has("Angebote")) return [t];
+    return [...groups.values()];
+  }
+  return [t];
 }
 
 // ---------- Werte ----------
@@ -318,11 +375,25 @@ export function parseDate(v: unknown): Date | null {
   return Number.isNaN(d.getTime()) || d.getUTCFullYear() < 1990 || d.getUTCFullYear() > 2100 ? null : d;
 }
 
+/** Status vereinheitlichen: „Bezahlt: ja/nein“ bzw. offener Betrag → „bezahlt“/„offen“ (sonst zählt die Suche „ja“ als offen) */
+export function statusOf(kind: ErpKind, f: Record<string, string>, statusHeader?: string) {
+  let s = f.status?.trim() || "";
+  if (kind === "rechnung" && statusHeader && /^(bezahlt|paid|erledigt|ausgeglichen)$/.test(norm(statusHeader))) {
+    if (/^(ja|j|yes|x|1|true|wahr)$/i.test(s)) s = "bezahlt";
+    else if (/^(nein|n|no|0|false|falsch)$/i.test(s)) s = "offen";
+  }
+  if (kind === "rechnung" && f.offen !== undefined && (!s || /^(ja|nein)$/i.test(s))) {
+    const o = parseAmount(f.offen);
+    if (o !== null) s = Math.abs(o) < 0.005 ? "bezahlt" : "offen";
+  }
+  return s.slice(0, 60) || null;
+}
+
 function recordFrom(kind: ErpKind, mapping: Record<string, string>, row: Record<string, unknown>) {
   const f = Object.fromEntries(Object.entries(mapping).map(([k, h]) => [k, str(row[h]).slice(0, 2000)]).filter(([, v]) => v)) as Record<string, string>;
   const person = [f.vorname, f.nachname].filter(Boolean).join(" ");
-  const name = (kind === "kunde" ? f.name || person : kind === "rechnung" || kind === "angebot" ? f.titel : f.name) || null;
-  const amount = kind === "artikel" ? parseAmount(f.preis) : kind === "rechnung" || kind === "angebot" ? (parseAmount(f.brutto) ?? parseAmount(f.netto)) : null;
+  const name = (kind === "kunde" ? f.name || person : kind === "rechnung" || kind === "angebot" || kind === "sonstiges" ? f.titel : f.name) || null;
+  const amount = kind === "artikel" ? parseAmount(f.preis) : kind === "rechnung" || kind === "angebot" || kind === "sonstiges" ? (parseAmount(f.brutto) ?? parseAmount(f.netto)) : null;
   const date = kind === "projekt" ? parseDate(f.start) : parseDate(f.datum);
   const dueDate = kind === "projekt" ? parseDate(f.ende) : parseDate(f.faellig);
   const fallbackName = kind === "sonstiges" ? Object.values(row).map(str).find((x) => x && !/^\d+$/.test(x)) : undefined;
@@ -335,7 +406,7 @@ function recordFrom(kind: ErpKind, mapping: Record<string, string>, row: Record<
     date,
     dueDate,
     amount,
-    status: f.status?.slice(0, 60) || null,
+    status: statusOf(kind, f, mapping.status),
     fields: f,
     raw: JSON.parse(JSON.stringify(row)) as object,
     search,
@@ -345,12 +416,14 @@ function recordFrom(kind: ErpKind, mapping: Record<string, string>, row: Record<
 // ---------- Import ----------
 
 export async function importExport(opts: { fileName: string; data: Buffer; userName: string }) {
-  const { format, tables } = parseExport(opts.fileName, opts.data);
+  const parsed = parseExport(opts.fileName, opts.data);
+  const format = parsed.format;
+  const tables = parsed.tables.flatMap(splitByType);
   const total = tables.reduce((n, t) => n + t.rows.length, 0);
   if (total > MAX_ROWS) throw new ErpImportError(`Zu viele Zeilen (${total.toLocaleString("de-DE")}) – höchstens ${MAX_ROWS.toLocaleString("de-DE")} je Datei. Bitte aufteilen.`);
   const infos: TableInfo[] = tables.map((t) => {
     const headers = [...new Set(t.rows.flatMap((r) => Object.keys(r)))].slice(0, 200);
-    const kind = detectKind(t.name, headers);
+    const kind = t.kind ?? detectKind(t.name, headers);
     return { name: t.name.slice(0, 120), kind, headers, mapping: mapColumns(kind, headers), rows: t.rows.length };
   });
   const imp = await db.erpImport.create({ data: { fileName: opts.fileName.slice(0, 200), format, tables: infos as object[], rows: total, userName: opts.userName } });
@@ -359,6 +432,8 @@ export async function importExport(opts: { fileName: string; data: Buffer; userN
     const recs = tables[t].rows.map((r) => ({ importId: imp.id, table: info.name, ...recordFrom(info.kind, info.mapping, r) }));
     for (let i = 0; i < recs.length; i += 1000) await db.erpRecord.createMany({ data: recs.slice(i, i + 1000) });
   }
+  // Beleg-PDFs, die vor dieser Liste hochgeladen wurden, jetzt dem passenden Datensatz zuordnen
+  await relinkPdfs(imp.id);
   return { id: imp.id, format, tables: infos };
 }
 
@@ -402,7 +477,7 @@ export async function transferCustomers(importId: string) {
         const f = r.fields as Record<string, string>;
         const firma = f.name?.trim() || undefined;
         // „Herr Schneider“ / „Frau Anna Becker“ → Anrede + Vor-/Nachname
-        let anrede = f.anrede;
+        let anrede = f.anrede && !/^(firma|eheleute|familie)$/i.test(f.anrede.trim()) ? f.anrede : undefined;
         let vorname = f.vorname;
         let nachname = f.nachname?.trim();
         const m = nachname ? /^(Herr|Frau)\s+(.+)$/i.exec(nachname) : null;
@@ -507,6 +582,122 @@ export async function transferProjects(importId: string, userId: string) {
     await release(importId);
   }
   return created;
+}
+
+// ---------- Beleg-PDFs aus dem alten Programm ----------
+// Die alten Belege (GoBD: 10 Jahre aufbewahren) als PDF hochladen. Steht die Belegnummer im Dateinamen, hängt das PDF am
+// passenden Datensatz aus der Liste. Ohne Treffer bleibt es als eigener Archiv-Eintrag (Platzhalter) im PDF-Import und wird
+// zugeordnet, sobald die passende Liste hochgeladen wird.
+
+const DOC_KINDS = ["rechnung", "angebot", "sonstiges"];
+
+/** Belegnummern im Dateinamen: „Rechnung RE-1023 Müller.pdf“ → ["RE-1023", "1023"] */
+export function numberCandidates(fileName: string) {
+  const out = new Set<string>();
+  for (const tok of fileName.replace(/\.[a-z0-9]{2,4}$/i, "").split(/[\s_,;()[\]]+/)) {
+    const t = tok.replace(/^[-.#:]+|[-.#:]+$/g, "");
+    if (!/\d/.test(t) || t.length > 40) continue;
+    out.add(t);
+    const m = /^(?:nr|re|rg|an|ag|ab|ls|gs|kva|[a-zäöü]{1,4})[-.:#]{0,2}(\d[\d\-/.]*)$/i.exec(t);
+    if (m) out.add(m[1]);
+    for (const x of [...out]) if (/^0+\d/.test(x)) out.add(x.replace(/^0+(?=\d)/, ""));
+  }
+  return [...out].slice(0, 20);
+}
+
+const kindHint = (fileName: string): ErpKind | null => (/angebot|kostenvoranschlag/i.test(fileName) ? "angebot" : /gutschrift|storno/i.test(fileName) ? "sonstiges" : /rechnung|faktura/i.test(fileName) ? "rechnung" : null);
+
+/** Bester Datensatz zu einem Dateinamen (Art aus dem Dateinamen bevorzugt, dann Rechnung vor Angebot) */
+function pick<T extends { kind: string; number: string | null }>(fileName: string, recs: T[]) {
+  const hint = kindHint(fileName);
+  const cands = numberCandidates(fileName);
+  const score = (r: T) => (r.kind === hint ? 100 : 0) + (r.kind === "rechnung" ? 20 : r.kind === "angebot" ? 10 : 0) + (cands.indexOf(r.number ?? "") === 0 ? 5 : 0);
+  return [...recs].sort((a, b) => score(b) - score(a))[0];
+}
+
+export async function attachPdf(opts: { importId?: string | null; fileName: string; data: Buffer; userName: string }) {
+  if (opts.data.subarray(0, 5).toString("latin1") !== "%PDF-") throw new ErpImportError("Nur PDF-Dateien.");
+  let imp = opts.importId ? await db.erpImport.findFirst({ where: { id: opts.importId, format: "pdf" }, select: { id: true } }) : null;
+  imp ??= await db.erpImport.create({ data: { fileName: `Beleg-PDFs vom ${new Date().toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })}`, format: "pdf", tables: [], rows: 0, userName: opts.userName }, select: { id: true } });
+  const name = opts.fileName.split(/[\\/]/).pop()!.slice(0, 200) || "Beleg.pdf";
+  const sha256 = (await import("node:crypto")).createHash("sha256").update(opts.data).digest("hex");
+  const same = await db.storedFile.findFirst({ where: { kind: "altbeleg", sha256 }, select: { id: true } });
+  if (same) return { importId: imp.id, duplicate: true, matched: null };
+  let file;
+  try {
+    file = await storeFile({ name, mime: "application/pdf", data: opts.data, kind: "altbeleg", uploadedBy: opts.userName });
+  } catch (e) {
+    throw e instanceof FileError ? new ErpImportError(e.message) : e;
+  }
+  await db.storedFile.update({ where: { id: file.id }, data: { meta: { importId: imp.id } } });
+  await db.erpImport.update({ where: { id: imp.id }, data: { rows: { increment: 1 } } });
+  const cands = numberCandidates(name);
+  const recs = cands.length ? await db.erpRecord.findMany({ where: { number: { in: cands }, fileId: null, kind: { in: DOC_KINDS }, import: { format: { not: "pdf" } } }, select: { id: true, kind: true, number: true, party: true }, take: 20 }) : [];
+  const hit = pick(name, recs);
+  if (hit) {
+    await db.erpRecord.update({ where: { id: hit.id }, data: { fileId: file.id } });
+    return { importId: imp.id, duplicate: false, matched: { id: hit.id, label: [ERP_KIND_LABEL[hit.kind as ErpKind], hit.number, hit.party].filter(Boolean).join(" · ") } };
+  }
+  const text = (file.text ?? "").slice(0, 3000);
+  await db.erpRecord.create({
+    data: {
+      importId: imp.id,
+      table: "Beleg-PDFs",
+      kind: "sonstiges",
+      number: cands[0]?.slice(0, 80) ?? null,
+      name: name.replace(/\.pdf$/i, "").slice(0, 300),
+      fields: { datei: name },
+      raw: { Datei: name, ...(text ? { "Text (Anfang)": text.slice(0, 1500) } : {}) },
+      search: `${name} ${text}`.toLowerCase().slice(0, 4000),
+      fileId: file.id,
+    },
+  });
+  return { importId: imp.id, duplicate: false, matched: null };
+}
+
+/** Nach einem Listen-Import: PDF-Platzhalter mit passender Nummer an den neuen Datensatz hängen */
+export async function relinkPdfs(importId: string) {
+  const targets = await db.erpRecord.findMany({ where: { importId, number: { not: null }, fileId: null, kind: { in: DOC_KINDS } }, select: { id: true, kind: true, number: true } });
+  if (!targets.length) return 0;
+  const byNumber = new Map<string, typeof targets>();
+  for (const t of targets) byNumber.set(t.number!, [...(byNumber.get(t.number!) ?? []), t]);
+  const placeholders = await db.erpRecord.findMany({ where: { import: { format: "pdf" }, fileId: { not: null } }, select: { id: true, fileId: true, fields: true }, take: 20_000 });
+  const taken = new Set<string>();
+  let n = 0;
+  for (const p of placeholders) {
+    const name = String((p.fields as Record<string, unknown>)?.datei ?? "");
+    const hit = pick(name, numberCandidates(name).flatMap((c) => byNumber.get(c) ?? []).filter((t) => !taken.has(t.id)));
+    if (!hit) continue;
+    taken.add(hit.id);
+    await db.$transaction([db.erpRecord.update({ where: { id: hit.id }, data: { fileId: p.fileId } }), db.erpRecord.delete({ where: { id: p.id } })]);
+    n++;
+  }
+  return n;
+}
+
+/** Import löschen. PDF-Import: Dateien mit weg. Listen-Import: zugeordnete PDFs bleiben als Platzhalter in ihrem PDF-Import */
+export async function deleteErpImport(importId: string) {
+  const imp = await db.erpImport.findUniqueOrThrow({ where: { id: importId }, select: { id: true, format: true } });
+  if (imp.format === "pdf") {
+    const files = await db.storedFile.findMany({ where: { kind: "altbeleg", meta: { path: ["importId"], equals: imp.id } }, select: { id: true } });
+    const ids = files.map((f) => f.id);
+    await db.$transaction([db.erpRecord.updateMany({ where: { fileId: { in: ids } }, data: { fileId: null } }), db.erpImport.delete({ where: { id: imp.id } }), db.storedFile.deleteMany({ where: { id: { in: ids } } })]);
+    return;
+  }
+  const linked = await db.erpRecord.findMany({ where: { importId: imp.id, fileId: { not: null } }, select: { fileId: true, number: true } });
+  const files = linked.length ? await db.storedFile.findMany({ where: { id: { in: linked.map((l) => l.fileId!) } }, select: { id: true, name: true, meta: true } }) : [];
+  const pdfImports = new Set((await db.erpImport.findMany({ where: { format: "pdf" }, select: { id: true } })).map((x) => x.id));
+  await db.$transaction(async (tx) => {
+    for (const f of files) {
+      const owner = String((f.meta as Record<string, unknown> | null)?.importId ?? "");
+      if (!pdfImports.has(owner)) {
+        await tx.storedFile.delete({ where: { id: f.id } });
+        continue;
+      }
+      await tx.erpRecord.create({ data: { importId: owner, table: "Beleg-PDFs", kind: "sonstiges", number: numberCandidates(f.name)[0] ?? null, name: f.name.replace(/\.pdf$/i, "").slice(0, 300), fields: { datei: f.name }, raw: { Datei: f.name }, search: f.name.toLowerCase(), fileId: f.id } });
+    }
+    await tx.erpImport.delete({ where: { id: imp.id } });
+  });
 }
 
 // ---------- Suche ----------
