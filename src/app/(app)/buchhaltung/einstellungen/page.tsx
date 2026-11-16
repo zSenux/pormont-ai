@@ -2,7 +2,8 @@ import { CheckCircle2, Download, FileImage, Hash, Landmark, Loader2, Upload } fr
 import { requireAdmin } from "@/lib/auth/user";
 import { berlinParts, formatDateTime, todayYmd } from "@/lib/berlin";
 import { lexwareConfigured } from "@/lib/lexware/client";
-import { bookConfig, missingForInvoices } from "@/lib/buchhaltung/config";
+import { bookConfig, fmtIban, missingForInvoices } from "@/lib/buchhaltung/config";
+import { COMPANY } from "@/lib/company";
 import { numberState, PREFIX } from "@/lib/buchhaltung/docs";
 import { importState } from "@/lib/buchhaltung/lexware-import";
 import { ConfigForm, ImportForm, LetterheadForm, NumberForm } from "./forms";
@@ -25,7 +26,16 @@ export default async function BookSettings() {
         <h2 className="flex items-center gap-2 font-semibold"><Landmark className="size-4 text-brand" /> Firmendaten für Belege</h2>
         {missing.length > 0 ? <p className="text-sm text-warn">Für Rechnungen fehlt noch: {missing.join(", ")}.</p> : <p className="flex items-center gap-1 text-sm text-ok"><CheckCircle2 className="size-4" /> Alles da für Rechnungen und E-Rechnung.</p>}
         <ConfigForm c={cfg} />
-        <p className="text-xs text-steel">Name, Anschrift, USt-IdNr., Handelsregister und Geschäftsführung kommen aus den ProMont-Stammdaten und stehen automatisch auf jedem Beleg.</p>
+        <div className="rounded-lg bg-brand/5 p-3 text-xs text-steel">
+          <p className="mb-1 font-semibold text-ink">Stammdaten auf jedem Beleg (wie auf dem Briefpapier)</p>
+          <div className="grid gap-x-4 gap-y-2 sm:grid-cols-4">
+            <p>{COMPANY.name}<br />{COMPANY.street}<br />{COMPANY.zip} {COMPANY.city}</p>
+            <p>{COMPANY.bank.name}<br />IBAN {fmtIban(COMPANY.bank.iban)}<br />BIC {COMPANY.bank.bic}</p>
+            <p>{COMPANY.register}<br />USt-IdNr. {COMPANY.vatId}</p>
+            <p>Tel. {COMPANY.phone}<br />Mobil {COMPANY.mobile}<br />{COMPANY.email} · {COMPANY.web}</p>
+          </div>
+          <p className="mt-2">{COMPANY.subtitle}. Die Bankverbindung oben hat Vorrang; ist das Feld IBAN leer, gilt die Deutsche Bank von ProMont.</p>
+        </div>
       </section>
 
       <section id="briefpapier" className="card space-y-3 p-4">

@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { COMPANY } from "@/lib/company";
 
 // Einstellungen der Buchhaltung (Bankverbindung, Steuernummer, Zahlungsziel, Texte, Mahngebühren).
 // Liegen als JSON in AppSetting „BUCHHALTUNG“ – keine Geheimnisse, deshalb unverschlüsselt.
@@ -101,7 +102,13 @@ export async function bookConfig(): Promise<BookConfig> {
     raw = row ? JSON.parse(row.value) : {};
   } catch {}
   const p = bookConfigSchema.safeParse(raw);
-  return p.success ? p.data : bookConfigSchema.parse({});
+  return withCompanyBank(p.success ? p.data : bookConfigSchema.parse({}));
+}
+
+/** Leere Bankverbindung → Standard von ProMont (Briefpapier). Eigene Einträge haben immer Vorrang. */
+export function withCompanyBank(c: BookConfig): BookConfig {
+  if (c.iban) return c;
+  return { ...c, iban: COMPANY.bank.iban, bic: c.bic || COMPANY.bank.bic, bankName: c.bankName || COMPANY.bank.name };
 }
 
 export async function saveBookConfig(c: BookConfig) {
