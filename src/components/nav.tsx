@@ -8,6 +8,7 @@ import { Calendar, CheckSquare, ChevronDown, Home, LogOut, Mail, Menu, Search, S
 import { clsx } from "clsx";
 import type { Area } from "@/lib/rights-shared";
 import { activeHref, navFor, type NavGroup, type NavItem } from "@/lib/nav-shared";
+import { ThemeToggle } from "@/components/theme";
 
 /** Treffer der Schnellsuche (Bezeichnung, Gruppe oder Stichwort) */
 function search(groups: NavGroup[], q: string) {
@@ -94,7 +95,8 @@ export function TopNav({ name, funktion, areas, admin, logout }: { name: string;
     <header ref={bar} className="sticky top-0 z-30 hidden border-b border-line bg-white/95 backdrop-blur print:hidden md:block">
       <div ref={row} className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-1 px-4 lg:px-6">
         <Link href="/" className="mr-2 flex shrink-0 items-center gap-2" aria-label="Startseite">
-          <img src="/logo.svg" alt="ProMont GmbH" className={clsx("w-auto", tight ? "h-8" : "h-10")} />
+          <img src="/logo.svg" alt="ProMont GmbH" className={clsx("logo-light w-auto", tight ? "h-8" : "h-10")} />
+          <img src="/logo-weiss.svg" alt="" aria-hidden className={clsx("logo-dark w-auto", tight ? "h-8" : "h-10")} />
         </Link>
 
         <nav ref={nav} className="flex min-w-0 flex-1 items-center gap-0.5" aria-label="Hauptnavigation">
@@ -236,9 +238,13 @@ export function MobileHeader() {
     <header className="sticky top-0 z-30 border-b border-line bg-white/90 print:hidden pt-[env(safe-area-inset-top)] backdrop-blur md:hidden">
       <div className="flex h-14 items-center justify-between px-4">
         <Link href="/" aria-label="Startseite">
-          <img src="/logo.svg" alt="ProMont GmbH" className="h-10 w-auto" />
+          <img src="/logo.svg" alt="ProMont GmbH" className="logo-light h-10 w-auto" />
+          <img src="/logo-weiss.svg" alt="" aria-hidden className="logo-dark h-10 w-auto" />
         </Link>
-        <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <span className="chip border-brand/20 bg-brand-soft text-brand">Jarvis</span>
+        </div>
       </div>
     </header>
   );
@@ -262,19 +268,19 @@ export function MobileNav({ areas }: { areas: readonly Area[] }) {
         {tabs.map((i) =>
           i.center ? (
             <Link key={i.href} href={i.href} className="flex flex-col items-center justify-center" aria-label="Jarvis">
-              <span className={clsx("-mt-6 grid size-14 place-items-center rounded-full border-4 border-white shadow-lg", on(i.href) ? "bg-brand-2" : "bg-brand")}>
+              <span className={clsx("-mt-6 grid size-14 place-items-center rounded-full border-4 border-white shadow-lg dark:border-mist", on(i.href) ? "bg-brand-2" : "bg-brand")}>
                 <i.icon className="size-6 text-white" />
               </span>
               <span className="mt-0.5 text-[10px] font-semibold text-brand">Jarvis</span>
             </Link>
           ) : (
-            <Link key={i.href} href={i.href} className={clsx("flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium", on(i.href) ? "text-brand" : "text-steel")}>
+            <Link key={i.href} href={i.href} className={clsx("flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold", on(i.href) ? "text-brand" : "text-steel")}>
               <i.icon className="size-5" />
               {i.label}
             </Link>
           ),
         )}
-        <Link href="/einstellungen" className={clsx("flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium", more ? "text-brand" : "text-steel")}>
+        <Link href="/einstellungen" className={clsx("flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold", more ? "text-brand" : "text-steel")}>
           <Menu className="size-5" />
           Mehr
         </Link>

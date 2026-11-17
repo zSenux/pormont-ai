@@ -62,7 +62,7 @@ export function SteelCalculator({ prices, canStock }: { prices: PriceTable; canS
             <p className="py-6 text-center text-sm text-steel">Nichts gefunden. Schreib das Maß z. B. als „Flachstahl 55x7“ oder „Rohr 48,3x2,6“ – dann wird es aus der Geometrie berechnet.</p>
           ) : (
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white text-left text-xs text-steel dark:bg-[var(--color-card,#101820)]">
+              <thead className="sticky top-0 bg-white text-left text-xs text-steel">
                 <tr><th className="py-1.5 font-medium">Profil</th><th className="hidden py-1.5 font-medium sm:table-cell">Maße</th><th className="py-1.5 text-right font-medium">Gewicht</th>{anyPrice && <th className="py-1.5 text-right font-medium">Preis</th>}</tr>
               </thead>
               <tbody className="divide-y divide-line">
