@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { berlinDateTime } from "@/lib/berlin";
 import { decodeText, splitCsv } from "@/lib/catalog";
 import { norm, xlsxSheets } from "@/lib/erp-import";
 
@@ -14,16 +15,16 @@ const MAX_ROWS = 2000;
 
 export class ListImportError extends Error {}
 
-export const LIST_FIELDS = ["name", "category", "contactName", "email", "phone", "website", "street", "postalCode", "city", "value", "notes", "status"] as const;
+export const LIST_FIELDS = ["name", "category", "contactName", "email", "phone", "website", "street", "postalCode", "city", "value", "notes", "status", "followUp"] as const;
 export type ListField = (typeof LIST_FIELDS)[number];
 export const LIST_FIELD_LABEL: Record<ListField, string> = {
   name: "Firma", category: "Branche", contactName: "Ansprechpartner", email: "E-Mail", phone: "Telefon", website: "Website",
-  street: "Straße", postalCode: "PLZ", city: "Ort", value: "Auftragswert", notes: "Notiz", status: "Status",
+  street: "Straße", postalCode: "PLZ", city: "Ort", value: "Auftragswert", notes: "Notiz", status: "Status", followUp: "Wiedervorlage",
 };
 
 // Regeln je Feld in Vorrang-Reihenfolge, geprüft gegen den vereinheitlichten Spaltennamen (norm)
 const RULES: Record<ListField, RegExp[]> = {
-  name: [/^(firma|firmenname|unternehmen|unternehmensname|company|kunde|kundenname|potenziellerkunde|potentiellerkunde|interessent|bauherr|auftraggeber)$/, /firma|unternehmen|company|kunde|interessent/, /^name$/, /^name1$/],
+  name: [/^(firma|firmenname|unternehmen|unternehmensname|company|kunde|kundenname|potenziellerkunde|potentiellerkunde|interessent|bauherr|auftraggeber)$/, /^(firma|unternehmen|company|kunde|interessent)/, /^name$/, /^name1$/],
   category: [/^(branche|kategorie|gewerk|bereich|segment|zielgruppe|typ|art)$/, /branche|kategorie|gewerk/],
   contactName: [/^(ansprechpartner|ansprechperson|kontakt|kontaktperson|ap|person|vorname?nachname|nachname)$/, /ansprech|kontaktperson|^kontaktname/],
   email: [/^(email|mail|emailadresse|mailadresse)$/, /mail/],
@@ -32,9 +33,11 @@ const RULES: Record<ListField, RegExp[]> = {
   street: [/^(strasse|str|strassehausnummer|strassenr|adresse|anschrift|address)$/, /strasse|adresse|anschrift/],
   postalCode: [/^(plz|postleitzahl|zip)$/, /^plz/],
   city: [/^(ort|stadt|city|wohnort|sitz|standort|plzort)$/, /^ort|stadt|standort/],
-  value: [/^(auftragswert|wert|volumen|potenzial|potential|umsatz|umsatzpotenzial|budget)$/, /auftragswert|volumen|potenzial|potential/],
+  // „Potenzial“ ist oft Hoch/Mittel/Niedrig – bleibt dann als Text in der Notiz
+  value: [/^(auftragswert|wert|volumen|auftragsvolumen|umsatz|budget)$/, /auftragswert|auftragsvolumen/],
   notes: [/^(bemerkung|bemerkungen|notiz|notizen|kommentar|info|infos|hinweis|beschreibung)$/, /bemerk|notiz|kommentar|hinweis/],
   status: [/^(status|stand|stufe|phase)$/],
+  followUp: [/^(wiedervorlage|nachfassen|naechsterkontakt|wiedervorlageam|nachfassenam)$/],
 };
 
 export const listRowSchema = z.object({
@@ -50,6 +53,8 @@ export const listRowSchema = z.object({
   value: z.number().int().nullable(),
   notes: z.string().nullable(),
   stage: z.enum(["NEU", "KONTAKTIERT", "TERMIN", "ANGEBOT", "GEWONNEN", "VERLOREN"]),
+  /// Wiedervorlage JJJJ-MM-TT
+  followUp: z.string().nullable(),
   /// nicht zugeordnete Spalten „Spalte: Wert“
   extra: z.array(z.string()),
   sheet: z.string(),
@@ -101,14 +106,27 @@ function parseValue(s: string | null) {
   return Number.isFinite(n) && n > 0 && n < 1e9 ? Math.round(n) : null;
 }
 
+/** Status-Text der Liste → Stufe. Verneinungen zuerst („Nicht angerufen“ ist noch neu). */
 function parseStage(s: string | null): ListRow["stage"] {
-  const v = (s ?? "").toLowerCase();
-  if (/gewonnen|auftrag erhalten|kunde geworden/.test(v)) return "GEWONNEN";
-  if (/verloren|kein interesse|absage|abgesagt/.test(v)) return "VERLOREN";
-  if (/angebot/.test(v)) return "ANGEBOT";
+  const v = (s ?? "").toLowerCase().trim();
+  if (!v || /^nicht (angerufen|erreicht|kontaktiert)|^offen|^neu/.test(v)) return "NEU";
+  if (/kein bedarf|kein interesse|absage|abgesagt|verloren|nicht mehr kontaktieren/.test(v)) return "VERLOREN";
+  if (/auftrag (erhalten|erstellt)|gewonnen|kunde geworden/.test(v)) return "GEWONNEN";
+  if (/angebot|verhandlung/.test(v)) return "ANGEBOT";
   if (/termin/.test(v)) return "TERMIN";
-  if (/kontakt|angerufen|angeschrieben|gesprochen|mail/.test(v)) return "KONTAKTIERT";
-  return "NEU";
+  return "KONTAKTIERT";
+}
+
+/** Datum aus Excel (Seriennummer) oder TT.MM.JJJJ / JJJJ-MM-TT → JJJJ-MM-TT */
+function parseYmd(s: string | null) {
+  if (!s) return null;
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = /^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/.exec(s);
+  if (m) return `${m[3].length === 2 ? `20${m[3]}` : m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  const n = Number(s);
+  if (Number.isFinite(n) && n > 30000 && n < 80000) return new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000).toISOString().slice(0, 10);
+  return null;
 }
 
 function website(s: string | null) {
@@ -156,15 +174,20 @@ export function parseLeadList(fileName: string, buf: Buffer) {
   for (const sheet of matrices(fileName, buf)) {
     if (sheet.matrix.length < 2) continue;
     const head = findHeader(sheet.matrix);
-    if (head.row < 0 || head.mapping.name === undefined) continue;
+    // Auswahllisten-Blätter (z. B. „Dropdowns“) haben keine echte Kopfzeile mit Firma + weiteren Spalten
+    if (head.row < 0 || head.mapping.name === undefined || head.score < 4) continue;
     const headers = sheet.matrix[head.row].map((h, i) => clean(h) ?? `Spalte ${i + 1}`);
     for (const [f, i] of Object.entries(head.mapping)) mapping[`${sheet.name} · ${headers[i!]}`] = LIST_FIELD_LABEL[f as ListField];
-    const mapped = new Set(Object.values(head.mapping));
+    // Status-Text bleibt zusätzlich in der Notiz (die Stufen der Akquise sind gröber als die der Liste)
+    const mapped = new Set(Object.entries(head.mapping).flatMap(([f, i]) => (f === "status" ? [] : [i!])));
     for (const r of sheet.matrix.slice(head.row + 1)) {
       const get = (f: ListField) => (head.mapping[f] === undefined ? null : clean(r[head.mapping[f]!]));
       const name = get("name");
       if (!name || name.length < 2) continue;
       const email = get("email");
+      const site = website(get("website"));
+      // keine Adresse (z. B. „Google Maps“) → Text bleibt in der Notiz
+      const skip = (i: number) => mapped.has(i) && !(i === head.mapping.website && !site);
       const addr = splitAddress({ street: get("street"), postalCode: get("postalCode"), city: get("city") });
       rows.push({
         name: name.slice(0, 200),
@@ -172,14 +195,15 @@ export function parseLeadList(fileName: string, buf: Buffer) {
         contactName: get("contactName")?.slice(0, 120) ?? null,
         email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email.toLowerCase().slice(0, 200) : null,
         phone: get("phone")?.slice(0, 60) ?? null,
-        website: website(get("website"))?.slice(0, 300) ?? null,
+        website: site?.slice(0, 300) ?? null,
         street: addr.street?.slice(0, 200) ?? null,
         postalCode: addr.postalCode,
         city: addr.city?.slice(0, 120) ?? null,
         value: parseValue(get("value")),
         notes: get("notes")?.slice(0, 2000) ?? null,
         stage: parseStage(get("status")),
-        extra: r.flatMap((v, i) => (mapped.has(i) || !clean(v) ? [] : [`${headers[i]}: ${clean(v)!.slice(0, 300)}`])).slice(0, 20),
+        followUp: parseYmd(get("followUp")),
+        extra: r.flatMap((v, i) => (skip(i) || !clean(v) ? [] : [`${headers[i]}: ${clean(v)!.slice(0, 300)}`])).slice(0, 20),
         sheet: sheet.name,
       });
       if (rows.length >= MAX_ROWS) break;
@@ -234,6 +258,7 @@ export async function transferLeadList(importId: string, picked: number[], user:
       data: {
         name: r.name, category: r.category, contactName: r.contactName, email: r.email, phone: r.phone, website: r.website,
         street: r.street, postalCode: r.postalCode, city: r.city, value: r.value, notes, stage: r.stage, source: "LISTE", createdById: user.id,
+        nextFollowUpAt: r.followUp ? berlinDateTime(r.followUp, "09:00") : null,
         activities: { create: { kind: "NOTIZ", text: `Aus der Liste „${imp.fileName}“ übernommen.`, userName: user.name } },
       },
     });
