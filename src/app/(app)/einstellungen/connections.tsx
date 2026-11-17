@@ -27,6 +27,8 @@ export type ConnectionProps = {
   /** Angemeldetes Microsoft-Konto (null = noch nicht angemeldet) */
   msAccount: string | null;
   msRedirectUri: string;
+  /** Hinweis, wenn das Hosting die Microsoft-Anmeldung verhindert (MAIL_OFF, festes MAIL_PROVIDER) */
+  msBlocked: string | null;
 };
 
 function Msg({ s }: { s?: { ok?: string; error?: string } }) {
@@ -179,7 +181,7 @@ export function ConnectionsForm(p: ConnectionProps) {
             Steht oben nach dem Speichern „abgelehnt“ oder „gesperrt“, bitte „Mit Microsoft anmelden“ wählen.
           </p>
         )}
-        {provider === "microsoft" && <MicrosoftFields p={p} saved={p.mailProvider.value === "microsoft"} />}
+        {provider === "microsoft" && <MicrosoftFields p={p} />}
         {p.mailUser.set && !mailLocked && (
           <ClearButton value="MAIL">{provider === "microsoft" && p.msAccount ? "Von Microsoft abmelden" : "Postfach trennen"}</ClearButton>
         )}
@@ -195,8 +197,9 @@ export function ConnectionsForm(p: ConnectionProps) {
 }
 
 /** Microsoft 365: App-Registrierung (einmalig) + Anmeldung im Browser – kein Passwort in Jarvis */
-function MicrosoftFields({ p, saved }: { p: ConnectionProps; saved: boolean }) {
-  const ready = saved && p.msClientId.set && p.msSecret.set;
+function MicrosoftFields({ p }: { p: ConnectionProps }) {
+  // Sobald ID + Schlüssel gespeichert sind, darf man anmelden – der Anbieter wird bei der Anmeldung selbst gesetzt
+  const ready = p.msClientId.set && p.msSecret.set && !p.msBlocked;
   return (
     <div className="space-y-4 rounded-lg border border-line bg-mist/50 p-4">
       <p className="text-xs text-steel">
@@ -222,11 +225,12 @@ function MicrosoftFields({ p, saved }: { p: ConnectionProps; saved: boolean }) {
           <p className="mt-1 text-xs text-steel">Nur ausfüllen, wenn Jarvis ein gemeinsames Postfach nutzen soll, in das sich niemand direkt anmeldet. Das angemeldete Konto braucht dafür „Vollzugriff“ und „Senden als“.</p>
         </div>
       </div>
+      {p.msBlocked && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-bad" role="alert">{p.msBlocked}</p>}
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
         {p.msAccount ? (
           <p className="flex items-center gap-1 text-sm text-ok"><Check className="size-4" /> Angemeldet als {p.msAccount}</p>
         ) : (
-          <p className="text-sm text-steel">{ready ? "Noch nicht angemeldet." : "Erst Anwendungs-ID und Clientschlüssel speichern, dann anmelden."}</p>
+          <p className="text-sm text-steel">{ready ? "Noch nicht angemeldet." : p.msBlocked ? "Anmeldung erst nach der Änderung im Hosting möglich." : "Erst Anwendungs-ID und Clientschlüssel speichern, dann anmelden."}</p>
         )}
         {ready ? (
           <a href="/api/mail/microsoft/start" className="btn-secondary"><LogIn className="size-4" /> {p.msAccount ? "Anderes Konto / neu anmelden" : "Mit Microsoft anmelden"}</a>

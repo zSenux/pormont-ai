@@ -5,6 +5,8 @@ import { currentUser, lockedResponse } from "@/lib/auth/user";
 import { msFinishLogin } from "@/lib/mail/microsoft";
 import { msRedirectUri, publicOrigin } from "@/lib/mail/origin";
 import { MailError } from "@/lib/mail/types";
+import { msHostingBlock } from "@/lib/mail/config";
+import { fromEnv } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,8 @@ export async function GET(req: Request) {
   }
   const code = sp.get("code");
   if (!code || !state || !verifier || userId !== u.id || !same(state, sp.get("state") ?? "")) return back("Anmeldung abgelaufen – bitte noch einmal „Mit Microsoft anmelden“ klicken.");
+  const blocked = msHostingBlock(fromEnv("MAIL_PROVIDER"));
+  if (blocked) return back(blocked);
   try {
     const r = await msFinishLogin(code, verifier, await msRedirectUri());
     revalidatePath("/", "layout");

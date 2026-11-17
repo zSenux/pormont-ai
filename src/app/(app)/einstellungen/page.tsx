@@ -18,7 +18,8 @@ import { WindowsAppDownload } from "@/components/windows-app";
 import { latestWindowsRelease } from "@/lib/windows-app";
 import { AddUserForm, DeleteButton, PasswordForm } from "./forms";
 import { ConnectionsForm } from "./connections";
-import { settingState } from "@/lib/settings";
+import { fromEnv, settingState } from "@/lib/settings";
+import { msHostingBlock } from "@/lib/mail/config";
 import { license, lockReason } from "@/lib/license";
 
 export const metadata = { title: "Einstellungen" };
@@ -122,6 +123,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
                 msMailbox={settingState("MS_MAILBOX")}
                 msAccount={settingState("MAIL_PROVIDER").value === "microsoft" && process.env.MS_REFRESH_TOKEN ? (process.env.MAIL_USER ?? null) : null}
                 msRedirectUri={`${origin}/api/mail/microsoft/callback`}
+                msBlocked={msHostingBlock(fromEnv("MAIL_PROVIDER"))}
               />
             </div>
           </details>
