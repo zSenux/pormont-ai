@@ -1,30 +1,46 @@
 import Link from "next/link";
-import { Mail, Paperclip, PenSquare, Search, Signature, Sparkles } from "lucide-react";
+import { PenSquare, Search, Signature, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 import { requireUser } from "@/lib/auth/user";
-import { formatDateTime } from "@/lib/berlin";
-import { listMails, MailError } from "@/lib/mail/client";
+import { listFolders, listMails, MailError, type MailFolder } from "@/lib/mail/client";
 import { mailAddress, mailConfig } from "@/lib/mail/config";
+import { validKey } from "@/lib/mail/types";
+import { FolderSelect, MailList } from "./mail-list";
 
 export const metadata = { title: "Mail" };
 export const dynamic = "force-dynamic";
 
-export default async function MailPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string; gesendet?: string }> }) {
+export default async function MailPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string; gesendet?: string; ordner?: string; alle?: string }> }) {
   await requireUser();
   const sp = await searchParams;
   const cfg = mailConfig();
   const unread = sp.filter === "ungelesen";
   const q = sp.q?.trim().slice(0, 100) || undefined;
+  const search = q && q.length >= 2 ? q : undefined;
+  const folder = typeof sp.ordner === "string" && validKey(sp.ordner) ? sp.ordner : "";
+  const all = Boolean(search && sp.alle === "1");
 
   let data: Awaited<ReturnType<typeof listMails>> | null = null;
+  let folders: MailFolder[] = [];
   let error: string | null = null;
   if (cfg) {
-    try {
-      data = await listMails({ unread, search: q && q.length >= 2 ? q : undefined, limit: 50 });
-    } catch (e) {
-      error = e instanceof MailError ? e.message : "Postfach nicht erreichbar.";
-    }
+    const [list, fl] = await Promise.allSettled([listMails({ unread, search, folder: folder || undefined, allFolders: all, limit: 50 }), listFolders()]);
+    if (list.status === "fulfilled") data = list.value;
+    else error = list.reason instanceof MailError ? list.reason.message : "Postfach nicht erreichbar.";
+    // Ordnerliste ist Zusatz – fehlt sie, bleibt die Liste trotzdem nutzbar
+    if (fl.status === "fulfilled") folders = fl.value;
   }
+  if (!folders.length) folders = [{ key: "", name: "Posteingang", total: data?.total ?? 0, unread: data?.unread ?? 0, kind: "inbox", depth: 0 }];
+  if (folder && !folders.some((f) => f.key === folder)) folders.push({ key: folder, name: data?.folderName ?? "Ordner", total: data?.total ?? 0, unread: data?.unread ?? 0, kind: null, depth: 0 });
+  const query: Record<string, string> = {};
+  if (folder) query.ordner = folder;
+  if (search) query.q = search;
+  if (unread) query.filter = "ungelesen";
+  if (all) query.alle = "1";
+  const link = (extra: Record<string, string>) => {
+    const p = new URLSearchParams({ ...(folder ? { ordner: folder } : {}), ...extra });
+    return p.size ? `/mail?${p}` : "/mail";
+  };
 
   return (
     <main className="mx-auto max-w-3xl space-y-5 px-4 py-6 md:py-10">
@@ -63,48 +79,47 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
       {cfg && (
         <>
           <div className="flex flex-wrap items-center gap-2">
+            <FolderSelect folders={folders} current={folder} />
             {[
               { key: "", label: "Alle" },
               { key: "ungelesen", label: `Ungelesen${data ? ` (${data.unread})` : ""}` },
             ].map((f) => (
-              <Link key={f.key} href={f.key ? `/mail?filter=${f.key}` : "/mail"} className={clsx("chip px-3 py-1", (sp.filter ?? "") === f.key ? "border-brand bg-brand text-white" : "bg-white text-steel")}>
+              <Link key={f.key} href={link(f.key ? { filter: f.key } : {})} className={clsx("chip px-3 py-1", (sp.filter ?? "") === f.key ? "border-brand bg-brand text-white" : "bg-white text-steel")}>
                 {f.label}
               </Link>
             ))}
-            <form className="ml-auto flex min-w-0 flex-[1_1_220px] items-center gap-2" action="/mail">
-              {unread && <input type="hidden" name="filter" value="ungelesen" />}
-              <input name="q" defaultValue={q} placeholder="Absender, Betreff, Text …" className="input min-w-0 flex-1" aria-label="Mails durchsuchen" />
-              <button className="btn-secondary" aria-label="Suchen">
-                <Search className="size-4" />
-              </button>
-            </form>
           </div>
+          <form className="flex flex-wrap items-center gap-2" action="/mail">
+            {folder && <input type="hidden" name="ordner" value={folder} />}
+            {unread && <input type="hidden" name="filter" value="ungelesen" />}
+            <input name="q" defaultValue={q} placeholder="Ganzes Postfach durchsuchen: Absender, Betreff, Text …" className="input min-w-0 flex-[1_1_240px]" aria-label="Mails durchsuchen" />
+            <label className="flex items-center gap-1.5 text-sm text-steel">
+              <input type="checkbox" name="alle" value="1" defaultChecked={!q || all} className="size-4 accent-brand" /> alle Ordner
+            </label>
+            <button className="btn-secondary" aria-label="Suchen">
+              <Search className="size-4" /> Suchen
+            </button>
+            {q && (
+              <Link href={link(unread ? { filter: "ungelesen" } : {})} className="text-sm font-medium text-brand">
+                Suche löschen
+              </Link>
+            )}
+          </form>
 
           {error && <div className="card border-red-200 bg-red-50 p-4 text-sm text-bad">{error}</div>}
 
           {data && (
-            <ul className="card divide-y divide-line">
-              {data.mails.length === 0 && <li className="p-5 text-sm text-steel">Keine Mails gefunden.</li>}
-              {data.mails.map((m) => (
-                <li key={m.uid}>
-                  <Link href={`/mail/${m.uid}`} className="flex items-start gap-3 px-4 py-3 transition hover:bg-mist">
-                    <span className={clsx("mt-1.5 size-2.5 shrink-0 rounded-full", m.seen ? "bg-transparent" : "bg-brand")} aria-label={m.seen ? undefined : "ungelesen"} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-3">
-                        <span className={clsx("truncate", !m.seen && "font-semibold")}>{m.from}</span>
-                        <span className="shrink-0 text-xs text-steel">{m.date ? formatDateTime(m.date) : ""}</span>
-                      </span>
-                      <span className={clsx("flex items-center gap-1 truncate text-sm", m.seen ? "text-steel" : "text-ink")}>
-                        {m.hasAttachments && <Paperclip className="size-3.5 shrink-0" />}
-                        <span className="truncate">{m.subject}</span>
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <MailList
+              key={JSON.stringify(query)}
+              initial={data.mails}
+              next={data.next}
+              query={query}
+              total={data.total}
+              hits={data.hits}
+              folderName={data.folderName}
+              showFolderHint={Boolean(search && !all && data.mails.length === 0)}
+            />
           )}
-          {data && <p className="flex items-center gap-2 text-xs text-steel"><Mail className="size-3.5" /> {data.total} Mails im Posteingang · die neuesten 50 werden gezeigt</p>}
         </>
       )}
     </main>

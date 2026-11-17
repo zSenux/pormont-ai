@@ -3,16 +3,17 @@ import { mailAddress, mailConfig } from "./config";
 import { withSignature } from "./signature";
 import * as graph from "./graph";
 import * as imap from "./imap";
-import { MailError, type MailFull, type MailSummary, type OutgoingMail } from "./types";
+import { MailError, type ListOpts, type MailFolder, type MailFull, type MailList, type MailSummary, type OutgoingMail } from "./types";
 
 // Einstieg für die ganze App: wählt je nach Einstellung IMAP/SMTP (Strato, GMX, IONOS …) oder Microsoft 365 (Graph).
 
 export { MailError };
-export type { MailFull, MailSummary, OutgoingMail };
+export type { ListOpts, MailFolder, MailFull, MailList, MailSummary, OutgoingMail };
 
 const backend = () => (mailConfig()?.kind === "graph" ? graph : imap);
 
-export const listMails = (opts: Parameters<typeof imap.listMails>[0] = {}) => backend().listMails(opts);
+export const listMails = (opts: ListOpts = {}): Promise<MailList> => backend().listMails(opts);
+export const listFolders = (): Promise<MailFolder[]> => backend().listFolders();
 export const readMail = (uid: string, markRead = false) => backend().readMail(uid, markRead);
 export const setFlag = (uid: string, flag: "seen" | "flagged", on: boolean) => backend().setFlag(uid, flag, on);
 /** Signatur (Einstellungen → Mail-Signatur) wird hier für alle Wege angehängt */

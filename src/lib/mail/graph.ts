@@ -1,7 +1,7 @@
 import "server-only";
 import { mailConfig, type GraphConfig } from "./config";
 import { msAccessToken } from "./microsoft";
-import { MailError, type MailFull, type MailSummary, type OutgoingMail } from "./types";
+import { MailError, type ListOpts, type MailFolder, type MailFull, type MailList, type MailSummary, type OutgoingMail } from "./types";
 
 // Microsoft 365 / Outlook (Exchange Online) über Microsoft Graph.
 // Gleiche Funktionen wie imap.ts – die übrige App merkt keinen Unterschied.
@@ -103,25 +103,105 @@ function summary(m: GMsg): MailSummary {
   };
 }
 
-export async function listMails(opts: { limit?: number; unread?: boolean; search?: string; folder?: string } = {}): Promise<{ mails: MailSummary[]; unread: number; total: number }> {
+type GFolder = { id: string; displayName?: string; totalItemCount?: number; unreadItemCount?: number; childFolderCount?: number };
+const FOLDER_SELECT = "id,displayName,totalItemCount,unreadItemCount,childFolderCount";
+const WELL_KNOWN = [
+  ["inbox", "inbox", "Posteingang"],
+  ["drafts", "drafts", "Entwürfe"],
+  ["sentitems", "sent", "Gesendet"],
+  ["archive", "archive", "Archiv"],
+  ["junkemail", "junk", "Junk-E-Mail"],
+  ["deleteditems", "trash", "Gelöschte Elemente"],
+] as const;
+const folderKey = (id: string) => Buffer.from(id, "utf8").toString("base64url");
+function folderId(key: string) {
+  const id = Buffer.from(key, "base64url").toString("utf8");
+  if (!id || !/^[A-Za-z0-9+/=_-]{1,600}$/.test(id)) throw new MailError("Ordner nicht gefunden.");
+  return id;
+}
+
+/** Ordner des Postfachs (oberste Ebene + eine Ebene Unterordner), Standardordner zuerst */
+export async function listFolders(): Promise<MailFolder[]> {
+  const c = cfg();
+  const [top, ...known] = await Promise.all([
+    call<{ value: GFolder[] }>(`${box(c)}/mailFolders?$top=100&$select=${FOLDER_SELECT}`),
+    ...WELL_KNOWN.map(([wk]) => call<GFolder>(`${box(c)}/mailFolders/${wk}?$select=id`).catch(() => null)),
+  ]);
+  const kindOf = new Map<string, (typeof WELL_KNOWN)[number]>();
+  known.forEach((k, i) => k && kindOf.set(k.id, WELL_KNOWN[i]));
+  const parents = top.value.filter((f) => (f.childFolderCount ?? 0) > 0).slice(0, 20);
+  const children = await Promise.all(parents.map((f) => call<{ value: GFolder[] }>(`${box(c)}/mailFolders/${encodeURIComponent(f.id)}/childFolders?$top=100&$select=${FOLDER_SELECT}`).then((r) => r.value).catch(() => [] as GFolder[])));
+  const childMap = new Map(parents.map((p, i) => [p.id, children[i]]));
+  const toFolder = (f: GFolder, depth: number): MailFolder => {
+    const k = kindOf.get(f.id);
+    return { key: k?.[1] === "inbox" ? "" : folderKey(f.id), name: (k?.[2] ?? f.displayName) || "Ordner", total: f.totalItemCount ?? 0, unread: f.unreadItemCount ?? 0, kind: k?.[1] ?? null, depth };
+  };
+  const order = (f: GFolder) => {
+    const k = kindOf.get(f.id);
+    return k ? WELL_KNOWN.indexOf(k) : 99;
+  };
+  const out: MailFolder[] = [];
+  for (const f of [...top.value].sort((a, b) => order(a) - order(b) || (a.displayName ?? "").localeCompare(b.displayName ?? "", "de"))) {
+    out.push(toFolder(f, 0));
+    for (const ch of (childMap.get(f.id) ?? []).sort((a, b) => (a.displayName ?? "").localeCompare(b.displayName ?? "", "de"))) out.push(toFolder(ch, 1));
+  }
+  return out;
+}
+
+// Weiterladen: Graph liefert @odata.nextLink. Weitergereicht werden nur die Abfrage-Parameter (nie die Adresse),
+// die Adresse wird jedes Mal selbst gebaut – so kann ein manipulierter Link nichts anderes abrufen.
+const CURSOR_KEYS = new Set(["$select", "$top", "$skip", "$skiptoken", "$search", "$orderby", "$filter"]);
+function cursorFrom(nextLink?: string): string | null {
+  if (!nextLink) return null;
+  try {
+    const u = new URL(nextLink);
+    const p: Record<string, string> = {};
+    u.searchParams.forEach((v, k) => CURSOR_KEYS.has(k) && (p[k] = v));
+    return Buffer.from(JSON.stringify(p), "utf8").toString("base64url");
+  } catch {
+    return null;
+  }
+}
+function cursorParams(cursor: string): URLSearchParams {
+  try {
+    const p = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as Record<string, unknown>;
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(p)) if (CURSOR_KEYS.has(k) && typeof v === "string" && v.length <= 2000) q.set(k, v);
+    return q;
+  } catch {
+    throw new MailError("Ungültige Fortsetzung – Seite neu laden.");
+  }
+}
+
+/** Mails eines Ordners (Standard Posteingang), neueste zuerst, seitenweise über `next`. Suche optional über alle Ordner. */
+export async function listMails(opts: ListOpts = {}): Promise<MailList> {
   const c = cfg();
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 50);
-  const folder = `${box(c)}/mailFolders/inbox`;
-  const q = new URLSearchParams({ $select: SUMMARY, $top: String(limit) });
-  if (opts.search) {
-    // $search lässt keine Sortierung/Filter zu → ungelesen danach selbst filtern
-    q.set("$search", `"${opts.search.replace(/["\\]/g, " ").trim()}"`);
-    q.set("$top", String(opts.unread ? 50 : limit));
-  } else {
-    q.set("$orderby", "receivedDateTime desc");
-    // Exchange verlangt: Sortier-Feld zuerst im Filter
-    if (opts.unread) q.set("$filter", "receivedDateTime ge 2000-01-01T00:00:00Z and isRead eq false");
+  const all = Boolean(opts.search && opts.allFolders);
+  const folder = `${box(c)}/mailFolders/${opts.folder ? encodeURIComponent(folderId(opts.folder)) : "inbox"}`;
+  const base = all ? `${box(c)}/messages` : `${folder}/messages`;
+  let q: URLSearchParams;
+  if (opts.cursor) q = cursorParams(opts.cursor);
+  else {
+    q = new URLSearchParams({ $select: SUMMARY, $top: String(limit) });
+    if (opts.search) {
+      // $search lässt keine Sortierung/Filter zu (Treffer kommen nach Datum) → ungelesen danach selbst filtern
+      q.set("$search", `"${opts.search.replace(/["\\]/g, " ").trim()}"`);
+    } else {
+      q.set("$orderby", "receivedDateTime desc");
+      // Exchange verlangt: Sortier-Feld zuerst im Filter
+      if (opts.unread) q.set("$filter", "receivedDateTime ge 2000-01-01T00:00:00Z and isRead eq false");
+    }
   }
-  const [list, info] = await Promise.all([call<{ value: GMsg[] }>(`${folder}/messages?${q}`), call<{ unreadItemCount?: number; totalItemCount?: number }>(`${folder}?$select=unreadItemCount,totalItemCount`)]);
+  const [list, info] = await Promise.all([
+    call<{ value: GMsg[]; "@odata.nextLink"?: string }>(`${base}?${q}`),
+    call<{ displayName?: string; unreadItemCount?: number; totalItemCount?: number }>(`${all ? `${box(c)}/mailFolders/inbox` : folder}?$select=displayName,unreadItemCount,totalItemCount`),
+  ]);
   let mails = list.value.map(summary);
   if (opts.search && opts.unread) mails = mails.filter((m) => !m.seen);
-  mails = mails.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, limit);
-  return { mails, unread: info.unreadItemCount ?? 0, total: info.totalItemCount ?? 0 };
+  mails = mails.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+  const name = all ? "allen Ordnern" : opts.folder ? (info.displayName ?? "Ordner") : "Posteingang";
+  return { mails, unread: info.unreadItemCount ?? 0, total: info.totalItemCount ?? 0, hits: opts.search ? null : opts.unread ? (info.unreadItemCount ?? 0) : null, next: cursorFrom(list["@odata.nextLink"]), folderName: name };
 }
 
 async function attachmentsOf(c: GraphConfig, id: string): Promise<GAttachment[]> {
