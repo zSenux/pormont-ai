@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Download, Reply, Sparkles } from "lucide-react";
+import { ArrowLeft, Download, Forward, Reply, ReplyAll, Sparkles } from "lucide-react";
 import { requireUser } from "@/lib/auth/user";
 import { formatDateTime } from "@/lib/berlin";
 import { readMail, MailError } from "@/lib/mail/client";
@@ -50,8 +50,17 @@ export default async function MailDetail({ params }: { params: Promise<{ uid: st
           <Link href={ask(`Fasse die Mail uid ${m.uid} kurz zusammen und sag mir, was zu tun ist.`)} className="btn-secondary">
             <Sparkles className="size-4" /> Zusammenfassen
           </Link>
-          <Link href={ask(`Schreib mir eine Antwort auf die Mail uid ${m.uid}. Zeig sie mir erst, bevor du sie zum Senden vorschlägst.`)} className="btn-primary">
-            <Reply className="size-4" /> Antwort mit Jarvis
+          <Link href={`/mail/neu?antwort=${m.uid}`} className="btn-primary">
+            <Reply className="size-4" /> Antworten
+          </Link>
+          <Link href={`/mail/neu?antwort=${m.uid}&alle=1`} className="btn-secondary">
+            <ReplyAll className="size-4" /> Allen antworten
+          </Link>
+          <Link href={`/mail/neu?weiter=${m.uid}`} className="btn-secondary">
+            <Forward className="size-4" /> Weiterleiten
+          </Link>
+          <Link href={ask(`Schreib mir eine Antwort auf die Mail uid ${m.uid}. Zeig sie mir erst, bevor du sie zum Senden vorschlägst.`)} className="btn-secondary">
+            <Sparkles className="size-4" /> Antwort mit Jarvis
           </Link>
           <UnreadButton uid={m.uid} />
         </div>
