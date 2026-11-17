@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mail, Paperclip, Search, Sparkles } from "lucide-react";
+import { Mail, Paperclip, PenSquare, Search, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 import { requireUser } from "@/lib/auth/user";
 import { formatDateTime } from "@/lib/berlin";
@@ -9,7 +9,7 @@ import { mailAddress, mailConfig } from "@/lib/mail/config";
 export const metadata = { title: "Mail" };
 export const dynamic = "force-dynamic";
 
-export default async function MailPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string }> }) {
+export default async function MailPage({ searchParams }: { searchParams: Promise<{ filter?: string; q?: string; gesendet?: string }> }) {
   await requireUser();
   const sp = await searchParams;
   const cfg = mailConfig();
@@ -34,9 +34,14 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
           <p className="mt-1 text-sm text-steel">{cfg ? `${mailAddress(cfg)} · ${cfg.provider}` : "Postfach noch nicht verbunden"}</p>
         </div>
         {cfg && (
-          <Link href="/jarvis?q=Fasse%20meine%20ungelesenen%20Mails%20zusammen%20und%20sag%20mir%2C%20was%20wichtig%20ist." className="btn-primary">
+          <div className="flex flex-wrap gap-2">
+          <Link href="/mail/neu" className="btn-primary">
+            <PenSquare className="size-4" /> Neue Mail
+          </Link>
+          <Link href="/jarvis?q=Fasse%20meine%20ungelesenen%20Mails%20zusammen%20und%20sag%20mir%2C%20was%20wichtig%20ist." className="btn-secondary">
             <Sparkles className="size-4" /> Ungelesene zusammenfassen
           </Link>
+          </div>
         )}
       </div>
 
@@ -49,6 +54,8 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
           </p>
         </div>
       )}
+
+      {cfg && sp.gesendet === "1" && <div className="card border-green-200 bg-green-50 p-3 text-sm text-green-800">Mail gesendet.</div>}
 
       {cfg && (
         <>
