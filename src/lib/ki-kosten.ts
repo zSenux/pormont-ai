@@ -3,6 +3,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { berlinParts } from "@/lib/berlin";
 import { monthRange } from "@/lib/zeiten";
+import { claudeUsd } from "@/lib/costs";
+import { CHEAPEST_MODEL } from "@/lib/ki-modell-shared";
 
 // KI-Kosten (Seite /ki-kosten, nur Admin): Auswertung der Tabelle ApiUsage, die trackClaude() nach jedem Claude-Aufruf füllt.
 // Kosten sind Schätzungen nach Listenpreis in USD (costMicro = USD × 10.000) und werden mit dem eingestellten Kurs in Euro umgerechnet.
@@ -103,6 +105,12 @@ export async function kiReport(month: string) {
   });
 
   const sum = sumOf(total);
+  // Was derselbe Verbrauch mit dem günstigsten Modell ungefähr gekostet hätte (Summen je Modell, daher nur „ca.“)
+  const cheapestMicro = byModel.reduce((acc, x) => {
+    const s = sumOf(x);
+    const usd = claudeUsd(CHEAPEST_MODEL, { input_tokens: s.input - s.cacheRead - s.cacheWrite, output_tokens: s.output, cache_read_input_tokens: s.cacheRead, cache_creation_input_tokens: s.cacheWrite });
+    return acc + Math.round(usd * 10_000) + s.web * 100;
+  }, 0);
   const elapsed = current ? now.d : dayCount;
   const today = current ? (dayMap.get(now.ymd) ? Number(dayMap.get(now.ymd)!.micro) : 0) : null;
   return {
@@ -112,6 +120,7 @@ export async function kiReport(month: string) {
     /** Hochrechnung aufs Monatsende (nur laufender Monat) */
     forecastMicro: current && elapsed > 0 ? Math.round((sum.micro / elapsed) * dayCount) : null,
     current,
+    cheapestMicro,
     days: dayList,
     months: monthList,
     byFeature: sortRows(byFeature.map((f) => ({ key: f.feature, label: f.feature, ...sumOf(f) }))),

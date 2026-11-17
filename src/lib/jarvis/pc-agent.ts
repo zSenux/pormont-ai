@@ -6,7 +6,8 @@ import { nowLine } from "@/lib/berlin";
 import { trackClaude } from "@/lib/costs";
 import { Prisma } from "@/generated/prisma/client";
 import { addLine, finishJob, MAX_STEPS } from "@/lib/pc";
-import { JARVIS_MODEL, jarvisSystem, type Msg } from "./agent";
+import { jarvisSystem, type Msg } from "./agent";
+import { fallbackParams, kiModel } from "@/lib/ki-modell";
 import { memoryBlock, runTool, TOOLS, type ToolCtx } from "./tools";
 
 // Jarvis am PC: dieselben Werkzeuge wie im Chat (Lexware, Mail, Kalender, Projekte …) plus Computer-Steuerung.
@@ -170,6 +171,7 @@ export async function pcStep(jobId: string, results: ClientResult[] | undefined,
   const memory = await memoryBlock().catch(() => "");
   const tools = [...TOOLS, ...PC_TOOLS, { type: "computer_toolset_20260801" as const, cache_control: { type: "ephemeral" as const } }] as Anthropic.Beta.BetaToolUnion[];
   const ai = new Anthropic();
+  const model = await kiModel("pc");
   const save = (extra: Prisma.PcJobUpdateInput = {}) =>
     db.$transaction([
       db.chat.update({ where: { id: job.chatId }, data: { messages: slim(messages) as unknown as object[] } }),
@@ -187,10 +189,9 @@ export async function pcStep(jobId: string, results: ClientResult[] | undefined,
     const res = await ai.beta.messages
       .stream(
         {
-          model: JARVIS_MODEL,
+          model,
           max_tokens: 16000,
-          betas: ["server-side-fallback-2026-07-01"],
-          fallbacks: "default",
+          ...fallbackParams(model),
           system: [{ type: "text", text: jarvisSystem(userName, false, memory) + PC_SYSTEM, cache_control: { type: "ephemeral" } }],
           tools,
           thinking: { type: "adaptive" },

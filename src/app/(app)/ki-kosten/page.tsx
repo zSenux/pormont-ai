@@ -5,6 +5,9 @@ import { formatEuro } from "@/lib/berlin";
 import { kiReport, microToEur, type KiConfig, type KiRow } from "@/lib/ki-kosten";
 import { monthLabel, monthRange, thisMonth } from "@/lib/zeiten";
 import { KiSettings } from "./settings";
+import { KiModelSettings } from "./modell";
+import { kiModelConfig } from "@/lib/ki-modell";
+import { modelInfo } from "@/lib/ki-modell-shared";
 
 export const metadata = { title: "KI-Kosten" };
 export const dynamic = "force-dynamic";
@@ -59,7 +62,8 @@ export default async function KiKostenPage({ searchParams }: { searchParams: Pro
   const now = thisMonth();
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.monat ?? "") && sp.monat! <= now ? sp.monat! : now;
   const { prev, next } = monthRange(month);
-  const r = await kiReport(month);
+  const [r, modelCfg] = await Promise.all([kiReport(month), kiModelConfig()]);
+  const cheapest = microToEur(r.cheapestMicro, r.cfg);
   const cfg = r.cfg;
   const total = microToEur(r.sum.micro, cfg);
   const forecast = r.forecastMicro !== null ? microToEur(r.forecastMicro, cfg) : null;
@@ -162,6 +166,19 @@ export default async function KiKostenPage({ searchParams }: { searchParams: Pro
             <span key={m.month} className="flex-1 text-center">{new Intl.DateTimeFormat("de-DE", { month: "short", timeZone: "UTC" }).format(new Date(`${m.month}-15T00:00:00Z`)).replace(".", "")}</span>
           ))}
         </div>
+      </section>
+
+      <section id="modell" className="card space-y-3 p-4 sm:p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-semibold">KI-Modell</h2>
+          <span className="text-xs text-steel">Standard: {modelInfo(modelCfg.standard)?.label}</span>
+        </div>
+        {r.sum.n > 0 && total - cheapest > 0.01 && (
+          <p className="rounded-lg bg-ok/10 px-3 py-2 text-sm text-ok">
+            Mit dem günstigsten Modell (Haiku 5.5) hätte {r.current ? "dieser Monat bisher" : "dieser Monat"} ca. <b>{eur(cheapest)}</b> statt {eur(total)} gekostet.
+          </p>
+        )}
+        <KiModelSettings cfg={modelCfg} />
       </section>
 
       <section className="card space-y-3 p-4 sm:p-5">

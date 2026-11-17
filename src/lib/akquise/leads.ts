@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/lib/db";
 import { trackClaude } from "@/lib/costs";
+import { kiModel } from "@/lib/ki-modell";
 import { companyProfile } from "@/lib/company";
 import { safeFetch } from "./safe-fetch";
 import { extractImpressum, findImpressumLink, htmlToText } from "./impressum";
@@ -11,7 +12,6 @@ import { isSocialOnly } from "./places";
 // Rechtlich: Werbe-Mails an Firmen nur mit Einwilligung (§ 7 Abs. 2 Nr. 2 UWG). Anrufe bei Firmen mit
 // mutmaßlicher Einwilligung und Briefe sind erlaubt – darum schreibt Jarvis Leitfäden und Briefe, keine Kalt-Mails.
 
-const MODEL = process.env.AKQUISE_MODEL || process.env.JARVIS_MODEL || "claude-opus-5-5";
 
 export class AkquiseError extends Error {}
 
@@ -62,7 +62,7 @@ async function write(feature: string, system: string, prompt: string) {
   if (!process.env.ANTHROPIC_API_KEY) throw new AkquiseError("Claude-Schlüssel fehlt (Einstellungen → Verbindungen).");
   const client = new Anthropic();
   const res = await client.messages.create({
-    model: MODEL,
+    model: await kiModel("akquise"),
     max_tokens: 4000,
     thinking: { type: "adaptive" },
     system,
