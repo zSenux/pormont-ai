@@ -479,5 +479,51 @@ for (const [name, off, kind, description, extra] of spesenDemo) {
   await db.expense.create({ data: { userId: users[name], day: day(off), kind, description, status, ...(status === "GENEHMIGT" ? { reviewedBy: "Dirk Linke", reviewedAt: new Date() } : {}), ...(extra as { amountCents: number }) } });
 }
 
+// KI-Kosten: 3 Monate Verbrauch (nur wenn noch nichts erfasst ist). Preise wie in src/lib/costs.ts (USD je 1 Mio. Tokens)
+if ((await db.apiUsage.count()) === 0) {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const PRICE: Record<string, [number, number, number]> = { "claude-opus-5-5": [4, 20, 0.2], "claude-sonnet-5-5": [2, 10, 0.1] };
+  // [Funktion, Modell, Nutzer (null = Hintergrund), Aufrufe je Werktag (Ø), Eingabe, Cache-Anteil, Ausgabe]
+  const kinds: [string, string, string | null, number, number, number, number][] = [
+    ["Jarvis Chat", "claude-opus-5-5", "Dirk Linke", 9, 22000, 0.8, 900],
+    ["Jarvis Chat", "claude-opus-5-5", "Josip Cabraja", 7, 24000, 0.8, 1100],
+    ["Jarvis Chat", "claude-opus-5-5", "Anna Weber", 5, 20000, 0.75, 800],
+    ["Jarvis Sprache", "claude-opus-5-5", "Sven Müller", 3, 18000, 0.8, 250],
+    ["Jarvis Telefon", "claude-opus-5-5", "Mehmet Yılmaz", 1.5, 18000, 0.7, 200],
+    ["Jarvis am PC", "claude-opus-5-5", "Josip Cabraja", 1.2, 45000, 0.6, 1500],
+    ["Beleg", "claude-opus-5-5", null, 4, 3500, 0, 350],
+    ["Dokument lesen", "claude-sonnet-5-5", null, 3, 6000, 0, 1800],
+    ["Angebot per Sprache", "claude-opus-5-5", "Anna Weber", 0.8, 9000, 0, 1600],
+    ["Akquise-Leitfaden", "claude-opus-5-5", "Anna Weber", 0.5, 2500, 0, 1400],
+    ["Akquise-Brief", "claude-opus-5-5", "Anna Weber", 0.4, 2300, 0, 700],
+    ["Katalog-Import", "claude-sonnet-5-5", null, 0.15, 30000, 0, 9000],
+  ];
+  const rows: { feature: string; model: string; input: number; output: number; cacheRead: number; cacheWrite: number; webSearches: number; costMicro: number; userId: string | null; createdAt: Date }[] = [];
+  for (let off = -80; off <= 0; off++) {
+    const d = new Date(Date.now() + off * 86400_000);
+    const wd = d.getUTCDay();
+    const factor = wd === 0 ? 0.05 : wd === 6 ? 0.25 : 0.7 + rnd() * 0.6;
+    for (const [feature, model, user, perDay, inTok, cacheShare, outTok] of kinds) {
+      const n = Math.round(perDay * factor * (0.5 + rnd()));
+      for (let i = 0; i < n; i++) {
+        const total = Math.round(inTok * (0.6 + rnd() * 0.8));
+        const cacheRead = Math.round(total * cacheShare);
+        const cacheWrite = cacheShare ? Math.round(total * 0.08) : 0;
+        const fresh = total - cacheRead - cacheWrite;
+        const output = Math.round(outTok * (0.5 + rnd()));
+        const [pi, po, pr] = PRICE[model];
+        const usd = (fresh * pi + cacheRead * pr + cacheWrite * pi * 1.25 + output * po) / 1_000_000;
+        const at = new Date(d);
+        at.setUTCHours(6 + Math.floor(rnd() * 11), Math.floor(rnd() * 60));
+        if (at.getTime() > Date.now()) at.setTime(Date.now() - Math.floor(rnd() * 3600_000));
+        rows.push({ feature, model, input: total, output, cacheRead, cacheWrite, webSearches: 0, costMicro: Math.round(usd * 10_000), userId: user ? users[user] : null, createdAt: at });
+      }
+    }
+  }
+  await db.apiUsage.createMany({ data: rows });
+  await db.appSetting.upsert({ where: { key: "KI_KOSTEN" }, create: { key: "KI_KOSTEN", value: JSON.stringify({ usdEur: 0.86, budgetEur: 40 }) }, update: {} });
+}
+
 console.log(`OK: ${projects.length} Demo-Projekte, ${people.length} Mitarbeiter (Passwort „demo-passwort“), ${items.length} Lagerartikel, 3 Lieferanten, ${orders.length} Bestellungen, ${articles.length} Artikel.`);
 await db.$disconnect();

@@ -170,16 +170,22 @@ model AppSetting {
 }
 
 /// Kosten der KI-Aufrufe (Hundertstel-Cent in USD)
+/// Verbrauch je Claude-Aufruf (Seite /ki-kosten). input = alle Eingabe-Tokens inkl. Cache, costMicro = USD × 10.000 (Listenpreis)
 model ApiUsage {
-  id        String   @id @default(cuid())
-  feature   String
-  model     String
-  input     Int
-  output    Int
-  costMicro Int
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  feature     String
+  model       String
+  input       Int
+  output      Int
+  cacheRead   Int      @default(0)
+  cacheWrite  Int      @default(0)
+  webSearches Int      @default(0)
+  costMicro   Int
+  userId      String?
+  createdAt   DateTime @default(now())
 
   @@index([createdAt])
+  @@index([userId])
 }
 
 /// Termin im Kalender (Baustellen-Termine, Kundentermine, intern)

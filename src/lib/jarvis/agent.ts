@@ -114,7 +114,7 @@ export async function runJarvis(opts: { chatId: string; userId: string; userName
       opts.onEvent?.({ type: "text", text: t });
     });
     const res = await stream.finalMessage();
-    void trackClaude("Jarvis", res.model, res.usage);
+    void trackClaude(opts.phone ? "Jarvis Telefon" : opts.voice ? "Jarvis Sprache" : "Jarvis Chat", res.model, res.usage, opts.userId);
     messages.push({ role: "assistant", content: res.content });
 
     if (res.stop_reason === "refusal") {
