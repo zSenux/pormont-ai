@@ -26,5 +26,8 @@ export async function mailStatus(): Promise<{ ok: boolean; text: string }> {
     if ((process.env.MAIL_PROVIDER ?? "").toLowerCase() === "microsoft") return { ok: false, text: process.env.MS_CLIENT_ID ? "Microsoft 365: noch nicht angemeldet – „Mit Microsoft anmelden“ klicken." : "Microsoft 365: App-Registrierung (Anwendungs-ID, Clientschlüssel) fehlt." };
     return { ok: false, text: "Nicht verbunden – Postfach unter Verbindungen eintragen." };
   }
-  return backend().mailStatus();
+  // Die Einstellungen dürfen nie am Postfach hängen bleiben
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<{ ok: boolean; text: string }>((r) => (t = setTimeout(() => r({ ok: false, text: "Mailserver antwortet nicht (Zeitüberschreitung) – Zugangsdaten/Anbieter prüfen oder „Postfach trennen“." }), 12_000)));
+  return Promise.race([backend().mailStatus().catch((e) => ({ ok: false, text: e instanceof Error ? e.message : "Nicht erreichbar." })), timeout]).finally(() => clearTimeout(t));
 }
