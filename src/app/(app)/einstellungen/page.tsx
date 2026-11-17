@@ -93,10 +93,10 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
         {microsoft && me.role === "ADMIN" && (
           <p role="status" className={`rounded-lg px-3 py-2 text-sm ${msOk ? "bg-green-50 text-ok" : "bg-red-50 text-bad"}`}>Microsoft 365: {microsoft.slice(0, 300)}</p>
         )}
-        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${lex.ok ? "bg-ok" : "bg-bad"}`} /> Lexware Office: {lex.text}</p>
-        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${mail.ok ? "bg-ok" : "bg-bad"}`} /> E-Mail-Postfach: {mail.text}</p>
-        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${ai ? "bg-ok" : "bg-bad"}`} /> KI (Claude): {ai ? "bereit" : "Schlüssel fehlt"}</p>
-        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 rounded-full ${process.env.TWILIO_AUTH_TOKEN ? "bg-ok" : "bg-line"}`} /> Telefon-Jarvis: {process.env.TWILIO_AUTH_TOKEN ? `bereit${process.env.TWILIO_NUMBER ? ` (${process.env.TWILIO_NUMBER})` : ""}` : "nicht eingerichtet (optional)"}</p>
+        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 shrink-0 rounded-full ${lex.ok ? "bg-ok" : "bg-bad"}`} /> Lexware Office: {lex.text}</p>
+        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 shrink-0 rounded-full ${mail.ok ? "bg-ok" : "bg-bad"}`} /> E-Mail-Postfach: {mail.text}</p>
+        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 shrink-0 rounded-full ${ai ? "bg-ok" : "bg-bad"}`} /> KI (Claude): {ai ? "bereit" : "Schlüssel fehlt"}</p>
+        <p className="flex items-center gap-2 text-sm"><span className={`size-2.5 shrink-0 rounded-full ${process.env.TWILIO_AUTH_TOKEN ? "bg-ok" : "bg-line"}`} /> Telefon-Jarvis: {process.env.TWILIO_AUTH_TOKEN ? `bereit${process.env.TWILIO_NUMBER ? ` (${process.env.TWILIO_NUMBER})` : ""}` : "nicht eingerichtet (optional)"}</p>
         {me.role === "ADMIN" ? (
           <details className="border-t border-line pt-4" open={Boolean(willkommen) || Boolean(microsoft) || !lex.ok || !mail.ok || !ai}>
             <summary className="cursor-pointer text-sm font-medium text-brand">Schlüssel und Postfach eintragen</summary>

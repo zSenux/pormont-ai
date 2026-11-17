@@ -21,8 +21,19 @@ function num(uid: string) {
   return n;
 }
 
-function german(e: unknown): MailError {
-  const m = e instanceof Error ? `${e.message} ${(e as { responseText?: string }).responseText ?? ""}` : String(e);
+/** Hinweis, wenn Microsoft 365 die Anmeldung mit Passwort ablehnt (Basic Auth bzw. SMTP AUTH abgeschaltet) */
+export const MS_PASSWORD_BLOCKED =
+  "Microsoft 365 lässt die Anmeldung nur mit Passwort für dieses Postfach nicht zu (bei Microsoft „Basic Auth“/„SMTP AUTH“ abgeschaltet). Wenn E-Mail und Passwort sicher stimmen, bitte Anbieter „Microsoft 365 – Mit Microsoft anmelden“ wählen – Anleitung unter Einstellungen → Verbindungen.";
+
+function german(e: unknown, smtp = false): MailError {
+  const m = e instanceof Error ? `${e.message} ${(e as { responseText?: string }).responseText ?? ""} ${(e as { response?: string }).response ?? ""}` : String(e);
+  if (mailConfig()?.kind === "imap" && (mailConfig() as MailConfig).preset === "office365") {
+    if (/SmtpClientAuthentication is disabled|5\.7\.139|basic authentication is disabled|BasicAuthBlocked|LogonDenied/i.test(m)) return new MailError(MS_PASSWORD_BLOCKED);
+    if (/5\.7\.3|535|auth|login|credentials|password/i.test(m))
+      return new MailError(
+        `Microsoft 365 hat die Anmeldung ${smtp ? "zum Senden (SMTP)" : "am Postfach (IMAP)"} abgelehnt. Entweder stimmen E-Mail/Passwort nicht (bei Zwei-Faktor-Anmeldung ggf. ein App-Kennwort nötig), oder Microsoft hat die Passwort-Anmeldung gesperrt – dann Anbieter „Microsoft 365 – Mit Microsoft anmelden“ nutzen.`,
+      );
+  }
   if (/auth|login|credentials|password/i.test(m)) return new MailError("Anmeldung am Postfach fehlgeschlagen – E-Mail-Adresse/Passwort prüfen (bei GMX muss IMAP in den Einstellungen erlaubt sein).");
   if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|timeout/i.test(m)) return new MailError("Mailserver nicht erreichbar.");
   return new MailError(`Fehler beim Postfach: ${m.slice(0, 200)}`);
@@ -143,16 +154,21 @@ function compose(c: MailConfig, m: OutgoingMail) {
   };
 }
 
+function smtpTransport(c: MailConfig) {
+  // Port 587 = STARTTLS (Microsoft 365), 465 = direkt TLS
+  return nodemailer.createTransport({ host: c.smtp.host, port: c.smtp.port, secure: c.smtp.secure, requireTLS: !c.smtp.secure, auth: { user: c.user, pass: c.password }, tls: { rejectUnauthorized: process.env.MAIL_TLS_INSECURE !== "1" } });
+}
+
 /** Senden über SMTP + Kopie in „Gesendet“ (Strato/GMX legen sie nicht selbst ab) */
 export async function sendMail(m: OutgoingMail): Promise<{ messageId: string }> {
   const c = cfg();
-  const transport = nodemailer.createTransport({ host: c.smtp.host, port: c.smtp.port, secure: c.smtp.secure, auth: { user: c.user, pass: c.password }, tls: { rejectUnauthorized: process.env.MAIL_TLS_INSECURE !== "1" } });
+  const transport = smtpTransport(c);
   const message = compose(c, m);
   let info;
   try {
     info = await transport.sendMail(message);
   } catch (e) {
-    throw german(e);
+    throw german(e, true);
   }
   try {
     const raw = await new MailComposer({ ...message, messageId: info.messageId }).compile().build();
@@ -182,6 +198,14 @@ export async function mailStatus(): Promise<{ ok: boolean; text: string }> {
   const c = cfg();
   try {
     const unread = await withImap(async (imap) => ((await imap.status("INBOX", { unseen: true })) || { unseen: 0 }).unseen ?? 0);
+    // Bei Microsoft 365 auch das Senden prüfen: dort ist SMTP AUTH oft getrennt abgeschaltet
+    if (c.preset === "office365") {
+      try {
+        await smtpTransport(c).verify();
+      } catch (e) {
+        return { ok: false, text: `Lesen klappt (${unread} ungelesen), Senden nicht: ${german(e, true).message}` };
+      }
+    }
     return { ok: true, text: `${c.user} (${c.provider}) · ${unread} ungelesen` };
   } catch (e) {
     return { ok: false, text: e instanceof Error ? e.message : "Nicht erreichbar." };
