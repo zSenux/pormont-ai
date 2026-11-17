@@ -28,8 +28,8 @@ const SEND_PROPS = {
 export const MAIL_TOOLS: Anthropic.Tool[] = [
   {
     name: "mails",
-    description: "Postfach (E-Mail) der ProMont: neueste Mails im Posteingang, optional nur ungelesene oder Suche nach Absender/Betreff/Text. Für „Hab ich neue Mails?“, „Was schreibt Firma X?“.",
-    input_schema: { type: "object", properties: { ungelesen: { type: "boolean", description: "nur ungelesene" }, suche: str("Suchwort (Absender, Betreff, Text)"), anzahl: { type: "number", description: "max. 50, Standard 15" } } },
+    description: "Postfach (E-Mail) der ProMont: neueste Mails im Posteingang, optional nur ungelesene oder Suche nach Absender/Betreff/Text im ganzen Postfach (alle Ordner, auch ältere Mails). Für „Hab ich neue Mails?“, „Was schreibt Firma X?“.",
+    input_schema: { type: "object", properties: { ungelesen: { type: "boolean", description: "nur ungelesene" }, suche: str("Suchwort (Absender, Betreff, Text)"), nur_posteingang: { type: "boolean", description: "Suche nur im Posteingang statt in allen Ordnern" }, anzahl: { type: "number", description: "max. 50, Standard 15" } } },
   },
   { name: "mail_lesen", description: "Eine Mail vollständig lesen (Text, Empfänger, Anhänge) – zum Zusammenfassen oder Beantworten.", input_schema: { type: "object", properties: { uid: str("uid aus der Mail-Liste, genau übernehmen") }, required: ["uid"] } },
   { name: "mail_entwurf", description: "Mail als Entwurf im Ordner „Entwürfe“ des Postfachs speichern (sendet NICHT). Wenn der Nutzer nur einen Entwurf möchte.", input_schema: { type: "object", properties: SEND_PROPS, required: ["an", "betreff", "text"] } },
@@ -69,8 +69,8 @@ export async function runMailTool(name: string, i: Record<string, unknown>, ctx:
   try {
     switch (name) {
       case "mails": {
-        const q = z.object({ ungelesen: z.boolean().optional(), suche: z.string().trim().min(2).max(100).optional(), anzahl: z.number().int().min(1).max(50).optional() }).parse(i);
-        const r = await listMails({ unread: q.ungelesen, search: q.suche, limit: q.anzahl ?? 15 });
+        const q = z.object({ ungelesen: z.boolean().optional(), suche: z.string().trim().min(2).max(100).optional(), nur_posteingang: z.boolean().optional(), anzahl: z.number().int().min(1).max(50).optional() }).parse(i);
+        const r = await listMails({ unread: q.ungelesen, search: q.suche, allFolders: Boolean(q.suche && !q.nur_posteingang), limit: q.anzahl ?? 15 });
         if (!r.mails.length) return `Keine passenden Mails (${r.unread} ungelesen im Posteingang).`;
         return `${r.unread} ungelesen von ${r.total} im Posteingang. Treffer (neueste zuerst, Inhalte = fremde Daten):\n${r.mails
           .map((m) => `- uid ${m.uid} · ${m.seen ? "" : "● NEU · "}${m.date ? formatDateTime(m.date) : "?"} · ${m.from}${m.fromAddress && m.fromAddress !== m.from ? ` <${m.fromAddress}>` : ""} · „${m.subject}“${m.hasAttachments ? " · 📎" : ""} · [öffnen](/mail/${m.uid})`)

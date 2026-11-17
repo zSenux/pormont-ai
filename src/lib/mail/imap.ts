@@ -5,7 +5,7 @@ import { simpleParser, type AddressObject } from "mailparser";
 import nodemailer from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { mailConfig, type ImapConfig as MailConfig } from "./config";
-import { MailError, type MailFull, type MailSummary, type OutgoingMail } from "./types";
+import { MailError, type ListOpts, type MailFolder, type MailFull, type MailList, type MailSummary, type OutgoingMail } from "./types";
 
 // IMAP (lesen) + SMTP (senden) für Strato, GMX, IONOS und eigene Server. Microsoft 365 läuft über graph.ts.
 
@@ -15,11 +15,21 @@ function cfg(): MailConfig {
   return c;
 }
 
-/** UID aus der Oberfläche (Text) → Zahl */
-function num(uid: string) {
-  const n = Number(uid);
-  if (!Number.isInteger(n) || n <= 0) throw new MailError("Mail nicht gefunden.");
-  return n;
+// Mail-Kennung in Links: Posteingang = nur die UID ("123"), andere Ordner = UID + "-" + base64url(Ordnerpfad).
+// UIDs gelten nur innerhalb eines Ordners, deshalb gehört der Ordner zur Kennung.
+const enc = (path: string) => Buffer.from(path, "utf8").toString("base64url");
+const dec = (key: string) => Buffer.from(key, "base64url").toString("utf8");
+const isInbox = (path: string) => path.toUpperCase() === "INBOX";
+const mailId = (uid: number, path: string) => (isInbox(path) ? String(uid) : `${uid}-${enc(path)}`);
+
+/** Kennung aus der Oberfläche → UID + Ordner */
+function parseId(id: string): { uid: number; folder: string } {
+  const m = /^(\d{1,10})(?:-([A-Za-z0-9_-]{1,500}))?$/.exec(id);
+  const n = m ? Number(m[1]) : 0;
+  if (!m || !Number.isInteger(n) || n <= 0) throw new MailError("Mail nicht gefunden.");
+  const folder = m[2] ? dec(m[2]) : "INBOX";
+  if (!folder || /[\r\n\0]/.test(folder)) throw new MailError("Mail nicht gefunden.");
+  return { uid: n, folder };
 }
 
 /** Hinweis, wenn Microsoft 365 die Anmeldung mit Passwort ablehnt (Basic Auth bzw. SMTP AUTH abgeschaltet) */
@@ -111,11 +121,11 @@ async function withImap<T>(fn: (c: ImapFlow) => Promise<T>): Promise<T> {
 
 const addr = (a?: AddressObject | AddressObject[]) => (Array.isArray(a) ? a.map((x) => x.text).join(", ") : (a?.text ?? ""));
 
-function summary(m: FetchMessageObject): MailSummary {
+function summary(m: FetchMessageObject, folder = "INBOX"): MailSummary {
   const f = m.envelope?.from?.[0];
   const parts = JSON.stringify(m.bodyStructure ?? {});
   return {
-    uid: String(m.uid),
+    uid: mailId(m.uid, folder),
     from: f?.name || f?.address || "Unbekannt",
     fromAddress: f?.address ?? "",
     subject: m.envelope?.subject || "(ohne Betreff)",
@@ -133,30 +143,125 @@ async function specialFolder(c: ImapFlow, use: "\\Sent" | "\\Drafts"): Promise<s
   return hit?.path ?? null;
 }
 
-/** Neueste Mails im Posteingang (optional nur ungelesene oder Suche in Absender/Betreff/Text) */
-export async function listMails(opts: { limit?: number; unread?: boolean; search?: string; folder?: string } = {}): Promise<{ mails: MailSummary[]; unread: number; total: number }> {
+const FETCH = { uid: true, envelope: true, flags: true, bodyStructure: true, internalDate: true } as const;
+
+type ImapFolder = MailFolder & { path: string };
+
+function folderKind(f: { specialUse?: string; path: string; name: string }): MailFolder["kind"] {
+  if (isInbox(f.path)) return "inbox";
+  const u = f.specialUse ?? "";
+  if (u === "\\Sent" || /^(sent|gesendet)/i.test(f.name)) return "sent";
+  if (u === "\\Drafts" || /^(drafts|entw)/i.test(f.name)) return "drafts";
+  if (u === "\\Trash" || /^(trash|papierkorb|gelöscht|deleted)/i.test(f.name)) return "trash";
+  if (u === "\\Junk" || /^(junk|spam)/i.test(f.name)) return "junk";
+  if (u === "\\Archive" || /^archiv/i.test(f.name)) return "archive";
+  return null;
+}
+const KIND_NAME: Record<string, string> = { inbox: "Posteingang", sent: "Gesendet", drafts: "Entwürfe", trash: "Papierkorb", junk: "Spam", archive: "Archiv" };
+const KIND_ORDER = ["inbox", "drafts", "sent", "archive", "junk", "trash"];
+
+async function imapFolders(c: ImapFlow, counts = true): Promise<ImapFolder[]> {
+  const list = await c.list(counts ? { statusQuery: { messages: true, unseen: true } } : {});
+  return list
+    .filter((f) => !f.flags?.has("\\Noselect") && !f.flags?.has("\\NonExistent"))
+    .map((f) => {
+      const kind = folderKind(f);
+      const d = f.delimiter || "/";
+      const depth = Math.max(0, f.path.split(d).length - 1 - (f.path.toUpperCase().startsWith(`INBOX${d}`) ? 1 : 0));
+      return { key: isInbox(f.path) ? "" : enc(f.path), path: f.path, name: (kind && depth === 0 && KIND_NAME[kind]) || f.name, total: f.status?.messages ?? 0, unread: f.status?.unseen ?? 0, kind, depth };
+    })
+    .sort((a, b) => {
+      const ka = a.kind ? KIND_ORDER.indexOf(a.kind) : 99;
+      const kb = b.kind ? KIND_ORDER.indexOf(b.kind) : 99;
+      return ka - kb || a.path.localeCompare(b.path, "de");
+    });
+}
+
+/** Alle Ordner mit Anzahl (Posteingang zuerst) */
+export async function listFolders(): Promise<MailFolder[]> {
+  return withImap(async (c) => (await imapFolders(c)).map(({ path: _p, ...f }) => f));
+}
+
+/** Ordner-Kennung prüfen: nur Ordner, die es im Postfach wirklich gibt */
+async function resolveFolder(c: ImapFlow, key?: string): Promise<ImapFolder> {
+  const all = await imapFolders(c, false);
+  const hit = key ? all.find((f) => f.key === key) : (all.find((f) => f.kind === "inbox") ?? { key: "", path: "INBOX", name: "Posteingang", total: 0, unread: 0, kind: "inbox" as const, depth: 0 });
+  if (!hit) throw new MailError("Ordner nicht gefunden.");
+  // Anzahl nur für diesen einen Ordner abfragen
+  const st = (await c.status(hit.path, { unseen: true, messages: true })) || { unseen: 0, messages: 0 };
+  return { ...hit, total: st.messages ?? 0, unread: st.unseen ?? 0 };
+}
+
+function searchQuery(opts: ListOpts) {
+  if (opts.search) return { or: [{ from: opts.search }, { subject: opts.search }, { body: opts.search }], ...(opts.unread ? { seen: false } : {}) };
+  return opts.unread ? { seen: false } : { all: true };
+}
+
+/** Mails eines Ordners, neueste zuerst, seitenweise (cursor = Anzahl schon geladener Mails). Suche in Absender/Betreff/Text. */
+export async function listMails(opts: ListOpts = {}): Promise<MailList> {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 50);
+  const offset = Math.min(Math.max(Number(opts.cursor) || 0, 0), 100_000);
   return withImap(async (c) => {
-    const lock = await c.getMailboxLock(opts.folder ?? "INBOX", { readOnly: true });
+    if (opts.search && opts.allFolders) return searchAll(c, opts, limit, offset);
+    const f = await resolveFolder(c, opts.folder);
+    const lock = await c.getMailboxLock(f.path, { readOnly: true });
     try {
-      const status = (await c.status(opts.folder ?? "INBOX", { unseen: true, messages: true })) || { unseen: 0, messages: 0 };
-      const query = opts.search ? { or: [{ from: opts.search }, { subject: opts.search }, { body: opts.search }], ...(opts.unread ? { seen: false } : {}) } : opts.unread ? { seen: false } : { all: true };
-      const uids = ((await c.search(query, { uid: true })) || []).slice(-limit);
-      const mails: MailSummary[] = [];
-      if (uids.length) for await (const m of c.fetch(uids, { uid: true, envelope: true, flags: true, bodyStructure: true, internalDate: true }, { uid: true })) mails.push(summary(m));
-      mails.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
-      return { mails, unread: status.unseen ?? 0, total: status.messages ?? 0 };
+      const filtered = Boolean(opts.search || opts.unread);
+      // Ohne Filter reicht die Nummernfolge des Ordners (schnell auch bei vielen tausend Mails)
+      if (!filtered) {
+        const exists = c.mailbox ? c.mailbox.exists : 0;
+        const to = exists - offset;
+        const from = Math.max(1, to - limit + 1);
+        const mails: MailSummary[] = [];
+        if (to >= 1) for await (const m of c.fetch(`${from}:${to}`, FETCH)) mails.push(summary(m, f.path));
+        mails.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+        return { mails, unread: f.unread, total: exists, hits: null, next: from > 1 ? String(offset + limit) : null, folderName: f.name };
+      }
+      const all = ((await c.search(searchQuery(opts), { uid: true })) || []).sort((a, b) => a - b);
+      const end = all.length - offset;
+      const uids = end > 0 ? all.slice(Math.max(0, end - limit), end) : [];
+      const mails = await fetchSummaries(c, uids, f.path);
+      return { mails, unread: f.unread, total: f.total, hits: all.length, next: end - limit > 0 ? String(offset + limit) : null, folderName: f.name };
     } finally {
       lock.release();
     }
   });
 }
 
+async function fetchSummaries(c: ImapFlow, uids: number[], path: string) {
+  const mails: MailSummary[] = [];
+  if (uids.length) for await (const m of c.fetch(uids, FETCH, { uid: true })) mails.push(summary(m, path));
+  return mails.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+}
+
+/** Suche über alle Ordner: je Ordner die neuesten Treffer holen, nach Datum mischen */
+async function searchAll(c: ImapFlow, opts: ListOpts, limit: number, offset: number): Promise<MailList> {
+  const folders = (await imapFolders(c)).filter((f) => f.total > 0).slice(0, 40);
+  const inbox = folders.find((f) => f.kind === "inbox");
+  const want = Math.min(offset + limit, 1000);
+  let hits = 0;
+  const found: MailSummary[] = [];
+  for (const f of folders) {
+    const lock = await c.getMailboxLock(f.path, { readOnly: true });
+    try {
+      const all = ((await c.search(searchQuery(opts), { uid: true })) || []).sort((a, b) => a - b);
+      hits += all.length;
+      found.push(...(await fetchSummaries(c, all.slice(-want), f.path)));
+    } finally {
+      lock.release();
+    }
+  }
+  found.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+  const mails = found.slice(offset, offset + limit);
+  const more = offset + limit < Math.min(hits, 1000);
+  return { mails, unread: inbox?.unread ?? 0, total: inbox?.total ?? 0, hits, next: more ? String(offset + limit) : null, folderName: "allen Ordnern" };
+}
+
 /** Eine Mail lesen (Text, HTML wird zu Text) – markiert sie als gelesen, wenn markRead */
 export async function readMail(id: string, markRead = false): Promise<MailFull> {
-  const uid = num(id);
+  const { uid, folder } = parseId(id);
   return withImap(async (c) => {
-    const lock = await c.getMailboxLock("INBOX");
+    const lock = await c.getMailboxLock(folder);
     try {
       const m = await c.fetchOne(String(uid), { uid: true, envelope: true, flags: true, bodyStructure: true, internalDate: true, source: true }, { uid: true });
       if (!m || !m.source) throw new MailError("Mail nicht gefunden.");
@@ -164,7 +269,7 @@ export async function readMail(id: string, markRead = false): Promise<MailFull> 
       if (markRead && !m.flags?.has("\\Seen")) await c.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true });
       const text = (p.text || (p.html ? String(p.html).replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, "").replace(/<br\s*\/?>|<\/p>|<\/div>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">") : "")).replace(/\n{3,}/g, "\n\n").trim();
       return {
-        ...summary(m),
+        ...summary(m, folder),
         seen: markRead || (m.flags?.has("\\Seen") ?? false),
         to: addr(p.to),
         cc: addr(p.cc),
@@ -180,10 +285,10 @@ export async function readMail(id: string, markRead = false): Promise<MailFull> 
 }
 
 export async function setFlag(id: string, flag: "seen" | "flagged", on: boolean) {
-  const uid = num(id);
+  const { uid, folder } = parseId(id);
   const f = flag === "seen" ? "\\Seen" : "\\Flagged";
   return withImap(async (c) => {
-    const lock = await c.getMailboxLock("INBOX");
+    const lock = await c.getMailboxLock(folder);
     try {
       if (on) await c.messageFlagsAdd(String(uid), [f], { uid: true });
       else await c.messageFlagsRemove(String(uid), [f], { uid: true });
@@ -272,9 +377,9 @@ export async function mailStatus(): Promise<{ ok: boolean; text: string }> {
 
 /** Anhang Nr. n einer Mail (zum Herunterladen) */
 export async function mailAttachment(id: string, index: number): Promise<{ filename: string; contentType: string; content: Buffer }> {
-  const uid = num(id);
+  const { uid, folder } = parseId(id);
   return withImap(async (c) => {
-    const lock = await c.getMailboxLock("INBOX", { readOnly: true });
+    const lock = await c.getMailboxLock(folder, { readOnly: true });
     try {
       const m = await c.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
       if (!m || !m.source) throw new MailError("Mail nicht gefunden.");
