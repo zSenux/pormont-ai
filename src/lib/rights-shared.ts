@@ -87,7 +87,7 @@ export const TOOL_AREA: Record<string, Area> = {
   kunden_suchen: "buchhaltung", kunde_details: "buchhaltung", kunde_anlegen: "buchhaltung", belege: "buchhaltung", beleg_details: "buchhaltung", umsatz: "buchhaltung", artikel: "buchhaltung",
   angebot_erstellen: "buchhaltung", angebotsvorlage: "buchhaltung", rechnung_erstellen: "buchhaltung", beleg_aendern: "buchhaltung", angebot_in_rechnung: "buchhaltung", abschlaege: "buchhaltung", beleg_festschreiben: "buchhaltung",
   beleg_senden: "buchhaltung", zahlung_erfassen: "buchhaltung", mahnen: "buchhaltung", beleg_stornieren: "buchhaltung", kundenakte: "buchhaltung", altdaten: "buchhaltung", belegfotos: "buchhaltung", beleg_hochladen: "buchhaltung",
-  mails: "mail", mail_lesen: "mail", mail_entwurf: "mail", mail_senden: "mail",
+  mails: "mail", mail_lesen: "mail", mail_rechnung_buchen: "mail", mail_entwurf: "mail", mail_senden: "mail",
   lieferanten: "einkauf", katalog_suchen: "einkauf", preisanfrage: "einkauf",
   lager: "lager", bestellungen: "einkauf",
   nachkalkulation: "projekte", projekte: "projekte", projekt_notiz: "projekte", projekt_planung: "projekte", zeichnungen: "projekte",

@@ -25,7 +25,7 @@ export default async function NeueAusgabe({ searchParams }: { searchParams: Prom
     supplier: pre?.supplier ?? "",
     docNo: pre?.docNo ?? "",
     date: pre?.date ?? todayYmd(),
-    dueDate: "",
+    dueDate: pre?.dueDate ?? "",
     category: pre?.category ?? "MATERIAL",
     gross: de(pre?.grossEuro ?? null),
     tax: de(pre?.taxEuro ?? null),

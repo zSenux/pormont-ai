@@ -2,11 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Download, Forward, Reply, ReplyAll, Sparkles } from "lucide-react";
 import { requireUser } from "@/lib/auth/user";
+import { canArea } from "@/lib/rights-shared";
+import { guessMime } from "@/lib/files";
 import { formatDateTime } from "@/lib/berlin";
 import { readMail, MailError } from "@/lib/mail/client";
 import { mailConfigured } from "@/lib/mail/config";
 import { validMailId } from "@/lib/mail/types";
 import { UnreadButton } from "./unread-button";
+import { BookInvoiceButton } from "./book-button";
 
 export const metadata = { title: "Mail" };
 export const dynamic = "force-dynamic";
@@ -14,7 +17,7 @@ export const dynamic = "force-dynamic";
 const ask = (q: string) => `/jarvis?q=${encodeURIComponent(q)}`;
 
 export default async function MailDetail({ params }: { params: Promise<{ uid: string }> }) {
-  await requireUser();
+  const me = await requireUser();
   const uid = (await params).uid;
   if (!validMailId(uid) || !mailConfigured()) notFound();
   let m;
@@ -63,6 +66,7 @@ export default async function MailDetail({ params }: { params: Promise<{ uid: st
             <Sparkles className="size-4" /> Antwort mit Jarvis
           </Link>
           <UnreadButton uid={m.uid} />
+          {canArea(me, "buchhaltung") && m.attachments.some((a) => /^(application\/pdf|image\/)/.test(guessMime(a.filename))) && <BookInvoiceButton uid={m.uid} />}
         </div>
         {m.attachments.length > 0 && (
           <ul className="flex flex-wrap gap-2">
