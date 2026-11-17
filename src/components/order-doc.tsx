@@ -44,7 +44,7 @@ export async function OrderDoc({ id, kind }: { id: string; kind: "bestaetigung" 
         </div>
       </div>
 
-      <article className="card space-y-6 p-6 md:p-10 print:border-0 print:p-0 print:shadow-none">
+      <article className="keep-light card space-y-6 p-6 md:p-10 print:border-0 print:p-0 print:shadow-none">
         <header className="flex items-start justify-between gap-6">
           <div className="text-sm">
             <p className="mb-3 text-[10px] text-steel underline">{COMPANY.name} · {COMPANY.street} · {COMPANY.zip} {COMPANY.city}</p>

@@ -39,7 +39,7 @@ export default async function ZettelPage({ searchParams }: { searchParams: Promi
   return (
     <main className="mx-auto max-w-[210mm] px-4 py-6 print:p-0">
       <div className="mb-4 flex justify-end print:hidden"><PrintButton /></div>
-      <article className="bg-white p-[12mm] text-[10pt] shadow print:shadow-none">
+      <article className="keep-light bg-white p-[12mm] text-[10pt] shadow print:shadow-none">
         <header className="flex items-start justify-between gap-4 border-b border-line pb-4">
           <div>
             <h1 className="text-xl font-bold">Spesenabrechnung</h1>

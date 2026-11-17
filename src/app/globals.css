@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ProMont-Design: Farben aus promont.gmbh (--blue #0f4d83, --blue2 #092f50, --ink #101820, --steel #64717c, --mist #f2f5f7, --line #d8e0e6) */
 @theme {
@@ -35,7 +36,7 @@ body {
     @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50;
   }
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50 bg-brand text-white hover:bg-brand-2;
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50 bg-brand text-[#fff] hover:bg-brand-2;
   }
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50 border border-line bg-white text-ink hover:border-brand hover:text-brand;
@@ -120,4 +121,191 @@ body {
 
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+
+/* Handy: kräftigere Schrift, etwas größere Kleinschrift, mehr Kontrast */
+@media (max-width: 767px) {
+  :root {
+    --text-xs: 0.8125rem;
+    --font-weight-medium: 600;
+    --color-steel: #4b5762;
+  }
+  body {
+    font-weight: 500;
+  }
+}
+
+/* Dunkelmodus: Klasse "dark" am <html> (Skript in components/theme.tsx). Drucken bleibt immer hell. */
+@media screen {
+  .dark {
+    color-scheme: dark;
+    --color-white: #141d26; /* Karten, Eingabefelder, Menüs */
+    --color-mist: #0b1117; /* Seitenhintergrund */
+    --color-line: #2a3744;
+    --color-ink: #e9eef2;
+    --color-steel: #a9b6c1;
+    --color-brand: #4a97dc;
+    --color-brand-soft: #14304a;
+    --color-ok: #4ade80;
+    --color-warn: #fbbf24;
+    --color-bad: #f87171;
+    --color-red-50: color-mix(in srgb, #ef4444 13%, #141d26);
+    --color-red-100: color-mix(in srgb, #ef4444 20%, #141d26);
+    --color-red-200: color-mix(in srgb, #ef4444 30%, #141d26);
+    --color-red-300: color-mix(in srgb, #ef4444 42%, #141d26);
+    --color-red-700: color-mix(in srgb, #ef4444 55%, #fff);
+    --color-red-800: color-mix(in srgb, #ef4444 45%, #fff);
+    --color-red-900: color-mix(in srgb, #ef4444 38%, #fff);
+    --color-orange-50: color-mix(in srgb, #f97316 13%, #141d26);
+    --color-orange-100: color-mix(in srgb, #f97316 20%, #141d26);
+    --color-orange-200: color-mix(in srgb, #f97316 30%, #141d26);
+    --color-orange-300: color-mix(in srgb, #f97316 42%, #141d26);
+    --color-orange-700: color-mix(in srgb, #f97316 55%, #fff);
+    --color-orange-800: color-mix(in srgb, #f97316 45%, #fff);
+    --color-orange-900: color-mix(in srgb, #f97316 38%, #fff);
+    --color-amber-50: color-mix(in srgb, #f59e0b 13%, #141d26);
+    --color-amber-100: color-mix(in srgb, #f59e0b 20%, #141d26);
+    --color-amber-200: color-mix(in srgb, #f59e0b 30%, #141d26);
+    --color-amber-300: color-mix(in srgb, #f59e0b 42%, #141d26);
+    --color-amber-700: color-mix(in srgb, #f59e0b 55%, #fff);
+    --color-amber-800: color-mix(in srgb, #f59e0b 45%, #fff);
+    --color-amber-900: color-mix(in srgb, #f59e0b 38%, #fff);
+    --color-yellow-50: color-mix(in srgb, #eab308 13%, #141d26);
+    --color-yellow-100: color-mix(in srgb, #eab308 20%, #141d26);
+    --color-yellow-200: color-mix(in srgb, #eab308 30%, #141d26);
+    --color-yellow-300: color-mix(in srgb, #eab308 42%, #141d26);
+    --color-yellow-700: color-mix(in srgb, #eab308 55%, #fff);
+    --color-yellow-800: color-mix(in srgb, #eab308 45%, #fff);
+    --color-yellow-900: color-mix(in srgb, #eab308 38%, #fff);
+    --color-green-50: color-mix(in srgb, #22c55e 13%, #141d26);
+    --color-green-100: color-mix(in srgb, #22c55e 20%, #141d26);
+    --color-green-200: color-mix(in srgb, #22c55e 30%, #141d26);
+    --color-green-300: color-mix(in srgb, #22c55e 42%, #141d26);
+    --color-green-700: color-mix(in srgb, #22c55e 55%, #fff);
+    --color-green-800: color-mix(in srgb, #22c55e 45%, #fff);
+    --color-green-900: color-mix(in srgb, #22c55e 38%, #fff);
+    --color-emerald-50: color-mix(in srgb, #10b981 13%, #141d26);
+    --color-emerald-100: color-mix(in srgb, #10b981 20%, #141d26);
+    --color-emerald-200: color-mix(in srgb, #10b981 30%, #141d26);
+    --color-emerald-300: color-mix(in srgb, #10b981 42%, #141d26);
+    --color-emerald-700: color-mix(in srgb, #10b981 55%, #fff);
+    --color-emerald-800: color-mix(in srgb, #10b981 45%, #fff);
+    --color-emerald-900: color-mix(in srgb, #10b981 38%, #fff);
+    --color-teal-50: color-mix(in srgb, #14b8a6 13%, #141d26);
+    --color-teal-100: color-mix(in srgb, #14b8a6 20%, #141d26);
+    --color-teal-200: color-mix(in srgb, #14b8a6 30%, #141d26);
+    --color-teal-300: color-mix(in srgb, #14b8a6 42%, #141d26);
+    --color-teal-700: color-mix(in srgb, #14b8a6 55%, #fff);
+    --color-teal-800: color-mix(in srgb, #14b8a6 45%, #fff);
+    --color-teal-900: color-mix(in srgb, #14b8a6 38%, #fff);
+    --color-sky-50: color-mix(in srgb, #0ea5e9 13%, #141d26);
+    --color-sky-300: color-mix(in srgb, #0ea5e9 42%, #141d26);
+    --color-sky-700: color-mix(in srgb, #0ea5e9 55%, #fff);
+    --color-sky-800: color-mix(in srgb, #0ea5e9 45%, #fff);
+    --color-sky-900: color-mix(in srgb, #0ea5e9 38%, #fff);
+    --color-blue-50: color-mix(in srgb, #3b82f6 13%, #141d26);
+    --color-blue-100: color-mix(in srgb, #3b82f6 20%, #141d26);
+    --color-blue-200: color-mix(in srgb, #3b82f6 30%, #141d26);
+    --color-blue-300: color-mix(in srgb, #3b82f6 42%, #141d26);
+    --color-blue-700: color-mix(in srgb, #3b82f6 55%, #fff);
+    --color-blue-800: color-mix(in srgb, #3b82f6 45%, #fff);
+    --color-blue-900: color-mix(in srgb, #3b82f6 38%, #fff);
+    --color-indigo-50: color-mix(in srgb, #6366f1 13%, #141d26);
+    --color-indigo-100: color-mix(in srgb, #6366f1 20%, #141d26);
+    --color-indigo-200: color-mix(in srgb, #6366f1 30%, #141d26);
+    --color-indigo-300: color-mix(in srgb, #6366f1 42%, #141d26);
+    --color-indigo-700: color-mix(in srgb, #6366f1 55%, #fff);
+    --color-indigo-800: color-mix(in srgb, #6366f1 45%, #fff);
+    --color-indigo-900: color-mix(in srgb, #6366f1 38%, #fff);
+    --color-violet-50: color-mix(in srgb, #8b5cf6 13%, #141d26);
+    --color-violet-100: color-mix(in srgb, #8b5cf6 20%, #141d26);
+    --color-violet-200: color-mix(in srgb, #8b5cf6 30%, #141d26);
+    --color-violet-300: color-mix(in srgb, #8b5cf6 42%, #141d26);
+    --color-violet-700: color-mix(in srgb, #8b5cf6 55%, #fff);
+    --color-violet-800: color-mix(in srgb, #8b5cf6 45%, #fff);
+    --color-violet-900: color-mix(in srgb, #8b5cf6 38%, #fff);
+    --color-rose-50: color-mix(in srgb, #f43f5e 13%, #141d26);
+    --color-rose-100: color-mix(in srgb, #f43f5e 20%, #141d26);
+    --color-rose-200: color-mix(in srgb, #f43f5e 30%, #141d26);
+    --color-rose-300: color-mix(in srgb, #f43f5e 42%, #141d26);
+    --color-rose-700: color-mix(in srgb, #f43f5e 55%, #fff);
+    --color-rose-800: color-mix(in srgb, #f43f5e 45%, #fff);
+    --color-rose-900: color-mix(in srgb, #f43f5e 38%, #fff);
+    --color-slate-50: color-mix(in srgb, #94a3b8 13%, #141d26);
+    --color-slate-100: color-mix(in srgb, #94a3b8 20%, #141d26);
+    --color-slate-200: color-mix(in srgb, #94a3b8 30%, #141d26);
+    --color-slate-300: color-mix(in srgb, #94a3b8 42%, #141d26);
+    --color-slate-700: color-mix(in srgb, #94a3b8 55%, #fff);
+    --color-slate-800: color-mix(in srgb, #94a3b8 45%, #fff);
+    --color-slate-900: color-mix(in srgb, #94a3b8 38%, #fff);
+    --color-gray-50: color-mix(in srgb, #9ca3af 13%, #141d26);
+    --color-gray-100: color-mix(in srgb, #9ca3af 20%, #141d26);
+    --color-gray-200: color-mix(in srgb, #9ca3af 30%, #141d26);
+    --color-gray-300: color-mix(in srgb, #9ca3af 42%, #141d26);
+    --color-gray-700: color-mix(in srgb, #9ca3af 55%, #fff);
+    --color-gray-800: color-mix(in srgb, #9ca3af 45%, #fff);
+    --color-gray-900: color-mix(in srgb, #9ca3af 38%, #fff);
+  }
+  .dark .card {
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+  /* Weiß bleibt weiß, wo es Schrift oder Glanz auf Farbe ist */
+  .dark .text-white,
+  .dark .group:hover .group-hover\:text-white { color: #fff; }
+  .dark .text-white\/90 { color: rgb(255 255 255 / 0.9); }
+  .dark .text-white\/80 { color: rgb(255 255 255 / 0.8); }
+  .dark .text-white\/70 { color: rgb(255 255 255 / 0.7); }
+  .dark .text-white\/60 { color: rgb(255 255 255 / 0.6); }
+  .dark .bg-white\/10, .dark .hover\:bg-white\/10:hover { background-color: rgb(255 255 255 / 0.1); }
+  .dark .bg-white\/15, .dark .focus\:bg-white\/15:focus { background-color: rgb(255 255 255 / 0.15); }
+  .dark .bg-white\/20 { background-color: rgb(255 255 255 / 0.2); }
+  .dark .bg-white\/25, .dark .hover\:bg-white\/25:hover { background-color: rgb(255 255 255 / 0.25); }
+  .dark .bg-white\/35 { background-color: rgb(255 255 255 / 0.35); }
+  .dark .border-white\/15 { border-color: rgb(255 255 255 / 0.15); }
+  .dark .border-white\/20 { border-color: rgb(255 255 255 / 0.2); }
+  .dark .border-white\/30 { border-color: rgb(255 255 255 / 0.3); }
+  .dark .border-white\/70 { border-color: rgb(255 255 255 / 0.7); }
+  .dark .ring-white\/30 { --tw-ring-color: rgb(255 255 255 / 0.3); }
+  .dark .ring-white\/40 { --tw-ring-color: rgb(255 255 255 / 0.4); }
+  /* Flächen mit weißer Schrift kräftig lassen */
+  .dark .bg-ok { background-color: #15803d; }
+  .dark .bg-warn { background-color: #b45309; }
+  .dark .bg-bad { background-color: #b91c1c; }
+  .dark .text-brand-2:not(.keep-light *) { color: #9fcbf3; }
+  .dark .text-red-200 { color: #fecaca; }
+  /* Blau als Fläche etwas satter, damit weiße Schrift gut lesbar bleibt (Schrift-Blau ist heller) */
+  .dark .bg-brand:not(.keep-light *),
+  .dark .btn-primary:not(.keep-light *),
+  .dark .group:hover .group-hover\:bg-brand { background-color: #1f6fb8; }
+  .dark .btn-primary:hover:not(:disabled) { background-color: #092f50; }
+  .dark .from-brand { --tw-gradient-from: #1f6fb8; }
+  .dark .to-brand { --tw-gradient-to: #1f6fb8; }
+  /* Abdunkeln hinter Dialogen */
+  .dark .bg-ink:not(.keep-light *) { background-color: #e9eef2; }
+  .dark .bg-ink.text-white { color: #0b1117; }
+  .dark .bg-ink\/30 { background-color: rgb(0 0 0 / 0.55); }
+  .dark .bg-ink\/60 { background-color: rgb(0 0 0 / 0.7); }
+  /* Logo: hell auf dunkel */
+  .logo-dark { display: none; }
+  .dark .logo-dark { display: inline-block; }
+  .dark .logo-light:not(.keep-light *) { display: none; }
+  .dark .keep-light .logo-dark { display: none; }
+
+  /* Papier-Ansichten (Brief, Protokoll, Unterschrift) bleiben hell */
+  .dark .keep-light {
+    color-scheme: light;
+    --color-white: #ffffff;
+    --color-mist: #f2f5f7;
+    --color-line: #d8e0e6;
+    --color-ink: #101820;
+    --color-steel: #64717c;
+    --color-brand: #0f4d83;
+    --color-brand-2: #092f50;
+    --color-brand-soft: #e6eef6;
+    --color-ok: #15803d;
+    --color-warn: #b45309;
+    --color-bad: #b91c1c;
+    color: var(--color-ink);
+  }
 }

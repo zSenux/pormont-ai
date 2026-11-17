@@ -45,7 +45,7 @@ export function PdfPages({ data, className }: { data: ArrayBuffer | null; classN
           c.style.width = "100%";
           c.setAttribute("role", "img");
           c.setAttribute("aria-label", `Seite ${n} von ${pdf.numPages}`);
-          c.className = "block rounded-sm bg-white shadow-[0_1px_4px_rgba(16,24,32,.18)]";
+          c.className = "keep-light block rounded-sm bg-white shadow-[0_1px_4px_rgba(16,24,32,.18)]";
           await page.render({ canvas: c, viewport }).promise;
           if (cancelled) return;
           pages.push(c);

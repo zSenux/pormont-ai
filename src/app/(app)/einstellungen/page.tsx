@@ -14,6 +14,7 @@ import { profile } from "@/lib/lexware/api";
 import { logout, logoutEverywhere, savePhoneAccess } from "@/app/actions";
 import { StateForm } from "@/components/state-form";
 import { PushToggle } from "@/components/pwa";
+import { ThemeSetting } from "@/components/theme";
 import { WindowsAppDownload } from "@/components/windows-app";
 import { latestWindowsRelease } from "@/lib/windows-app";
 import { AddUserForm, DeleteButton, PasswordForm } from "./forms";
@@ -72,7 +73,7 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
             <h2 className="mb-2 text-xs font-semibold tracking-wider text-steel uppercase">{g.title}</h2>
             <div className="grid grid-cols-3 gap-2">
               {g.items.map((t) => (
-                <Link key={t.href} href={t.href} className="card flex min-h-20 flex-col items-center justify-center gap-1.5 p-2 text-center text-xs leading-tight font-medium">
+                <Link key={t.href} href={t.href} className="card flex min-h-20 flex-col items-center justify-center gap-1.5 p-2 text-center text-xs leading-tight font-medium break-words hyphens-auto">
                   <t.icon className="size-5 text-brand" /> {t.label}
                 </Link>
               ))}
@@ -81,6 +82,12 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
         ))}
       </div>
       <h2 className="pt-2 text-lg font-semibold md:hidden">Einstellungen</h2>
+
+      <section id="darstellung" className="card scroll-mt-20 space-y-3 p-5">
+        <h2 className="font-semibold">Darstellung</h2>
+        <p className="text-sm text-steel">Hell oder dunkel – gilt nur für dieses Gerät. Am Handy geht es auch über Sonne/Mond oben rechts.</p>
+        <ThemeSetting />
+      </section>
 
       {willkommen && me.role === "ADMIN" && (
         <section className="card border-brand/30 bg-brand-soft p-5 text-sm">

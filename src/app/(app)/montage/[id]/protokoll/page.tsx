@@ -43,7 +43,7 @@ export default async function Abnahmeprotokoll({ params }: { params: Promise<{ i
         <PrintButton label="Drucken / als PDF" />
       </div>
 
-      <article className="card space-y-5 p-6 print:border-0 print:p-0 print:shadow-none">
+      <article className="keep-light card space-y-5 p-6 print:border-0 print:p-0 print:shadow-none">
         <header className="flex items-start justify-between gap-4 border-b border-line pb-4">
           <div>
             <p className="text-sm font-semibold text-brand">Abnahmeprotokoll {a.number}</p>

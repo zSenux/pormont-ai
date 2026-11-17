@@ -141,7 +141,7 @@ export function SignatureEditor(p: { isAdmin: boolean; name: string; email: stri
             <div>Von: {p.mailbox}</div>
             <div>Betreff: Ihr Angebot</div>
           </div>
-          <iframe title="Vorschau der Signatur" sandbox="" srcDoc={doc} className={clsx("block h-[560px] bg-white", phone ? "mx-auto w-[375px] border-x border-line" : "w-full")} />
+          <iframe title="Vorschau der Signatur" sandbox="" srcDoc={doc} className={clsx("keep-light block h-[560px] bg-white", phone ? "mx-auto w-[375px] border-x border-line" : "w-full")} />
         </div>
         {!c.enabled && <p className="text-sm text-steel">Die Signatur ist ausgeschaltet.</p>}
       </section>

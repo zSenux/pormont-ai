@@ -28,7 +28,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
         <PrintButton />
       </div>
       <p className="text-sm text-steel print:hidden">Betreff und Text direkt im Brief anklicken und schreiben. Gespeichert wird nichts – drucken oder als PDF sichern.</p>
-      <article className="card space-y-8 p-8 text-[14px] leading-relaxed print:border-0 print:p-0 print:shadow-none">
+      <article className="keep-light card space-y-8 p-8 text-[14px] leading-relaxed print:border-0 print:p-0 print:shadow-none">
         <header className="flex items-start justify-between gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt={COMPANY.name} className="h-12 w-auto" />

@@ -23,7 +23,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
   return (
     <main className="mx-auto max-w-[210mm] px-4 py-6 print:p-0">
       <div className="mb-4 flex justify-end print:hidden"><PrintButton /></div>
-      <article className="min-h-[297mm] bg-white px-[20mm] pt-[12mm] pb-[15mm] text-[11pt] leading-snug shadow print:shadow-none">
+      <article className="keep-light min-h-[297mm] bg-white px-[20mm] pt-[12mm] pb-[15mm] text-[11pt] leading-snug shadow print:shadow-none">
         <header className="flex items-start justify-between">
           <img src="/logo.svg" alt={c.name} className="h-16 w-auto" />
           <p className="text-right text-[9pt] text-steel">{c.name}<br />{c.street}<br />{c.zip} {c.city}<br />{c.phone}<br />{c.email}</p>

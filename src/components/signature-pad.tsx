@@ -59,7 +59,7 @@ export function SignaturePad({ assemblyId, defaultName }: { assemblyId: string; 
       <div className="relative">
         <canvas
           ref={canvas}
-          className="h-44 w-full touch-none rounded-xl border-2 border-dashed border-line bg-white"
+          className="h-44 w-full touch-none rounded-xl border-2 border-dashed border-line bg-white keep-light"
           aria-label="Unterschriftsfeld"
           onPointerDown={(e) => {
             drawing.current = true;
