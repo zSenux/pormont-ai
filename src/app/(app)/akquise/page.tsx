@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { CalendarClock, Phone, Scale, Search, UserPlus } from "lucide-react";
+import { CalendarClock, FileSpreadsheet, Phone, Scale, Search, UserPlus } from "lucide-react";
 import { clsx } from "clsx";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { addDaysYmd, berlinDateTime, formatDate, formatEuro, todayYmd } from "@/lib/berlin";
 import { STAGES, STAGE_LABEL, STAGE_TONE, type StageKey } from "@/lib/akquise/stages";
-import { NewLeadForm, SearchForm } from "./forms";
+import { ListUploadForm, NewLeadForm, SearchForm } from "./forms";
 
 export const metadata = { title: "Akquise" };
 export const dynamic = "force-dynamic";
@@ -78,7 +78,7 @@ export default async function AkquisePage({ searchParams }: { searchParams: Prom
           </div>
 
           <ul className="space-y-2">
-            {leads.length === 0 && <li className="card p-5 text-sm text-steel">Noch keine Interessenten. Rechts bei Google suchen oder von Hand anlegen.</li>}
+            {leads.length === 0 && <li className="card p-5 text-sm text-steel">Noch keine Interessenten. Rechts bei Google suchen, eine Excel-Liste importieren oder von Hand anlegen.</li>}
             {leads.map((l) => (
               <li key={l.id}>
                 <Link href={`/akquise/${l.id}`} className="card flex items-start gap-3 p-4 transition hover:border-brand">
@@ -102,6 +102,10 @@ export default async function AkquisePage({ searchParams }: { searchParams: Prom
             <h2 className="flex items-center gap-2 font-semibold"><Search className="size-4 text-brand" /> Neue Firmen finden</h2>
             <SearchForm configured={Boolean(process.env.GOOGLE_PLACES_API_KEY)} />
           </section>
+          <details className="card p-4">
+            <summary className="flex cursor-pointer items-center gap-2 font-semibold"><FileSpreadsheet className="size-4 text-brand" /> Liste importieren (Excel)</summary>
+            <div className="mt-3"><ListUploadForm /></div>
+          </details>
           <details className="card p-4">
             <summary className="flex cursor-pointer items-center gap-2 font-semibold"><UserPlus className="size-4 text-brand" /> Von Hand anlegen</summary>
             <div className="mt-3"><NewLeadForm /></div>

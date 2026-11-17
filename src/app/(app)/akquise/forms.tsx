@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Search, UserPlus } from "lucide-react";
+import { FileSpreadsheet, Search, UserPlus } from "lucide-react";
 import { StateForm } from "@/components/state-form";
-import { createLead, searchLeads } from "@/app/actions/akquise";
+import { createLead, searchLeads, uploadLeadList } from "@/app/actions/akquise";
 import { TARGETS } from "@/lib/akquise/stages";
 
 export function SearchForm({ configured }: { configured: boolean }) {
@@ -44,6 +44,15 @@ export function NewLeadForm() {
         </select>
         <input name="value" inputMode="numeric" placeholder="Auftragswert € (geschätzt)" className="input" aria-label="Auftragswert" />
       </div>
+    </StateForm>
+  );
+}
+
+export function ListUploadForm() {
+  return (
+    <StateForm action={uploadLeadList} submit={<><FileSpreadsheet className="size-4" /> Liste prüfen</>}>
+      <input type="file" name="file" required accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" className="input text-sm" aria-label="Excel- oder CSV-Datei" />
+      <p className="text-xs text-steel">Excel (.xlsx) oder CSV mit einer Spalte „Firma“ bzw. „Unternehmen“. Branche, Ansprechpartner, Telefon, E-Mail, Website, Adresse werden erkannt, alles andere landet in der Notiz. Du siehst vor dem Übernehmen eine Vorschau.</p>
     </StateForm>
   );
 }
