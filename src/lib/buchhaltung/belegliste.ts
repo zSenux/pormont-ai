@@ -23,8 +23,8 @@ export function readParams(sp: ListParams) {
   const q = (sp.q ?? "").trim().slice(0, 80);
   const herkunft = sp.herkunft === "lexware" || sp.herkunft === "jarvis" ? sp.herkunft : "alle";
   const thisYear = +todayYmd().slice(0, 4);
-  // Jahr wie in Lexware („Jahr 2026“); „alle“ = ohne Jahresgrenze
-  const jahr = sp.jahr === "alle" ? "alle" : /^\d{4}$/.test(sp.jahr ?? "") && +sp.jahr! > 1990 && +sp.jahr! <= thisYear + 1 ? sp.jahr! : String(thisYear);
+  // Jahr wie in Lexware („Jahr 2026“); ohne Auswahl alle Jahre, damit die übernommenen Lexware-Belege nicht versteckt sind
+  const jahr = /^\d{4}$/.test(sp.jahr ?? "") && +sp.jahr! > 1990 && +sp.jahr! <= thisYear + 1 ? sp.jahr! : "alle";
   return { art, conf, status, q, herkunft, jahr };
 }
 
