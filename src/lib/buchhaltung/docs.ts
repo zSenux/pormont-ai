@@ -300,21 +300,54 @@ export async function nextSequence(tx: Tx, key: string) {
   return Number(rows[0]?.value ?? 1);
 }
 
-async function nextNumber(tx: Tx, kind: DocKind, year: number) {
+/** Nummernkreis im Lexware-Stil (eine Zahl, läuft über den Jahreswechsel weiter) */
+const lexKey = (kind: DocKind) => `LX-${kind}`;
+const ERP_KIND: Record<DocKind, string> = { RECHNUNG: "rechnung", ANGEBOT: "angebot", GUTSCHRIFT: "gutschrift" };
+
+/** Höchste schon benutzte reine Zahl dieser Belegart – in der Buchhaltung (übernommene Lexware-Belege) und in der
+ *  Datenübernahme (noch nicht übernommene Alt-Rechnungen), damit keine Lexware-Nummer doppelt vergeben wird */
+async function lexFloor(tx: Tx | typeof db, kind: DocKind) {
+  const rows = await tx.$queryRaw<{ m: bigint | null }[]>`
+    SELECT GREATEST(
+      (SELECT MAX("number"::bigint) FROM "SalesDoc" WHERE "kind"::text = ${kind} AND "number" ~ '^[0-9]{1,9}$'),
+      (SELECT MAX("number"::bigint) FROM "ErpRecord" WHERE "kind" = ${ERP_KIND[kind]} AND "number" ~ '^[0-9]{1,9}$')
+    ) AS m`;
+  return Number(rows[0]?.m ?? 0);
+}
+
+async function nextNumber(tx: Tx, kind: DocKind, year: number, format: BookConfig["numberFormat"]) {
+  if (format === "lexware") {
+    // Ohne Vorgänger wie Lexware: Jahr + laufende Nummer (202601); Gutschriften/Stornos zählen einfach ab 1
+    const floor = (await lexFloor(tx, kind)) || (kind === "GUTSCHRIFT" ? 0 : year * 100);
+    const rows = await tx.$queryRaw<{ value: number }[]>`
+      INSERT INTO "NumberSeq" ("key", "value") VALUES (${lexKey(kind)}, ${floor + 1})
+      ON CONFLICT ("key") DO UPDATE SET "value" = GREATEST("NumberSeq"."value" + 1, ${floor + 1}) RETURNING "value"`;
+    return String(rows[0]!.value);
+  }
   const n = await nextSequence(tx, `${kind}-${year}`);
   return `${PREFIX[kind]}-${year}-${String(n).padStart(4, "0")}`;
 }
 
-/** Nummernkreise für die Einstellungen (zuletzt vergebene Nummer je Art im Jahr) */
-export async function numberState(year: number) {
-  const rows = await db.numberSeq.findMany({ where: { key: { in: (["RECHNUNG", "ANGEBOT", "GUTSCHRIFT"] as const).map((k) => `${k}-${year}`) } } });
-  const get = (k: DocKind) => rows.find((r) => r.key === `${k}-${year}`)?.value ?? 0;
-  return { RECHNUNG: get("RECHNUNG"), ANGEBOT: get("ANGEBOT"), GUTSCHRIFT: get("GUTSCHRIFT") };
+/** Nummernkreise für die Einstellungen: zuletzt vergebene bzw. nächste Nummer je Art */
+export async function numberState(year: number, format: BookConfig["numberFormat"]) {
+  const kinds = ["RECHNUNG", "ANGEBOT", "GUTSCHRIFT"] as const;
+  if (format === "lexware") {
+    const rows = await db.numberSeq.findMany({ where: { key: { in: kinds.map(lexKey) } } });
+    const next = async (k: DocKind) => {
+      const floor = (await lexFloor(db, k)) || (k === "GUTSCHRIFT" ? 0 : year * 100);
+      return String(Math.max((rows.find((r) => r.key === lexKey(k))?.value ?? 0) + 1, floor + 1));
+    };
+    const [RECHNUNG, ANGEBOT, GUTSCHRIFT] = await Promise.all(kinds.map(next));
+    return { mode: "next" as const, RECHNUNG, ANGEBOT, GUTSCHRIFT };
+  }
+  const rows = await db.numberSeq.findMany({ where: { key: { in: kinds.map((k) => `${k}-${year}`) } } });
+  const get = (k: DocKind) => { const v = rows.find((r) => r.key === `${k}-${year}`)?.value; return v ? `${PREFIX[k]}-${year}-${String(v).padStart(4, "0")}` : "–"; };
+  return { mode: "last" as const, RECHNUNG: get("RECHNUNG"), ANGEBOT: get("ANGEBOT"), GUTSCHRIFT: get("GUTSCHRIFT") };
 }
 
 /** Nächste Nummer setzen (z. B. um an Lexware anzuschließen) – nur nach oben, nie zurück */
-export async function setNextNumber(kind: DocKind, year: number, next: number) {
-  const key = `${kind}-${year}`;
+export async function setNextNumber(kind: DocKind, year: number, next: number, format: BookConfig["numberFormat"] = "jarvis") {
+  const key = format === "lexware" ? lexKey(kind) : `${kind}-${year}`;
   const r = await db.$executeRaw`INSERT INTO "NumberSeq" ("key", "value") VALUES (${key}, ${next - 1}) ON CONFLICT ("key") DO UPDATE SET "value" = ${next - 1} WHERE "NumberSeq"."value" < ${next - 1}`;
   if (!r) throw new BookError("Die Nummer darf nur erhöht werden – diese oder eine höhere Nummer ist schon vergeben.");
 }
@@ -358,7 +391,7 @@ async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
   const dateYmd = ymdOf(d.date)!;
   const days = d.paymentDays ?? d.customer.paymentDays ?? cfg.paymentDays;
   const dueDate = d.kind === "RECHNUNG" ? dayOf(addDaysYmd(dateYmd, days)) : d.kind === "ANGEBOT" ? (d.dueDate ?? dayOf(addDaysYmd(dateYmd, cfg.quoteDays))) : null;
-  const number = await nextNumber(tx, d.kind, Number(dateYmd.slice(0, 4)));
+  const number = await nextNumber(tx, d.kind, Number(dateYmd.slice(0, 4)), cfg.numberFormat);
   const address = partyOf(d.customer);
   const t = computeTotals(lines, d.reverseCharge);
 
