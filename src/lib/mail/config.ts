@@ -79,3 +79,11 @@ export const mailConfigured = () => mailConfig() !== null;
 
 /** Angezeigte Adresse des Postfachs (geteiltes Postfach vor angemeldetem Konto) */
 export const mailAddress = (c: MailConfig) => (c.kind === "graph" ? (c.mailbox ?? c.user) : c.user);
+
+/** Grund, warum Microsoft 365 wegen des Hostings nicht genutzt werden kann (sonst null) */
+export function msHostingBlock(providerFromEnv: boolean): string | null {
+  if (process.env.MAIL_OFF === "1") return "Das Postfach ist im Hosting mit MAIL_OFF=1 abgeschaltet. In Klaic Deploy die Variable MAIL_OFF löschen und neu starten.";
+  const p = (process.env.MAIL_PROVIDER ?? "").toLowerCase();
+  if (providerFromEnv && p !== "microsoft") return `Im Hosting ist MAIL_PROVIDER=„${p}“ fest eingetragen. In Klaic Deploy MAIL_PROVIDER löschen (oder auf microsoft setzen) und neu starten.`;
+  return null;
+}

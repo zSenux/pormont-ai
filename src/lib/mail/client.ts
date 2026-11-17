@@ -23,6 +23,7 @@ export const mailsSince = (last: { uid: number | string; validity: string } | nu
 export async function mailStatus(): Promise<{ ok: boolean; text: string }> {
   const c = mailConfig();
   if (!c) {
+    if (process.env.MAIL_OFF === "1") return { ok: false, text: "Abgeschaltet (MAIL_OFF=1 im Hosting) – in Klaic Deploy löschen und neu starten." };
     if ((process.env.MAIL_PROVIDER ?? "").toLowerCase() === "microsoft") return { ok: false, text: process.env.MS_CLIENT_ID ? "Microsoft 365: noch nicht angemeldet – „Mit Microsoft anmelden“ klicken." : "Microsoft 365: App-Registrierung (Anwendungs-ID, Clientschlüssel) fehlt." };
     return { ok: false, text: "Nicht verbunden – Postfach unter Verbindungen eintragen." };
   }
