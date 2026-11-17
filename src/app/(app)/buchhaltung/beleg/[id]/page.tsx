@@ -84,6 +84,9 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
   // ---------- Festgeschriebener Beleg (nur ansehen, versenden, Zahlungen, Mahnen, Storno) ----------
   const party = readParty(d.address);
   const lines = readLines(d.lines);
+  // Lexware-Belege ohne Original-PDF: Jarvis erzeugt das PDF aus den übernommenen Daten neu
+  const regenerated = !d.pdf && d.imported && !!d.number;
+  const hasPdf = !!d.pdf || regenerated;
   const overdue = isOverdue(d);
   const open = openCentsOf(d);
   const mail = await defaultDocMail(d.id, user.name);
@@ -120,12 +123,12 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
         <div className="min-w-0 space-y-4">
           <section className="card p-4">
             <div className="flex flex-wrap gap-2">
-              {d.pdf && <a href={`/api/buchhaltung/pdf/${d.id}`} target="_blank" rel="noreferrer" className="btn-primary"><FileText className="size-4" /> PDF ansehen</a>}
-              {d.pdf && <a href={`/api/buchhaltung/pdf/${d.id}?download=1`} className="btn-secondary"><FileDown className="size-4" /> Herunterladen</a>}
+              {hasPdf && <a href={`/api/buchhaltung/pdf/${d.id}`} target="_blank" rel="noreferrer" className="btn-primary"><FileText className="size-4" /> PDF ansehen</a>}
+              {hasPdf && <a href={`/api/buchhaltung/pdf/${d.id}?download=1`} className="btn-secondary"><FileDown className="size-4" /> Herunterladen</a>}
               {d.kind !== "ANGEBOT" && !d.imported && <a href={`/api/buchhaltung/xml/${d.id}`} className="btn-secondary"><FileCode2 className="size-4" /> XRechnung (XML)</a>}
             </div>
             {d.kind !== "ANGEBOT" && !d.imported && <p className="mt-2 text-xs text-steel">Das PDF ist eine E-Rechnung (ZUGFeRD, EN 16931): Die Rechnungsdaten stecken maschinenlesbar im PDF. Für Behörden zusätzlich die XRechnung.</p>}
-            {d.imported && !d.pdf && <p className="mt-2 text-xs text-warn">Das Original-PDF aus Lexware war nicht abrufbar. Es liegt weiter in Lexware.</p>}
+            {regenerated && <p className="mt-2 text-xs text-steel">Das Original-PDF liegt in Lexware. Jarvis erzeugt die Rechnung hier aus den übernommenen Daten neu – gleiche Nummer, gleiches Datum, gleiche Positionen und Beträge, mit eurem Briefpapier.</p>}
 
             <dl className="mt-4 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
               <div className="flex justify-between gap-2"><dt className="text-steel">Kunde</dt><dd className="text-right">{party.name}{party.customerNo ? ` (${party.customerNo})` : ""}</dd></div>
@@ -137,7 +140,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
             </dl>
           </section>
 
-          {d.pdf && <PdfFromUrl url={`/api/buchhaltung/pdf/${d.id}`} downloadUrl={`/api/buchhaltung/pdf/${d.id}?download=1`} title={d.imported ? "Original-PDF aus Lexware" : `${label} ${d.number} als PDF`} />}
+          {hasPdf && <PdfFromUrl url={`/api/buchhaltung/pdf/${d.id}`} downloadUrl={`/api/buchhaltung/pdf/${d.id}?download=1`} title={regenerated ? `${label} ${d.number} (aus Lexware-Daten neu erzeugt)` : d.imported ? "Original-PDF aus Lexware" : `${label} ${d.number} als PDF`} />}
 
           <section className="card p-4">
             <h2 className="font-semibold">{d.title || "Positionen"}</h2>
@@ -163,7 +166,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
 
           {configs.map((c) => <DocConfigPanel key={c.id} config={c} draft={false} origin={origin} />)}
 
-          {d.status !== "STORNIERT" && d.pdf && (
+          {d.status !== "STORNIERT" && hasPdf && (
             <details id="senden" className="card scroll-mt-20 p-4" open={!d.sentAt}>
               <summary className="cursor-pointer font-semibold">{d.sentAt ? "Erneut per Mail senden" : `${label} per Mail senden`}</summary>
               <div className="mt-3"><SendDocForm docId={d.id} d={mail} xmlOption={d.kind !== "ANGEBOT" && !d.imported} label={`${label} senden`} /></div>
