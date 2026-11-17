@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, CheckSquare, ChevronDown, Home, LogOut, Mail, Menu, Search, Sparkles, X } from "lucide-react";
 import { clsx } from "clsx";
@@ -19,6 +19,14 @@ function search(groups: NavGroup[], q: string) {
 const initials = (name: string) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
 /**
+ * Stufen der Kopfleiste: passt nicht alles in eine Zeile (schmales Fenster, Windows-Skalierung 125/150 %),
+ * wird Stufe für Stufe verdichtet, bis nichts mehr überläuft – gemessen statt geraten.
+ * 0 alles beschriftet · 1 Suche nur Symbol · 2 Bereiche ohne Symbol · 3 Alltags-Seiten nur Symbol
+ * 4 Bereiche nur Symbol · 5 enger + kleines Logo · 6 ohne Pfeile an den Menüs
+ */
+const MAX_LEVEL = 6;
+
+/**
  * PC + Windows-App: Kopfleiste. Links die Alltags-Seiten (Übersicht, Jarvis, Mail, Kalender, Aufgaben),
  * dann je Bereich ein Menü (Vertrieb, Projekte, Werkstatt, Einkauf, Buchhaltung, Team), rechts Suche (Strg+K) und Konto-Menü.
  */
@@ -29,6 +37,10 @@ export function TopNav({ name, funktion, areas, admin, logout }: { name: string;
   const [open, setOpen] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
   const bar = useRef<HTMLElement>(null);
+  const row = useRef<HTMLDivElement>(null);
+  const nav = useRef<HTMLElement>(null);
+  const [level, setLevel] = useState(0);
+  const [width, setWidth] = useState(0);
 
   const start = groups.find((g) => g.key === "start")?.items ?? [];
   const menus = groups.filter((g) => g.key !== "start" && g.key !== "system");
@@ -56,35 +68,57 @@ export function TopNav({ name, funktion, areas, admin, logout }: { name: string;
     };
   }, []);
 
-  const pill = (on: boolean) => clsx("flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium transition", on ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink");
+  // Breite beobachten: bei jeder Änderung neu von Stufe 0 messen
+  useLayoutEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(Math.round(el.clientWidth)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useLayoutEffect(() => setLevel(0), [width, groups]);
+  // Läuft etwas über, eine Stufe dichter (läuft vor dem Zeichnen, also ohne Flackern)
+  useLayoutEffect(() => {
+    const n = nav.current;
+    const r = row.current;
+    if (!n || !r || r.clientWidth === 0) return;
+    const over = n.scrollWidth > n.clientWidth + 1 || r.scrollWidth > r.clientWidth + 1;
+    if (over && level < MAX_LEVEL) setLevel(level + 1);
+  });
+
+  const tight = level >= 5;
+  const pill = (on: boolean) =>
+    clsx("flex shrink-0 items-center gap-1.5 rounded-full py-2 text-sm font-medium whitespace-nowrap transition", tight ? "px-2" : "px-3", on ? "bg-brand text-white" : "text-steel hover:bg-mist hover:text-ink");
 
   return (
     <header ref={bar} className="sticky top-0 z-30 hidden border-b border-line bg-white/95 backdrop-blur print:hidden md:block">
-      <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-1 px-4 lg:px-6">
+      <div ref={row} className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-1 px-4 lg:px-6">
         <Link href="/" className="mr-2 flex shrink-0 items-center gap-2" aria-label="Startseite">
-          <img src="/logo.svg" alt="ProMont GmbH" className="h-10 w-auto" />
+          <img src="/logo.svg" alt="ProMont GmbH" className={clsx("w-auto", tight ? "h-8" : "h-10")} />
         </Link>
 
-        <nav className="flex min-w-0 flex-1 items-center gap-0.5" aria-label="Hauptnavigation">
+        <nav ref={nav} className="flex min-w-0 flex-1 items-center gap-0.5" aria-label="Hauptnavigation">
           {start.map((i) => (
             <Link key={i.href} href={i.href} title={i.label} aria-current={current === i.href ? "page" : undefined} className={pill(current === i.href)}>
               <i.icon className="size-4" />
-              {/* Beschriftung erst bei breitem Fenster, sonst Tooltip */}
-              <span className="hidden 2xl:inline">{i.label}</span>
+              {/* Beschriftung nur, wenn Platz ist – sonst Tooltip */}
+              {level < 3 && <span>{i.label}</span>}
             </Link>
           ))}
           <span className="mx-1.5 h-6 w-px shrink-0 bg-line" aria-hidden />
-          {menus.map((g) => {
+          {menus.map((g, k) => {
             const on = g.items.some((i) => i.href === current);
             const Icon = g.icon;
+            const label = level < 4;
             return (
-              <div key={g.key} className="relative">
+              <div key={g.key} className="relative shrink-0">
                 <button type="button" onClick={() => setOpen(open === g.key ? null : g.key)} aria-expanded={open === g.key} aria-haspopup="menu" title={g.title} className={pill(on)}>
-                  {Icon && <Icon className="size-4 lg:hidden 2xl:inline" />}
-                  <span className="hidden lg:inline">{g.short ?? g.title}</span>
-                  <ChevronDown className={clsx("size-3.5 transition", open === g.key && "rotate-180")} />
+                  {Icon && (!label || level < 2) && <Icon className="size-4" />}
+                  {label && <span>{g.short ?? g.title}</span>}
+                  {level < 6 && <ChevronDown className={clsx("size-3.5 transition", open === g.key && "rotate-180")} />}
                 </button>
-                {open === g.key && <Panel title={g.title} items={g.items} current={current} />}
+                {/* hintere Menüs nach links aufklappen, damit sie nicht aus dem Fenster laufen */}
+                {open === g.key && <Panel title={g.title} items={g.items} current={current} alignRight={k >= menus.length - 2} />}
               </div>
             );
           })}
@@ -92,11 +126,15 @@ export function TopNav({ name, funktion, areas, admin, logout }: { name: string;
 
         <button type="button" onClick={() => setPalette(true)} className="flex shrink-0 items-center gap-2 rounded-full border border-line px-3 py-1.5 text-sm text-steel hover:border-brand hover:text-ink" title="Seite suchen (Strg+K)">
           <Search className="size-4" />
-          <span className="hidden 2xl:inline">Suchen</span>
-          <kbd className="hidden rounded border border-line bg-mist px-1 text-[10px] 2xl:inline">Strg K</kbd>
+          {level < 1 && (
+            <>
+              <span>Suchen</span>
+              <kbd className="rounded border border-line bg-mist px-1 text-[10px]">Strg K</kbd>
+            </>
+          )}
         </button>
 
-        <div className="relative ml-1">
+        <div className="relative ml-1 shrink-0">
           <button type="button" onClick={() => setOpen(open === "konto" ? null : "konto")} aria-expanded={open === "konto"} aria-haspopup="menu" title={name} aria-label={`Konto: ${name}`} className={clsx("flex items-center gap-1 rounded-full p-1 transition hover:bg-mist", tools.some((i) => i.href === current) && "ring-2 ring-brand")}>
             <span className="grid size-8 place-items-center rounded-full bg-brand-soft text-xs font-bold text-brand">{initials(name)}</span>
             <ChevronDown className="size-3.5 text-steel" />
@@ -130,9 +168,9 @@ export function TopNav({ name, funktion, areas, admin, logout }: { name: string;
 }
 
 /** Ausklapp-Menü eines Bereichs */
-function Panel({ title, items, current }: { title: string; items: NavItem[]; current: string | null }) {
+function Panel({ title, items, current, alignRight }: { title: string; items: NavItem[]; current: string | null; alignRight?: boolean }) {
   return (
-    <div className="absolute top-full left-0 z-40 mt-2 w-64 rounded-2xl border border-line bg-white p-2 shadow-xl" role="menu" aria-label={title}>
+    <div className={clsx("absolute top-full z-40 mt-2 w-64 rounded-2xl border border-line bg-white p-2 shadow-xl", alignRight ? "right-0" : "left-0")} role="menu" aria-label={title}>
       <p className="px-3 pt-1 pb-1.5 text-[11px] font-semibold tracking-wider text-steel uppercase">{title}</p>
       {items.map((i) => (
         <Link key={i.href} href={i.href} role="menuitem" aria-current={current === i.href ? "page" : undefined} className={clsx("flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm", current === i.href ? "bg-brand-soft font-semibold text-brand" : "text-ink hover:bg-mist")}>
