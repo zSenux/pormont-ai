@@ -181,6 +181,9 @@ export default async function DatenuebernahmePage({ searchParams }: { searchPara
                         {admin && !imp.busy && moved < total && t.kind === "rechnung" && (
                           <TransferButton importId={imp.id} what="rechnung" label="In die Buchhaltung übernehmen" confirm={`${total - moved} alte Rechnungen als „aus Lexware übernommen“ in die Buchhaltung? Sie behalten ihre Nummer, zählen dann in Umsatz, Jahresauswertung, Kundenakte und Rechnungsliste. Ohne Zahlstatus gelten Rechnungen älter als ${ASSUME_PAID_DAYS} Tage als bezahlt, neuere als offen.`} />
                         )}
+                        {admin && !imp.busy && moved > 0 && moved === total && t.kind === "rechnung" && (
+                          <TransferButton importId={imp.id} what="zahlstatus" secondary label="Zahlstatus mit Lexware abgleichen" confirm="Bezahlt/offen der übernommenen Lexware-Rechnungen auf den Stand aus dem Lexware-Export bringen? Rechnungen mit in Jarvis gebuchten Zahlungen bleiben unverändert." />
+                        )}
                         {t.kind === "angebot" && <span className="text-steel">bleibt als Archiv (Jarvis findet es)</span>}
                       </div>
                     </li>
