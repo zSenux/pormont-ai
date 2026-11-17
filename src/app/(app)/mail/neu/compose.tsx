@@ -90,6 +90,11 @@ export function Compose({ init, reply, forward, originalAttachments }: { init: I
         )}
       </div>
 
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="signatur" value="1" defaultChecked /> Signatur anhängen
+        <a href="/mail/signatur" target="_blank" className="font-medium text-brand">ansehen</a>
+      </label>
+
       {state?.error && <p className="rounded-lg bg-red-50 p-3 text-sm text-bad">{state.error}</p>}
       {state?.ok && <p className="rounded-lg bg-green-50 p-3 text-sm text-green-800">{state.ok}</p>}
 

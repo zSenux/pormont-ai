@@ -173,7 +173,7 @@ const CHUNK = 320 * 1024 * 12; // Upload-Stücke müssen ein Vielfaches von 320 
 async function addAttachments(c: GraphConfig, draftId: string, atts: OutgoingMail["attachments"]) {
   for (const a of atts ?? []) {
     if (a.content.length <= 3 * 1024 * 1024) {
-      await call(`${box(c)}/messages/${draftId}/attachments`, { method: "POST", body: { "@odata.type": "#microsoft.graph.fileAttachment", name: a.filename, contentType: a.contentType, contentBytes: a.content.toString("base64") } });
+      await call(`${box(c)}/messages/${draftId}/attachments`, { method: "POST", body: { "@odata.type": "#microsoft.graph.fileAttachment", name: a.filename, contentType: a.contentType, contentBytes: a.content.toString("base64"), ...(a.cid ? { isInline: true, contentId: a.cid } : {}) } });
       continue;
     }
     // Große Anhänge (> 3 MB) in Stücken hochladen
@@ -193,7 +193,7 @@ async function createDraft(c: GraphConfig, m: OutgoingMail): Promise<{ id: strin
     const f = await call<{ value: { id: string }[] }>(`${box(c)}/messages?$select=id&$top=1&$filter=${encodeURIComponent(`internetMessageId eq '${m.inReplyTo.replace(/'/g, "''")}'`)}`).catch(() => ({ value: [] }));
     original = f.value[0]?.id ?? null;
   }
-  const fields = { subject: m.subject, body: { contentType: "Text", content: m.text }, toRecipients: recipients(m.to), ccRecipients: recipients(m.cc) };
+  const fields = { subject: m.subject, body: m.html ? { contentType: "HTML", content: m.html } : { contentType: "Text", content: m.text }, toRecipients: recipients(m.to), ccRecipients: recipients(m.cc) };
   let d: { id: string; internetMessageId?: string | null };
   if (original) {
     d = await call(`${box(c)}/messages/${encodeURIComponent(original)}/createReply`, { method: "POST" });

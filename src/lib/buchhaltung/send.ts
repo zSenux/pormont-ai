@@ -66,7 +66,7 @@ export async function sendDoc(docId: string, input: SendInput, user: Actor) {
     attachments.push({ filename: `XRechnung_${d.number}.xml`, content: Buffer.from(buildCii(data, "xrechnung"), "utf8"), contentType: "application/xml" });
   }
   try {
-    await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, attachments });
+    await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, attachments, signature: "system" });
   } catch (e) {
     throw new BookError(e instanceof MailError ? e.message : "Senden fehlgeschlagen.");
   }
@@ -130,7 +130,7 @@ export async function sendDunning(dunningId: string, input: Omit<SendInput, "xml
   const docPdf = await docPdfBytes(dn.doc.id);
   if (docPdf) attachments.push({ filename: `Rechnung_${dn.doc.number}.pdf`, content: Buffer.from(docPdf.bytes), contentType: "application/pdf" });
   try {
-    await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, attachments });
+    await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, attachments, signature: "system" });
   } catch (e) {
     throw new BookError(e instanceof MailError ? e.message : "Senden fehlgeschlagen.");
   }

@@ -200,6 +200,7 @@ function compose(c: MailConfig, m: OutgoingMail) {
     cc: m.cc || undefined,
     subject: m.subject,
     text: m.text,
+    html: m.html || undefined,
     inReplyTo: m.inReplyTo || undefined,
     references: m.references?.length ? m.references : m.inReplyTo ? [m.inReplyTo] : undefined,
     attachments: m.attachments?.length ? m.attachments : undefined,

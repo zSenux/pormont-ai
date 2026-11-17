@@ -144,7 +144,7 @@ export async function sendRequest(id: string) {
   const claim = await db.supplierRequest.updateMany({ where: { id, status: "ENTWURF" }, data: { status: "WIRD_GESENDET", error: null } });
   if (!claim.count) throw new SupplierError("Diese Anfrage wurde schon gesendet.");
   try {
-    await sendMail({ to, subject: r.subject, text: r.text });
+    await sendMail({ to, subject: r.subject, text: r.text, signature: "system" });
   } catch (e) {
     const msg = e instanceof MailError ? e.message : "Senden fehlgeschlagen.";
     await db.supplierRequest.update({ where: { id }, data: { status: "ENTWURF", error: msg } });

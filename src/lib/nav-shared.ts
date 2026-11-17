@@ -3,7 +3,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3, Banknote, BookOpen, Calculator, Calendar, Camera, CheckSquare, ClipboardList, Clock, Database, Factory, FileText, FolderSearch, Gauge, Gavel, Handshake, HardHat, Home,
-  IdCard, Coins, LayoutTemplate, Mail, Mic, Monitor, MonitorDown, Palmtree, PenTool, Receipt, Route, Settings, ShieldAlert, ShoppingCart, Sparkles, Target, TrendingUp, Truck, Wallet, Warehouse, Wrench, BellRing, Users, Workflow, Scale, FolderArchive, FileArchive,
+  IdCard, Coins, Signature, LayoutTemplate, Mail, Mic, Monitor, MonitorDown, Palmtree, PenTool, Receipt, Route, Settings, ShieldAlert, ShoppingCart, Sparkles, Target, TrendingUp, Truck, Wallet, Warehouse, Wrench, BellRing, Users, Workflow, Scale, FolderArchive, FileArchive,
 } from "lucide-react";
 import { PATH_AREA, type Area } from "@/lib/rights-shared";
 
@@ -112,6 +112,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dokumente", label: "Dokumente", icon: FolderSearch, keywords: "suche dateien" },
       { href: "/pc", label: "Computer", icon: Monitor, keywords: "fernsteuerung" },
+      { href: "/mail/signatur", label: "Mail-Signatur", icon: Signature, keywords: "e-mail unterschrift logo signatur fußzeile" },
       { href: "/windows-app", label: "Windows-App", icon: MonitorDown, keywords: "download herunterladen installer programm desktop" },
       { href: "/datenuebernahme", label: "Datenübernahme", icon: Database, adminOnly: true, keywords: "import erp lexware" },
       { href: "/ki-kosten", label: "KI-Kosten", icon: Coins, adminOnly: true, keywords: "claude anthropic tokens verbrauch budget kosten jarvis" },
