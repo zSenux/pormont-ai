@@ -90,3 +90,21 @@ export async function deletePurchaseAction(id: string): Promise<Result> {
   revalidatePath("/buchhaltung/ausgaben");
   redirect("/buchhaltung/ausgaben");
 }
+
+/** Rechnungs-Anhänge einer Mail als Ausgabe buchen (Knopf auf der Mail-Seite) */
+export async function bookMailInvoiceAction(uid: string): Promise<{ results?: { status: string; text: string; purchaseId?: string }[]; error?: string }> {
+  const u = await requireArea("buchhaltung");
+  const { canArea } = await import("@/lib/rights-shared");
+  if (!canArea(u, "mail")) return { error: "Keine Berechtigung für das Postfach." };
+  const { MAIL_ID } = await import("@/lib/mail/types");
+  const id = z.string().regex(MAIL_ID).safeParse(uid);
+  if (!id.success) return { error: "Ungültige Mail." };
+  const { bookMailInvoices } = await import("@/lib/buchhaltung/mail-belege");
+  try {
+    const r = await bookMailInvoices(id.data, { id: u.id, name: u.name });
+    revalidatePath("/buchhaltung/ausgaben");
+    return { results: r.map((x) => ({ status: x.status, text: x.text.replace(/\s*\[Von Hand buchen\]\([^)]*\)/, ""), purchaseId: x.purchaseId })) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Fehler beim Buchen." };
+  }
+}

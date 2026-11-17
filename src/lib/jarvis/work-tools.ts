@@ -307,7 +307,7 @@ export async function runWorkTool(name: string, i: Record<string, unknown>, ctx:
       if (!pre.grossEuro || !pre.supplier) return `Der Beleg ist nicht vollständig lesbar (Betrag oder Lieferant fehlt). Bitte von Hand buchen: [Ausgabe erfassen](/buchhaltung/ausgaben/neu?foto=${q.id})`;
       const user = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true } });
       try {
-        const p = await createPurchase({ supplier: pre.supplier, docNo: pre.docNo || null, date: pre.date, category: (q.kategorie && q.kategorie in PURCHASE_CATEGORIES ? q.kategorie : pre.category) as PurchaseCategory, grossCents: Math.round(pre.grossEuro * 100), taxCents: pre.taxEuro !== null ? Math.round(pre.taxEuro * 100) : null, taxRate: pre.taxRate, projectId: q.projektId ?? pre.projectId, fileId: q.id, paid: q.bezahlt ?? pre.paid, payMethod: (pre.payMethod as "BAR" | "KARTE" | null) ?? null }, user);
+        const p = await createPurchase({ supplier: pre.supplier, docNo: pre.docNo || null, date: pre.date, category: (q.kategorie && q.kategorie in PURCHASE_CATEGORIES ? q.kategorie : pre.category) as PurchaseCategory, grossCents: Math.round(pre.grossEuro * 100), taxCents: pre.taxEuro !== null ? Math.round(pre.taxEuro * 100) : null, taxRate: pre.taxRate, dueDate: pre.dueDate, projectId: q.projektId ?? pre.projectId, fileId: q.id, paid: q.bezahlt ?? pre.paid, payMethod: pre.payMethod }, user);
         return `Als Ausgabe ${p.number} gebucht: ${p.supplier}, ${(p.grossCents / 100).toLocaleString("de-DE", { style: "currency", currency: "EUR" })} brutto · [prüfen](/buchhaltung/ausgaben/${p.id})`;
       } catch (e) {
         return e instanceof Error ? e.message : "Buchen fehlgeschlagen.";

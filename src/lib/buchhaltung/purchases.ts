@@ -119,7 +119,25 @@ export async function purchaseFromReceipt(fileId: string) {
   const r = d.success ? d.data : null;
   const rate = r?.ustSatz === 7 ? 7 : r?.ustSatz === 0 ? 0 : 19;
   const cat = (r?.kategorie ?? "").toLowerCase();
-  const category: PurchaseCategory = /tank|diesel|benzin/.test(cat) ? "TANKEN" : /bewirt|essen|restaurant/.test(cat) ? "BEWIRTUNG" : /werkzeug/.test(cat) ? "WERKZEUG" : /büro|buero|porto|telefon/.test(cat) ? "BUERO" : /fahrzeug|kfz|werkstatt/.test(cat) ? "FAHRZEUG" : "MATERIAL";
+  const category: PurchaseCategory = /tank|diesel|benzin|kraftstoff/.test(cat)
+    ? "TANKEN"
+    : /bewirt|essen|restaurant/.test(cat)
+      ? "BEWIRTUNG"
+      : /werkzeug/.test(cat)
+        ? "WERKZEUG"
+        : /büro|buero|porto|telefon|telekom|mobilfunk|internet|software|hosting|\bit\b|edv|computer/.test(cat)
+          ? "BUERO"
+          : /fahrzeug|kfz|werkstatt/.test(cat)
+            ? "FAHRZEUG"
+            : /versicher|beitrag|berufsgenossen/.test(cat)
+              ? "VERSICHERUNG"
+              : /fremdleist|verzink|pulver|nachunternehm|subunternehm/.test(cat)
+                ? "FREMDLEISTUNG"
+                : /miete|leasing|kran|gerät/.test(cat)
+                  ? "MIETE"
+                  : /steuer|beratung|rechtsanw|gebühr|bank/.test(cat)
+                    ? "SONSTIGES"
+                    : "MATERIAL";
   const pay = (r?.zahlart ?? "").toLowerCase();
   return {
     supplier: r?.lieferant ?? "",
@@ -130,8 +148,10 @@ export async function purchaseFromReceipt(fileId: string) {
     taxEuro: r?.ust ?? null,
     taxRate: rate as 19 | 7 | 0,
     projectId: f.projectId,
-    paid: /bar|karte|ec|kredit/.test(pay),
-    payMethod: /bar/.test(pay) ? "BAR" : /karte|ec|kredit/.test(pay) ? "KARTE" : null,
+    dueDate: r?.faellig ?? null,
+    // Lastschrift bleibt offen, bis der Bankumsatz zugeordnet ist
+    paid: /\bbar|karte|\bec\b|kredit/.test(pay) && !/lastschrift|sepa/.test(pay),
+    payMethod: (/lastschrift|sepa|abbuch/.test(pay) ? "LASTSCHRIFT" : /\bbar/.test(pay) ? "BAR" : /karte|\bec\b|kredit/.test(pay) ? "KARTE" : /überweis|ueberweis/.test(pay) ? "UEBERWEISUNG" : null) as keyof typeof PAY_METHODS | null,
   };
 }
 
