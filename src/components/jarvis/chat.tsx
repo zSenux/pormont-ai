@@ -44,6 +44,19 @@ function source(): "web" | "windows" | "handy" {
   return "web";
 }
 
+/** Nach einem Verbindungsabbruch warten, bis der Durchgang auf dem Server fertig ist (höchstens 15 Min.) */
+async function waitForRun(chatId: string) {
+  const end = Date.now() + 15 * 60_000;
+  while (Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 3000));
+    if (document.visibilityState === "hidden") continue;
+    try {
+      const res = await fetch(`/api/jarvis?chat=${encodeURIComponent(chatId)}`, { cache: "no-store" });
+      if (res.ok && !(await res.json()).running) return;
+    } catch {}
+  }
+}
+
 export function JarvisChat(props: {
   userName: string;
   chatId: string | null;
@@ -66,6 +79,7 @@ export function JarvisChat(props: {
   const [talkMode, setTalkMode] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [canListen, setCanListen] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const talkRef = useRef(false);
@@ -97,6 +111,8 @@ export function JarvisChat(props: {
       setMessages((m) => [...m, { role: "user", text: t, tools: [] }, { role: "assistant", text: "", tools: [] }]);
       const speakIt = viaVoice || voiceOut;
       let reply = "";
+      let currentChat = chatId;
+      let serverError = false;
       try {
         const res = await fetch("/api/jarvis", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId, text: t, voice: viaVoice, source: source() }) });
         if (res.status === 401) {
@@ -118,6 +134,7 @@ export function JarvisChat(props: {
             const event = /^event: (.*)$/m.exec(chunk)?.[1];
             const data = JSON.parse(/^data: (.*)$/m.exec(chunk)?.[1] ?? "null");
             if (event === "chat") {
+              currentChat = data.id;
               setChatId(data.id);
               const url = new URL(window.location.href);
               url.searchParams.set("chat", data.id);
@@ -144,11 +161,21 @@ export function JarvisChat(props: {
             } else if (event === "action") {
               setActions((a) => (a.some((x) => x.id === data.id) ? a : [...a, data]));
             } else if (event === "error") {
+              serverError = true;
               throw new Error(data.message);
             }
           }
         }
       } catch (e) {
+        // Verbindung abgerissen (Safari „Load failed“, Handy gesperrt, Funkloch): Jarvis arbeitet auf dem Server
+        // weiter und speichert alles. Warten, bis er fertig ist, dann den Verlauf neu laden.
+        if (!serverError && currentChat && (e instanceof TypeError || /load failed|network|fetch/i.test(String((e as Error)?.message)))) {
+          setError(null);
+          setReconnecting(true);
+          await waitForRun(currentChat);
+          window.location.href = `/jarvis?chat=${encodeURIComponent(currentChat)}`;
+          return;
+        }
         setError(e instanceof Error ? e.message : "Fehler.");
         setMessages((m) => (m[m.length - 1]?.role === "assistant" && !m[m.length - 1].text ? m.slice(0, -1) : m));
       } finally {
@@ -327,6 +354,11 @@ export function JarvisChat(props: {
               <ActionCard key={a.id} action={a} onDone={(n) => setActions((list) => list.map((x) => (x.id === n.id ? n : x)))} />
             ))}
           </div>
+        )}
+        {reconnecting && (
+          <p className="flex items-center gap-2 rounded-xl border border-line bg-brand-soft px-4 py-2 text-sm text-steel">
+            <Loader2 className="size-4 animate-spin" /> Verbindung kurz weg – Jarvis arbeitet weiter. Die Antwort erscheint gleich hier.
+          </p>
         )}
         {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-bad">{error}</p>}
         <div ref={bottom} className="h-4 scroll-mb-28" />

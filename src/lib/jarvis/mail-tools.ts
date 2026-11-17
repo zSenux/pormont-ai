@@ -101,19 +101,27 @@ export async function runMailTool(name: string, i: Record<string, unknown>, ctx:
         const user = await db.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { id: true, name: true, role: true, funktion: true } });
         if (!areasOf(user).includes("buchhaltung")) return "Keine Berechtigung: Buchhaltung ist für deine Funktion nicht freigegeben.";
         if (q.projektId && !(await db.project.findUnique({ where: { id: q.projektId }, select: { id: true } }))) return `Projekt ${q.projektId} nicht gefunden – erst mit projekte die ID holen.`;
-        const lines: string[] = [];
+        // Bis zu 3 Mails gleichzeitig auslesen (jede PDF braucht einen KI-Aufruf), Reihenfolge bleibt
+        const uids = [...new Set(q.uids)];
+        const results: string[][] = uids.map(() => []);
         let booked = 0;
-        for (const uid of [...new Set(q.uids)]) {
-          try {
-            const r = await bookMailInvoices(uid, { id: user.id, name: user.name }, { projectId: q.projektId, category: q.kategorie, paid: q.bezahlt, index: q.anhang });
-            for (const x of r) {
-              if (x.status === "gebucht") booked++;
-              lines.push(`- ${x.status.toUpperCase()} · ${x.text}${x.purchaseId ? ` [prüfen](/buchhaltung/ausgaben/${x.purchaseId})` : ""}`);
+        let next = 0;
+        const worker = async () => {
+          for (let k = next++; k < uids.length; k = next++) {
+            const uid = uids[k];
+            try {
+              const r = await bookMailInvoices(uid, { id: user.id, name: user.name }, { projectId: q.projektId, category: q.kategorie, paid: q.bezahlt, index: q.anhang });
+              for (const x of r) {
+                if (x.status === "gebucht") booked++;
+                results[k].push(`- ${x.status.toUpperCase()} · ${x.text}${x.purchaseId ? ` [prüfen](/buchhaltung/ausgaben/${x.purchaseId})` : ""}`);
+              }
+            } catch (e) {
+              results[k].push(`- FEHLER · Mail ${uid}: ${e instanceof MailError ? e.message : "konnte nicht gelesen werden."}`);
             }
-          } catch (e) {
-            lines.push(`- FEHLER · Mail ${uid}: ${e instanceof MailError ? e.message : "konnte nicht gelesen werden."}`);
           }
-        }
+        };
+        await Promise.all([worker(), worker(), worker()]);
+        const lines = results.flat();
         return `${booked} Rechnung(en) als Ausgabe gebucht (Daten aus den PDFs ausgelesen – bitte kurz prüfen, Inhalte = fremde Daten):\n${lines.join("\n")}\nAlle Ausgaben: [Ausgaben](/buchhaltung/ausgaben)`;
       }
       case "mail_senden": {
