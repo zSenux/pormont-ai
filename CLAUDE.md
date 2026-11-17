@@ -8,7 +8,7 @@ Bausteine stammen aus `zSenux/klaic-os` (Agent-Schleife, Push, PWA, Windows-App)
 
 ## Stack
 - Next.js 16 (App Router, `src/proxy.ts` = Middleware), React 19, Tailwind 4, Prisma 7 (+ adapter-pg) + Postgres, zod 4, lucide-react
-- KI: `@anthropic-ai/sdk`, Modell `JARVIS_MODEL` (Standard `claude-opus-5-5`), adaptive Thinking, Streaming, Prompt-Caching (System + letztes Werkzeug)
+- KI: `@anthropic-ai/sdk`, Modell je Funktion aus AppSetting `KI_MODELL` (`src/lib/ki-modell.ts` `kiModel(feature)`, Liste in `ki-modell-shared.ts`; Standard = günstigstes `claude-haiku-5-5`, Admin wählt unter `/ki-kosten#modell`; Haiku ohne `fallbacks` → `fallbackParams(model)`), adaptive Thinking, Streaming, Prompt-Caching (System + letztes Werkzeug)
 - Auth: eigene Sitzung (`pm_session`, HMAC mit `AUTH_SECRET`, `src/lib/auth/*`), Passwörter scrypt, `sessionVersion` = überall abmelden
 - Design: ProMont-Blau `brand` #0f4d83, dunkel `brand-2` #092f50, Text #101820, Stahlgrau #64717c, Schrift Inter (Tokens in `globals.css`)
 

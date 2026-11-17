@@ -4,12 +4,12 @@ import { db } from "@/lib/db";
 import { nowLine } from "@/lib/berlin";
 import { companyProfile } from "@/lib/company";
 import { trackClaude } from "@/lib/costs";
+import { fallbackParams, kiModel } from "@/lib/ki-modell";
 import { memoryBlock, runTool, toolsFor, type ToolCtx } from "./tools";
 
 // Jarvis – der KI-Assistent von ProMont. Aufbau übernommen aus Klaic OS (Ana): Claude + eigene Werkzeuge,
 // Verlauf nur anhängen (nie umschreiben), Festschreiben/Senden/Mahnen/Storno nur über Freigabe-Karten.
 
-export const JARVIS_MODEL = process.env.JARVIS_MODEL || "claude-opus-5-5";
 const MAX_ROUNDS = 8;
 /** Ab so vielen Nachrichten beginnt eine neue Unterhaltung (Kosten/Übersicht) */
 export const MAX_MESSAGES = 120;
@@ -89,6 +89,8 @@ export async function runJarvis(opts: { chatId: string; userId: string; userName
   // Rollen & Rechte: nur Werkzeuge der freigegebenen Bereiche
   const allowed = await toolsFor(opts.userId);
   const tools = allowed.map((t, i) => (i === allowed.length - 1 ? { ...t, cache_control: { type: "ephemeral" as const } } : t));
+  // Modell aus den Einstellungen (Standard: günstigstes, Haiku 5.5)
+  const model = await kiModel("chat");
   let reply = "";
 
   const save = () => db.chat.update({ where: { id: opts.chatId }, data: { messages: messages as unknown as object[] } });
@@ -96,10 +98,9 @@ export async function runJarvis(opts: { chatId: string; userId: string; userName
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const stream = client.beta.messages.stream(
       {
-        model: JARVIS_MODEL,
+        model,
         max_tokens: opts.voice ? 2048 : 16000,
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
+        ...fallbackParams(model),
         system: [{ type: "text", text: jarvisSystem(opts.userName, opts.voice, memory), cache_control: { type: "ephemeral" } }],
         tools,
         thinking: { type: "adaptive" },

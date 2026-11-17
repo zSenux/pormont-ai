@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { trackClaude } from "@/lib/costs";
+import { kiModel } from "@/lib/ki-modell";
 import { extractText } from "@/lib/files";
 
 // Lieferanten-Kataloge mit Preisliste: Import aus Excel (.xlsx), CSV, DATANORM 4 (Standard im
@@ -12,7 +13,6 @@ import { extractText } from "@/lib/files";
 export const MAX_CATALOG_BYTES = 40 * 1024 * 1024;
 const PDF_MAX_CHUNKS = 15;
 const PDF_CHUNK = 12_000;
-const CATALOG_MODEL = process.env.OCR_MODEL || "claude-sonnet-5-5";
 
 export class CatalogError extends Error {}
 
@@ -217,11 +217,12 @@ async function parsePdf(data: Buffer): Promise<{ rows: CatalogRow[]; skipped: nu
   }
   if (cur.trim()) chunks.push(cur);
   const client = new Anthropic();
+  const model = await kiModel("katalog");
   const rows: CatalogRow[] = [];
   let skipped = 0;
   for (const chunk of chunks.slice(0, PDF_MAX_CHUNKS)) {
     const res = await client.messages.create({
-      model: CATALOG_MODEL,
+      model,
       max_tokens: 16000,
       tools: [PDF_TOOL],
       tool_choice: { type: "auto" },

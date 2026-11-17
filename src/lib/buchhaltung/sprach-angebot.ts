@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { trackClaude } from "@/lib/costs";
+import { kiModel } from "@/lib/ki-modell";
 import { todayYmd, addDaysYmd } from "@/lib/berlin";
 import { createCustomer, searchCustomers } from "./customers";
 import { createDraft, type Actor } from "./docs";
@@ -13,7 +14,6 @@ import { computeTotals, type Line } from "./money";
 // → Angebots-ENTWURF in der eigenen Buchhaltung. Preise nur aus dem Diktat oder dem Artikelstamm, nie geschätzt;
 // fehlende Preise bleiben 0 € und werden als Rückfrage gemeldet. Festschreiben/Senden wie immer nur auf Wunsch.
 
-const MODEL = process.env.SPRACH_ANGEBOT_MODEL || process.env.JARVIS_MODEL || "claude-opus-5-5";
 
 export class VoiceQuoteError extends Error {}
 
@@ -83,7 +83,7 @@ export async function parseDictation(text: string): Promise<VoiceQuoteParse> {
   const catalog = articles.map((a) => `${a.id} | ${a.number ?? ""} | ${a.name} | ${a.unit} | ${a.priceNet.toFixed(2)} €`).join("\n");
   const client = new Anthropic();
   const res = await client.messages.create({
-    model: MODEL,
+    model: await kiModel("angebot"),
     max_tokens: 8000,
     tools: [TOOL],
     tool_choice: { type: "auto" },
