@@ -292,6 +292,17 @@ export async function deleteDraft(id: string) {
   if (!r.count) throw new BookError("Nur Entwürfe können gelöscht werden.");
 }
 
+/** PDF eines festgeschriebenen Belegs: das archivierte Original. Lexware-Belege, deren Original-PDF nicht übernommen
+ *  werden konnte, werden aus den übernommenen Daten (Positionen, eingefrorene Anschrift) neu erzeugt – mit Briefpapier,
+ *  ohne E-Rechnung und ohne etwas zu speichern (das Original liegt weiter in Lexware). */
+export async function docPdfBytes(id: string): Promise<{ bytes: Uint8Array; regenerated: boolean } | null> {
+  const d = await db.salesDoc.findUnique({ where: { id }, include: { customer: true, project: { select: { name: true } } } });
+  if (!d || d.status === "ENTWURF" || !d.number) return null;
+  if (d.pdf) return { bytes: new Uint8Array(d.pdf), regenerated: false };
+  if (!d.imported) return null;
+  return { bytes: await renderDocPdf(await docData(d), null), regenerated: true };
+}
+
 // ---------- Festschreiben ----------
 
 /** Nächster Wert eines Nummernkreises (atomar, ohne Lücken wenn in derselben Transaktion wie das Speichern). Auch für andere Module, z. B. Key „AUFTRAG-2026“. */

@@ -1,14 +1,14 @@
 import { canArea } from "@/lib/rights-shared";
 import { currentUser } from "@/lib/auth/user";
 import { db } from "@/lib/db";
-import { previewDraftPdf } from "@/lib/buchhaltung/docs";
+import { docPdfBytes, previewDraftPdf } from "@/lib/buchhaltung/docs";
 import { docLabel } from "@/lib/buchhaltung/types";
 
 export const dynamic = "force-dynamic";
 
 const fileName = (s: string) => s.replace(/[^\w.\-]/g, "_");
 
-/** PDF eines Belegs: festgeschrieben = archiviertes Original (unverändert), Entwurf = Vorschau mit Wasserzeichen */
+/** PDF eines Belegs: festgeschrieben = archiviertes Original (unverändert), Lexware ohne Original = neu erzeugt, Entwurf = Vorschau mit Wasserzeichen */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const me = await currentUser();
   if (!me) return new Response("Nicht angemeldet.", { status: 401 });
@@ -19,8 +19,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!d) return new Response("Nicht gefunden.", { status: 404 });
   let body: Uint8Array;
   if (d.status !== "ENTWURF") {
-    if (!d.pdf) return new Response("Zu diesem Beleg gibt es kein PDF (Original aus Lexware nicht übernommen).", { status: 404 });
-    body = new Uint8Array(d.pdf);
+    // Lexware-Beleg ohne Original-PDF → aus den übernommenen Daten neu erzeugt
+    const r = await docPdfBytes(d.id);
+    if (!r) return new Response("Zu diesem Beleg gibt es kein PDF.", { status: 404 });
+    body = r.bytes;
   } else body = await previewDraftPdf(d.id);
   const name = fileName(`${docLabel(d)}_${d.number ?? "Entwurf"}.pdf`);
   const download = new URL(req.url).searchParams.has("download");

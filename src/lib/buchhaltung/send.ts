@@ -6,7 +6,7 @@ import { addDaysYmd, todayYmd } from "@/lib/berlin";
 import { sendMail, MailError } from "@/lib/mail/client";
 import { mailConfigured } from "@/lib/mail/config";
 import { bookConfig } from "./config";
-import { BookError, docData, readParty, ymdOf, isOverdue, type Actor, openCentsOf } from "./docs";
+import { BookError, docData, docPdfBytes, readParty, ymdOf, isOverdue, type Actor, openCentsOf } from "./docs";
 import { fmtEuroCents } from "./money";
 import { buildCii, xrechnungGaps } from "./xrechnung";
 import { DUNNING_LABEL, renderDunningPdf } from "./pdf";
@@ -55,8 +55,10 @@ export async function sendDoc(docId: string, input: SendInput, user: Actor) {
   const m = sendInput.parse(input);
   const d = await db.salesDoc.findUnique({ where: { id: docId } });
   if (!d) throw new BookError("Beleg nicht gefunden.");
-  if (d.status === "ENTWURF" || !d.number || !d.pdf) throw new BookError("Bitte den Beleg zuerst festschreiben – Entwürfe werden nicht verschickt.");
-  const attachments = [{ filename: `${docLabel(d)}_${d.number}.pdf`, content: Buffer.from(d.pdf), contentType: "application/pdf" }];
+  if (d.status === "ENTWURF" || !d.number) throw new BookError("Bitte den Beleg zuerst festschreiben – Entwürfe werden nicht verschickt.");
+  const pdf = await docPdfBytes(d.id);
+  if (!pdf) throw new BookError("Zu diesem Beleg gibt es kein PDF.");
+  const attachments = [{ filename: `${docLabel(d)}_${d.number}.pdf`, content: Buffer.from(pdf.bytes), contentType: "application/pdf" }];
   if (m.xml && d.kind !== "ANGEBOT" && !d.imported) {
     const data = await docData(d);
     const gaps = xrechnungGaps(data);
@@ -125,7 +127,8 @@ export async function sendDunning(dunningId: string, input: Omit<SendInput, "xml
   const dn = await db.dunning.findUnique({ where: { id: dunningId }, include: { doc: { select: { id: true, number: true, pdf: true } } } });
   if (!dn) throw new BookError("Mahnung nicht gefunden.");
   const attachments = [{ filename: `${DUNNING_LABEL[dn.level].replace(/[ .]/g, "")}_${dn.doc.number}.pdf`, content: Buffer.from(dn.pdf), contentType: "application/pdf" }];
-  if (dn.doc.pdf) attachments.push({ filename: `Rechnung_${dn.doc.number}.pdf`, content: Buffer.from(dn.doc.pdf), contentType: "application/pdf" });
+  const docPdf = await docPdfBytes(dn.doc.id);
+  if (docPdf) attachments.push({ filename: `Rechnung_${dn.doc.number}.pdf`, content: Buffer.from(docPdf.bytes), contentType: "application/pdf" });
   try {
     await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, attachments });
   } catch (e) {
