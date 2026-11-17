@@ -102,7 +102,7 @@ const connectionInput = z.object({
   ANTHROPIC_API_KEY: optional,
   LEXWARE_API_KEY: optional,
   GOOGLE_PLACES_API_KEY: optional,
-  MAIL_PROVIDER: z.enum(["strato", "gmx", "ionos", "custom", "microsoft"]).optional(),
+  MAIL_PROVIDER: z.enum(["strato", "gmx", "ionos", "office365", "custom", "microsoft"]).optional(),
   MS_CLIENT_ID: z.union([z.literal(""), z.string().trim().regex(/^[0-9a-f-]{36}$/i, "Anwendungs-ID (Client-ID) hat das Format 1234abcd-…-… (36 Zeichen).")]).optional(),
   MS_CLIENT_SECRET: optional,
   MS_TENANT: z.union([z.literal(""), z.string().trim().regex(/^([0-9a-f-]{36}|[a-z0-9.-]+\.[a-z]{2,}|common|organizations)$/i, "Verzeichnis-ID: Mandanten-ID (36 Zeichen) oder Domain wie promont.gmbh.")]).optional(),

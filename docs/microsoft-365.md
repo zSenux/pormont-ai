@@ -4,7 +4,16 @@ Jarvis liest und sendet Mails dann direkt über das Microsoft-365-Postfach (Micr
 Outlook auf dem Büro-PC läuft ganz normal weiter – beide sehen dieselben Mails, gesendete Mails von Jarvis liegen in „Gesendete Elemente“, Entwürfe in „Entwürfe“.
 Ein Passwort wird in Jarvis nicht gespeichert: man meldet sich einmal bei Microsoft an, Jarvis bekommt dafür ein Token (verschlüsselt gespeichert).
 
-Dauer: ca. 10 Minuten. Nötig: ein Konto mit Administratorrechten im Microsoft 365 der ProMont GmbH.
+## Erst probieren: nur E-Mail + Passwort
+
+Wer nur die Zugangsdaten hat: unter **Einstellungen → Verbindungen → E-Mail-Postfach** den Anbieter **„Microsoft 365 – nur Passwort“** wählen, E-Mail-Adresse und Passwort eintragen, **Speichern**.
+Jarvis prüft danach Lesen (outlook.office365.com) und Senden (smtp.office365.com) und zeigt oben das Ergebnis.
+Steht dort „abgelehnt“ oder „gesperrt“, hat Microsoft die Anmeldung mit Passwort für das Konto abgeschaltet (bei den meisten Firmen-Konten Standard) – dann geht es nur mit der Anmeldung über Microsoft (unten).
+Tipp: Die App-Registrierung braucht oft gar keinen Administrator – mit genau diesen Zugangsdaten bei entra.microsoft.com anmelden und probieren, ob „Neue Registrierung“ geht.
+
+## Empfohlen: Mit Microsoft anmelden
+
+Dauer: ca. 10 Minuten. Nötig: ein Konto im Microsoft 365 der ProMont GmbH, das Apps registrieren darf (oft darf das jedes Konto, sonst der Administrator).
 
 ## 1. App bei Microsoft registrieren
 
@@ -33,7 +42,7 @@ Dauer: ca. 10 Minuten. Nötig: ein Konto mit Administratorrechten im Microsoft 3
 ## 4. In Jarvis eintragen
 
 1. Jarvis → **Einstellungen → Verbindungen → Schlüssel und Postfach eintragen**.
-2. Unter **E-Mail-Postfach** den Anbieter **Microsoft 365 / Outlook** wählen.
+2. Unter **E-Mail-Postfach** den Anbieter **Microsoft 365 – Mit Microsoft anmelden** wählen.
 3. **Anwendungs-ID**, **Verzeichnis-ID** und den **geheimen Clientschlüssel (Wert)** eintragen → **Speichern**.
 4. **Mit Microsoft anmelden** klicken, das Konto wählen, dessen Postfach Jarvis nutzen soll (z. B. `info@promont.gmbh`), und zustimmen.
 5. Oben steht dann „E-Mail-Postfach: info@promont.gmbh (Microsoft 365) · n ungelesen“. Fertig.

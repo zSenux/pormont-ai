@@ -10,10 +10,15 @@ export const PROVIDERS = {
   strato: { label: "Strato", imap: { host: "imap.strato.de", port: 993 }, smtp: { host: "smtp.strato.de", port: 465 } },
   gmx: { label: "GMX", imap: { host: "imap.gmx.net", port: 993 }, smtp: { host: "mail.gmx.net", port: 465 } },
   ionos: { label: "IONOS", imap: { host: "imap.ionos.de", port: 993 }, smtp: { host: "smtp.ionos.de", port: 465 } },
+  // Microsoft 365 nur mit E-Mail + Passwort (ohne App-Registrierung). Klappt nur, wenn Microsoft die
+  // Passwort-Anmeldung (Basic Auth) für IMAP/SMTP beim Mandanten noch zulässt – sonst Anbieter „microsoft“ (OAuth).
+  office365: { label: "Microsoft 365 (Passwort)", imap: { host: "outlook.office365.com", port: 993 }, smtp: { host: "smtp.office365.com", port: 587 } },
 } as const;
 
 export type ImapConfig = {
   kind: "imap";
+  /** Vorlage (strato, gmx, ionos, office365 …) */
+  preset: string;
   provider: string;
   user: string;
   password: string;
@@ -58,6 +63,7 @@ export function mailConfig(): MailConfig | null {
   const smtpPort = Number(process.env.MAIL_SMTP_PORT) || preset.smtp.port;
   return {
     kind: "imap",
+    preset: PROVIDERS[key] ? key : "custom",
     provider: PROVIDERS[key]?.label ?? (process.env.MAIL_IMAP_HOST ? "eigener Server" : preset.label),
     user,
     password,

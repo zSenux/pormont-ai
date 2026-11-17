@@ -144,7 +144,8 @@ export function ConnectionsForm(p: ConnectionProps) {
               <option value="strato">Strato</option>
               <option value="gmx">GMX</option>
               <option value="ionos">IONOS</option>
-              <option value="microsoft">Microsoft 365 / Outlook</option>
+              <option value="office365">Microsoft 365 – nur Passwort</option>
+              <option value="microsoft">Microsoft 365 – Mit Microsoft anmelden</option>
               <option value="custom">Anderer (eigener Server)</option>
             </select>
           </div>
@@ -156,7 +157,7 @@ export function ConnectionsForm(p: ConnectionProps) {
           )}
           {provider !== "microsoft" && (
             <div className="sm:col-span-2">
-              <SecretField name="MAIL_PASSWORD" label="Passwort des Postfachs" state={p.mailPassword} placeholder="Passwort" help={provider === "gmx" ? "Bei GMX vorher in den GMX-Einstellungen „POP3/IMAP Abruf“ erlauben." : "Das gleiche Passwort wie im Mail-Programm."} />
+              <SecretField name="MAIL_PASSWORD" label="Passwort des Postfachs" state={p.mailPassword} placeholder="Passwort" help={provider === "gmx" ? "Bei GMX vorher in den GMX-Einstellungen „POP3/IMAP Abruf“ erlauben." : provider === "office365" ? "Das Passwort, mit dem man sich bei Outlook/Microsoft 365 anmeldet. Jarvis prüft nach dem Speichern Lesen und Senden." : "Das gleiche Passwort wie im Mail-Programm."} />
             </div>
           )}
           <div className="sm:col-span-2">
@@ -172,6 +173,12 @@ export function ConnectionsForm(p: ConnectionProps) {
             </>
           )}
         </div>
+        {provider === "office365" && (
+          <p className="rounded-lg border border-line bg-mist/50 p-3 text-xs text-steel">
+            Jarvis verbindet sich wie ein Mail-Programm mit <code>outlook.office365.com</code> (lesen) und <code>smtp.office365.com</code> (senden). Microsoft sperrt diese Anmeldung mit Passwort bei vielen Firmen-Konten.
+            Steht oben nach dem Speichern „abgelehnt“ oder „gesperrt“, bitte „Mit Microsoft anmelden“ wählen.
+          </p>
+        )}
         {provider === "microsoft" && <MicrosoftFields p={p} saved={p.mailProvider.value === "microsoft"} />}
         {p.mailUser.set && !mailLocked && (
           <ClearButton value="MAIL">{provider === "microsoft" && p.msAccount ? "Von Microsoft abmelden" : "Postfach trennen"}</ClearButton>
