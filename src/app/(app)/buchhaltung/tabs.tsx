@@ -24,6 +24,7 @@ export function BookTabs({ admin }: { admin: boolean }) {
     { href: "/buchhaltung/kunden", label: "Kunden", on: path.startsWith("/buchhaltung/kunden") },
     { href: "/buchhaltung/artikel", label: "Artikel", on: path.startsWith("/buchhaltung/artikel") },
     { href: "/auswertung", label: "Jahresauswertung", on: false },
+    ...(admin ? [{ href: "/buchhaltung/datev", label: "DATEV", on: path.startsWith("/buchhaltung/datev") }] : []),
     ...(admin ? [{ href: "/buchhaltung/einstellungen", label: "Einstellungen", on: path.startsWith("/buchhaltung/einstellungen") }] : []),
   ];
   return (

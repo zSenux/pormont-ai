@@ -33,7 +33,7 @@ export function ConfigForm({ c }: { c: BookConfig }) {
         <label className="text-xs text-steel">Nächste Stufe Tage nach Mahnfrist<input name="nextLevelAfterDays" inputMode="numeric" defaultValue={c.nextLevelAfterDays} className="input mt-0.5" /></label>
         <label className="text-xs text-steel">Nicht mahnen unter €<input name="dunningMinEuro" inputMode="decimal" defaultValue={n(c.dunningMinEuro)} className="input mt-0.5" /></label>
       </div>
-      <h3 className="pt-2 text-sm font-semibold">DATEV (Angaben vom Steuerberater)</h3>
+      <h3 id="datev" className="scroll-mt-24 pt-2 text-sm font-semibold">DATEV (Angaben vom Steuerberater)</h3>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <label className="text-xs text-steel">Beraternummer<input name="datevBerater" inputMode="numeric" defaultValue={c.datevBerater} className="input mt-0.5" /></label>
         <label className="text-xs text-steel">Mandantennummer<input name="datevMandant" inputMode="numeric" defaultValue={c.datevMandant} className="input mt-0.5" /></label>
