@@ -4,7 +4,7 @@ import { areasOf, AREA_LABEL, FUNKTIONEN, FUNKTION_LABEL } from "@/lib/rights-sh
 import { navFor, type NavGroup } from "@/lib/nav-shared";
 import { setUserFunktion } from "@/app/actions";
 import { headers } from "next/headers";
-import { Database, LogOut, MonitorSmartphone, PhoneCall } from "lucide-react";
+import { Coins, Database, LogOut, MonitorSmartphone, PhoneCall } from "lucide-react";
 import { mailStatus } from "@/lib/mail/client";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
@@ -138,6 +138,17 @@ export default async function EinstellungenPage({ searchParams }: { searchParams
             <p className="text-sm text-steel">Export (Excel, CSV, JSON) aus dem alten ERP/Rechnungsprogramm hochladen: Kunden und Artikel nach Lexware, Projekte nach Jarvis, alte Rechnungen als Archiv.</p>
           </div>
           <Link href="/datenuebernahme" className="btn-secondary">Öffnen</Link>
+        </section>
+      )}
+
+      {me.role === "ADMIN" && (
+        <section className="card flex flex-wrap items-center gap-3 p-5">
+          <Coins className="size-5 shrink-0 text-brand" />
+          <div className="min-w-0 flex-1">
+            <h2 className="font-semibold">KI-Kosten</h2>
+            <p className="text-sm text-steel">Verbrauch von Jarvis bei Anthropic (Claude) je Tag, Funktion und Mitarbeiter, mit Monatsbudget.</p>
+          </div>
+          <Link href="/ki-kosten" className="btn-secondary">Öffnen</Link>
         </section>
       )}
 

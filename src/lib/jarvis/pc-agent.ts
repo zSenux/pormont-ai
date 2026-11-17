@@ -201,7 +201,7 @@ export async function pcStep(jobId: string, results: ClientResult[] | undefined,
         { timeout: 180_000 },
       )
       .finalMessage();
-    void trackClaude("Jarvis am PC", res.model, res.usage);
+    void trackClaude("Jarvis am PC", res.model, res.usage, job.userId);
     messages.push({ role: "assistant", content: res.content });
     const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
     if (text) await addLine(jobId, text.slice(0, 280));

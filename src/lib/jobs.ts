@@ -15,6 +15,7 @@ import { expiringNuDocs } from "@/lib/nachunternehmer";
 import { expiringEmployeeDocs } from "@/lib/personal";
 import { dunningProposals } from "@/lib/buchhaltung/mahnwesen";
 import { bookConfig } from "@/lib/buchhaltung/config";
+import { monthCostEur } from "@/lib/ki-kosten";
 
 async function pushAdmins(msg: { title: string; body: string; url: string; tag: string }) {
   const admins = await db.user.findMany({ where: { role: "ADMIN" }, select: { id: true } });
@@ -49,6 +50,17 @@ async function dunningReminder() {
   if (!due.length || !(await once(`mahnvorschlag:${p.ymd}`))) return;
   const sum = due.reduce((t, x) => t + x.open, 0);
   await pushAdmins({ title: `💶 ${due.length} ${due.length === 1 ? "Mahnung wartet" : "Mahnungen warten"} auf Freigabe`, body: `Zusammen ${fmtEuroCents(sum)} – u. a. ${due.slice(0, 2).map((x) => customerName(x.doc)).join(", ")}. Gesendet wird erst nach deiner Freigabe.`, url: "/buchhaltung/mahnwesen", tag: "mahnwesen" });
+}
+
+/** KI-Budget: je Monat einmal bei 80 % und einmal bei 100 % des Budgets Push an die Admins */
+async function kiBudget() {
+  const { eur, cfg } = await monthCostEur();
+  if (!cfg.budgetEur) return;
+  const month = berlinParts().ymd.slice(0, 7);
+  const stage = eur >= cfg.budgetEur ? 100 : eur >= cfg.budgetEur * 0.8 ? 80 : 0;
+  if (!stage || !(await once(`ki-budget:${month}:${stage}`))) return;
+  const fmt = (v: number) => v.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+  await pushAdmins({ title: stage === 100 ? "🤖 KI-Budget erreicht" : "🤖 KI-Budget zu 80 % verbraucht", body: `Diesen Monat ca. ${fmt(eur)} von ${fmt(cfg.budgetEur)}. Jarvis läuft weiter – Details unter KI-Kosten.`, url: "/ki-kosten", tag: "ki-budget" });
 }
 
 // Hintergrund-Jobs im App-Prozess (wie in Klaic OS): Erinnerungen und Warnungen aus der Buchhaltung per Push.
@@ -165,5 +177,7 @@ export function startJobs() {
   setTimeout(safe("ausschreibungen", () => dailyTenders(once)), 60_000);
   setInterval(safe("gewaehrleistung", () => warrantyReminders(once)), 6 * 3600_000);
   setTimeout(safe("gewaehrleistung", () => warrantyReminders(once)), 90_000);
+  setInterval(safe("ki-budget", kiBudget), 30 * 60_000);
+  setTimeout(safe("ki-budget", kiBudget), 70_000);
   console.log("[jobs] gestartet");
 }
