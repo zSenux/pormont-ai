@@ -754,7 +754,7 @@ function linesFromPositions(raw: unknown, reverseCharge: boolean) {
  * Fehlt der Kunde in der Buchhaltung, wird er mit der Anschrift und Kd-Nr. aus Lexware angelegt.
  */
 export async function transferInvoices(importId: string, userName: string) {
-  const stats = { created: 0, linked: 0, open: 0, credits: 0, customers: 0 };
+  const stats = { created: 0, linked: 0, open: 0, credits: 0, customers: 0, synced: 0 };
   try {
     const all = await db.erpRecord.findMany({ where: { importId, kind: "rechnung", lexId: null }, orderBy: { date: "asc" } });
     const isStorno = (r: (typeof all)[number]) => /storno|gutschrift/i.test(String((r.raw as Record<string, unknown>).Vorgangsart ?? "")) || /^storno$/i.test(r.status ?? "");
@@ -807,12 +807,12 @@ export async function transferInvoices(importId: string, userName: string) {
         }
         const rate = netCents ? Math.round((taxCents / netCents) * 100) : 0;
         const taxRate = (Math.abs(rate - 19) <= 1 ? 19 : Math.abs(rate - 7) <= 1 ? 7 : rate === 0 ? 0 : 19) as 19 | 7 | 0;
-        const st = (r.status ?? "").toLowerCase();
-        const known = !storno && /bezahlt|paid|ausgeglichen|erledigt|offen|open|teil/.test(st);
-        const partial = /teil/.test(st);
-        const status = storno ? "OFFEN" : partial || /nicht|unbezahlt|offen|open/.test(st) ? "OFFEN" : /bezahlt|paid|ausgeglichen|erledigt/.test(st) ? "BEZAHLT" : today - r.date.getTime() > ASSUME_PAID_DAYS * 86_400_000 ? "BEZAHLT" : "OFFEN";
-        const payDay = parseDate(raw.Zahldatum) ?? r.date;
-        const paidCents = storno ? 0 : status === "BEZAHLT" ? grossCents : partial ? Math.min(grossCents, Math.round((parseAmount(raw.Zahlbetrag) ?? 0) * 100)) : 0;
+        const pay = payState(r.status, raw, grossCents, r.date, today);
+        const known = !storno && pay.known;
+        const partial = pay.partial;
+        const status = storno ? "OFFEN" : pay.status;
+        const payDay = pay.payDay;
+        const paidCents = storno ? 0 : pay.paidCents;
         const service = parseDate(raw.Leistungsdatum);
         // Storno: zugehörige Rechnung („RG202462“) finden
         const srcNo = storno ? String(raw["Weitergeführt aus"] ?? "").replace(/^[A-Za-z]{1,3}[-\s]?/, "") : "";
@@ -833,7 +833,8 @@ export async function transferInvoices(importId: string, userName: string) {
               date: r.date!,
               serviceFrom: service,
               serviceTo: service,
-              dueDate: r.dueDate,
+              // Ohne Fälligkeit aus Lexware: Belegdatum + 14 Tage, damit Offenes auch als überfällig erkannt wird
+              dueDate: storno ? r.dueDate : (r.dueDate ?? new Date(r.date!.getTime() + DEFAULT_DUE_DAYS * 86_400_000)),
               reverseCharge,
               lines: lines as object[],
               netCents,
@@ -865,10 +866,61 @@ export async function transferInvoices(importId: string, userName: string) {
         await db.erpRecord.update({ where: { id: r.id }, data: { error: errText(e) } });
       }
     }
+    // Rechnungen, die schon (z. B. aus den Buchungsdaten ohne Zahlstatus) da waren, auf den Lexware-Zahlstatus bringen
+    stats.synced = (await syncLexwareStatus(userName)).updated;
   } finally {
     await release(importId);
   }
   return stats;
+}
+
+/** Zahlstatus aus dem Lexware-Export: bezahlt / nicht bezahlt / teilbezahlt. Ohne Angabe gilt eine Rechnung älter als
+ *  ASSUME_PAID_DAYS als bezahlt (nur eine Annahme – `known` ist dann false). */
+function payState(statusText: string | null, raw: Record<string, unknown>, grossCents: number, date: Date, now: number) {
+  const st = (statusText ?? "").toLowerCase();
+  const known = /bezahlt|paid|ausgeglichen|erledigt|offen|open|teil/.test(st);
+  const partial = /teil/.test(st);
+  const status: "OFFEN" | "BEZAHLT" = partial || /nicht|unbezahlt|offen|open/.test(st) ? "OFFEN" : /bezahlt|paid|ausgeglichen|erledigt/.test(st) ? "BEZAHLT" : now - date.getTime() > ASSUME_PAID_DAYS * 86_400_000 ? "BEZAHLT" : "OFFEN";
+  const paidCents = status === "BEZAHLT" ? grossCents : partial ? Math.min(grossCents, Math.round((parseAmount(raw.Zahlbetrag) ?? 0) * 100)) : 0;
+  return { known, partial, status, paidCents, payDay: parseDate(raw.Zahldatum) ?? date };
+}
+
+const DEFAULT_DUE_DAYS = 14;
+const IMPORT_NOTE = /Lexware/;
+
+/** Übernommene Lexware-Rechnungen mit dem Zahlstatus aus dem Export abgleichen (z. B. erst aus den Buchungsdaten mit
+ *  angenommenem Zahlstatus übernommen, später kam der Betriebsprüfungs-Export mit echtem Status). Ändert nur Belege aus
+ *  Lexware, an denen in Jarvis keine eigene Zahlung gebucht wurde. Fehlende Fälligkeit → Belegdatum + 14 Tage. */
+export async function syncLexwareStatus(userName: string) {
+  const res = { updated: 0, dueFixed: 0 };
+  const recs = await db.erpRecord.findMany({ where: { kind: "rechnung", lexId: { not: null }, status: { not: null } }, select: { lexId: true, status: true, raw: true, date: true } });
+  const now = Date.now();
+  for (const r of recs) {
+    const raw = r.raw as Record<string, unknown>;
+    if (/storno|gutschrift/i.test(String(raw.Vorgangsart ?? "")) || /^storno$/i.test(r.status ?? "")) continue;
+    const doc = await db.salesDoc.findUnique({ where: { id: r.lexId! }, include: { payments: true } });
+    if (!doc || !doc.imported || doc.kind !== "RECHNUNG" || (doc.status !== "OFFEN" && doc.status !== "BEZAHLT")) continue;
+    const pay = payState(r.status, raw, doc.grossCents, r.date ?? doc.date, now);
+    if (!pay.known) continue;
+    // In Jarvis selbst gebuchte Zahlungen (Bankabgleich, „Bezahlt“-Klick) haben Vorrang
+    if (doc.payments.some((p) => !IMPORT_NOTE.test(p.note ?? ""))) continue;
+    if (doc.status === pay.status && doc.paidCents === pay.paidCents) continue;
+    await db.$transaction(async (tx) => {
+      const n = await tx.salesDoc.updateMany({ where: { id: doc.id, updatedAt: doc.updatedAt }, data: { status: pay.status, paidCents: pay.paidCents } });
+      if (!n.count) return;
+      await tx.payment.deleteMany({ where: { docId: doc.id } });
+      if (pay.paidCents > 0) await tx.payment.create({ data: { docId: doc.id, day: pay.payDay, amountCents: pay.paidCents, note: `Zahlung aus Lexware übernommen${pay.partial ? " (teilbezahlt)" : ""}`, userName } });
+      await tx.salesDocEvent.create({ data: { docId: doc.id, text: `Zahlstatus mit Lexware abgeglichen: ${pay.status === "BEZAHLT" ? "bezahlt" : pay.partial ? "teilbezahlt" : "offen"} (vorher ${doc.status === "BEZAHLT" ? "bezahlt" : "offen"})`, userName } });
+      res.updated++;
+    });
+  }
+  // Offene Lexware-Rechnungen ohne Fälligkeit wurden nie als überfällig erkannt
+  const noDue = await db.salesDoc.findMany({ where: { imported: true, kind: "RECHNUNG", dueDate: null }, select: { id: true, date: true } });
+  for (const d of noDue) {
+    await db.salesDoc.update({ where: { id: d.id }, data: { dueDate: new Date(d.date.getTime() + DEFAULT_DUE_DAYS * 86_400_000) } });
+    res.dueFixed++;
+  }
+  return res;
 }
 
 const PROJECT_STATUS = (s?: string) => (!s ? "LAEUFT" : /fertig|abgeschl|erledigt|done|beendet/i.test(s) ? "FERTIG" : /plan|angebot|offen|neu/i.test(s) ? "PLANUNG" : /pause|ruht/i.test(s) ? "PAUSIERT" : "LAEUFT") as "LAEUFT" | "FERTIG" | "PLANUNG" | "PAUSIERT";

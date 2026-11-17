@@ -113,7 +113,7 @@ export function KindForm({ importId, table, kind }: { importId: string; table: s
   );
 }
 
-export function TransferButton({ importId, what, label, confirm }: { importId: string; what: "kunde" | "artikel" | "projekt" | "rechnung"; label: string; confirm: string }) {
+export function TransferButton({ importId, what, label, confirm, secondary }: { importId: string; what: "kunde" | "artikel" | "projekt" | "rechnung" | "zahlstatus"; label: string; confirm: string; secondary?: boolean }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok?: string; error?: string } | undefined>();
   const router = useRouter();
@@ -121,7 +121,7 @@ export function TransferButton({ importId, what, label, confirm }: { importId: s
     <div className="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        className="btn-primary px-3 py-1.5 text-sm"
+        className={secondary ? "btn-secondary px-3 py-1.5 text-sm" : "btn-primary px-3 py-1.5 text-sm"}
         disabled={pending}
         onClick={() => {
           if (!window.confirm(confirm)) return;
