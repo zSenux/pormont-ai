@@ -9,6 +9,7 @@ import { berlinDateTime } from "@/lib/berlin";
 import { PlacesError, placeResultSchema, searchPlaces, type PlaceResult } from "@/lib/akquise/places";
 import { AkquiseError, checkLeadWebsite, writeLetter, writePitch } from "@/lib/akquise/leads";
 import { STAGES, STAGE_LABEL } from "@/lib/akquise/stages";
+import { ListImportError, MAX_LIST_BYTES, saveLeadList, transferLeadList } from "@/lib/akquise/liste";
 
 // Server-Actions der Neukunden-Akquise
 
@@ -17,7 +18,7 @@ const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 type Result = { ok?: string; error?: string } | undefined;
 
 function errorText(e: unknown) {
-  if (e instanceof PlacesError || e instanceof AkquiseError) return e.message;
+  if (e instanceof PlacesError || e instanceof AkquiseError || e instanceof ListImportError) return e.message;
   console.error("[akquise]", e);
   return "Das hat nicht geklappt – bitte noch einmal.";
 }
@@ -72,6 +73,32 @@ export async function importLeads(form: FormData) {
     });
     n++;
   }
+  revalidatePath("/akquise");
+  redirect(`/akquise?neu=${n}`);
+}
+
+// ---------- Liste (Excel/CSV) ----------
+/** Datei hochladen → erkannte Zeilen speichern → Vorschau */
+export async function uploadLeadList(_prev: Result, form: FormData): Promise<Result> {
+  const user = await requireArea("akquise");
+  const file = form.get("file");
+  if (!(file instanceof File) || !file.size) return { error: "Bitte eine Datei auswählen." };
+  if (file.size > MAX_LIST_BYTES) return { error: "Die Datei ist größer als 8 MB." };
+  let id: string;
+  try {
+    id = (await saveLeadList({ fileName: file.name, data: Buffer.from(await file.arrayBuffer()), userId: user.id })).id;
+  } catch (e) {
+    return { error: errorText(e) };
+  }
+  redirect(`/akquise/liste?id=${id}`);
+}
+
+/** Ausgewählte Zeilen übernehmen – Daten kommen aus dem gespeicherten Import, nie vom Browser */
+export async function importLeadList(form: FormData) {
+  const user = await requireArea("akquise");
+  const importId = z.cuid().parse(form.get("importId"));
+  const picked = form.getAll("row").map((v) => z.coerce.number().int().min(0).parse(v));
+  const n = await transferLeadList(importId, picked, user);
   revalidatePath("/akquise");
   redirect(`/akquise?neu=${n}`);
 }

@@ -388,7 +388,7 @@ model Lead {
   rating         Float?
   reviews        Int?
   mapsUrl        String?
-  /// GOOGLE | MANUELL | EMPFEHLUNG | ANFRAGE
+  /// GOOGLE | MANUELL | EMPFEHLUNG | ANFRAGE | LISTE
   source         String    @default("MANUELL")
   stage          LeadStage @default(NEU)
   /// geschätzter Auftragswert in Euro
@@ -423,6 +423,18 @@ model LeadActivity {
   createdAt DateTime @default(now())
 
   @@index([leadId, createdAt])
+}
+
+/// Hochgeladene Liste (Excel/CSV) mit potenziellen Kunden – Übernehmen liest die Zeilen von hier, nie vom Browser
+model LeadImport {
+  id          String   @id @default(cuid())
+  fileName    String
+  /// erkannte Interessenten [{ name, category, contactName, … , extra }]
+  rows        Json
+  /// Spalte der Datei → Feld
+  mapping     Json
+  createdById String?
+  createdAt   DateTime @default(now())
 }
 
 /// Gespeicherte Google-Suche – Übernehmen liest die Treffer von hier, nie vom Browser
