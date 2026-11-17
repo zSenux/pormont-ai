@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { ImapFlow, type FetchMessageObject } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
 import nodemailer from "nodemailer";
@@ -35,26 +36,77 @@ function german(e: unknown, smtp = false): MailError {
       );
   }
   if (/auth|login|credentials|password/i.test(m)) return new MailError("Anmeldung am Postfach fehlgeschlagen – E-Mail-Adresse/Passwort prüfen (bei GMX muss IMAP in den Einstellungen erlaubt sein).");
-  if (/ENOTFOUND|ECONNREFUSED|ETIMEDOUT|timeout/i.test(m)) return new MailError("Mailserver nicht erreichbar.");
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|greeting/i.test(m)) return new MailError("Mailserver nicht erreichbar oder antwortet nicht.");
   return new MailError(`Fehler beim Postfach: ${m.slice(0, 200)}`);
+}
+
+// Schutz, damit ein abgelehntes oder nicht erreichbares Postfach nie die App lahmlegt:
+// - feste Zeitlimits für Verbindung und Gesamtdauer
+// - Fehler-Ereignisse des Sockets werden abgefangen (sonst stürzt der ganze Server ab)
+// - nach abgelehnter Anmeldung 15 Min. Pause (sonst sperrt Microsoft das Konto wegen vieler Fehlversuche),
+//   neue Zugangsdaten heben die Pause sofort auf
+const LIMIT_MS = 25_000;
+type Pause = { key: string; until: number; error: string };
+const pauseStore = globalThis as { __pmMailPause?: Pause };
+const pauseKey = (c: MailConfig) => createHash("sha256").update(`${c.imap.host}|${c.smtp.host}|${c.user}|${c.password}`).digest("hex");
+const isAuthError = (e: unknown) => {
+  const m = e instanceof Error ? `${e.message} ${(e as { responseText?: string }).responseText ?? ""} ${(e as { response?: string }).response ?? ""}` : String(e);
+  return Boolean((e as { authenticationFailed?: boolean })?.authenticationFailed) || /auth|login failed|credentials|password|5\.7\.(3|139)|535/i.test(m);
+};
+function checkPause(c: MailConfig) {
+  const p = pauseStore.__pmMailPause;
+  if (p && p.key === pauseKey(c) && p.until > Date.now()) throw new MailError(`${p.error} (Jarvis versucht es in ${Math.max(1, Math.ceil((p.until - Date.now()) / 60_000))} Min. wieder – oder Zugangsdaten neu speichern.)`);
+}
+function rememberFailure(c: MailConfig, e: unknown, err: MailError) {
+  if (isAuthError(e)) pauseStore.__pmMailPause = { key: pauseKey(c), until: Date.now() + 15 * 60_000, error: err.message };
+}
+
+function deadline<T>(p: Promise<T>, ms: number, onTimeout: () => void): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      t = setTimeout(() => {
+        onTimeout();
+        reject(new MailError("Mailserver antwortet nicht (Zeitüberschreitung)."));
+      }, ms);
+    }),
+  ]).finally(() => clearTimeout(t));
 }
 
 /** Eine IMAP-Verbindung je Aufruf (kurz, robust gegen Abbrüche) */
 async function withImap<T>(fn: (c: ImapFlow) => Promise<T>): Promise<T> {
   const c = cfg();
-  const client = new ImapFlow({ host: c.imap.host, port: c.imap.port, secure: c.imap.secure, auth: { user: c.user, pass: c.password }, logger: false, socketTimeout: 30_000, tls: { rejectUnauthorized: process.env.MAIL_TLS_INSECURE !== "1" } });
-  try {
-    await client.connect();
-  } catch (e) {
-    throw german(e);
-  }
-  try {
-    return await fn(client);
-  } catch (e) {
-    throw e instanceof MailError ? e : german(e);
-  } finally {
-    await client.logout().catch(() => client.close());
-  }
+  checkPause(c);
+  const client = new ImapFlow({
+    host: c.imap.host,
+    port: c.imap.port,
+    secure: c.imap.secure,
+    auth: { user: c.user, pass: c.password },
+    logger: false,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
+    tls: { rejectUnauthorized: process.env.MAIL_TLS_INSECURE !== "1" },
+  });
+  client.on("error", (e: Error) => console.warn("[mail] IMAP:", e?.message ?? e));
+  const run = async () => {
+    try {
+      await client.connect();
+    } catch (e) {
+      const err = german(e);
+      rememberFailure(c, e, err);
+      throw err;
+    }
+    try {
+      return await fn(client);
+    } catch (e) {
+      throw e instanceof MailError ? e : german(e);
+    } finally {
+      await deadline(client.logout(), 5_000, () => client.close()).catch(() => client.close());
+    }
+  };
+  return deadline(run(), LIMIT_MS, () => client.close());
 }
 
 const addr = (a?: AddressObject | AddressObject[]) => (Array.isArray(a) ? a.map((x) => x.text).join(", ") : (a?.text ?? ""));
@@ -156,7 +208,7 @@ function compose(c: MailConfig, m: OutgoingMail) {
 
 function smtpTransport(c: MailConfig) {
   // Port 587 = STARTTLS (Microsoft 365), 465 = direkt TLS
-  return nodemailer.createTransport({ host: c.smtp.host, port: c.smtp.port, secure: c.smtp.secure, requireTLS: !c.smtp.secure, auth: { user: c.user, pass: c.password }, tls: { rejectUnauthorized: process.env.MAIL_TLS_INSECURE !== "1" } });
+  return nodemailer.createTransport({ host: c.smtp.host, port: c.smtp.port, secure: c.smtp.secure, requireTLS: !c.smtp.secure, connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 30_000, auth: { user: c.user, pass: c.password }, tls: { rejectUnauthorized: process.env.MAIL_TLS_INSECURE !== "1" } });
 }
 
 /** Senden über SMTP + Kopie in „Gesendet“ (Strato/GMX legen sie nicht selbst ab) */
@@ -164,11 +216,14 @@ export async function sendMail(m: OutgoingMail): Promise<{ messageId: string }> 
   const c = cfg();
   const transport = smtpTransport(c);
   const message = compose(c, m);
+  checkPause(c);
   let info;
   try {
     info = await transport.sendMail(message);
   } catch (e) {
-    throw german(e, true);
+    const err = german(e, true);
+    rememberFailure(c, e, err);
+    throw err;
   }
   try {
     const raw = await new MailComposer({ ...message, messageId: info.messageId }).compile().build();
@@ -201,8 +256,10 @@ export async function mailStatus(): Promise<{ ok: boolean; text: string }> {
     // Bei Microsoft 365 auch das Senden prüfen: dort ist SMTP AUTH oft getrennt abgeschaltet
     if (c.preset === "office365") {
       try {
-        await smtpTransport(c).verify();
+        await deadline(smtpTransport(c).verify(), 15_000, () => undefined);
       } catch (e) {
+        if (e instanceof MailError) return { ok: false, text: `Lesen klappt (${unread} ungelesen), Senden: ${e.message}` };
+        rememberFailure(c, e, german(e, true));
         return { ok: false, text: `Lesen klappt (${unread} ungelesen), Senden nicht: ${german(e, true).message}` };
       }
     }

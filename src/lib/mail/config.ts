@@ -48,6 +48,8 @@ export function msAppConfig() {
 }
 
 export function mailConfig(): MailConfig | null {
+  // Not-Aus: MAIL_OFF=1 im Hosting schaltet das Postfach komplett ab (z. B. wenn die Verbindung Probleme macht)
+  if (process.env.MAIL_OFF === "1") return null;
   const user = process.env.MAIL_USER?.trim();
   const fromName = process.env.MAIL_FROM_NAME || "ProMont GmbH";
   if (isMicrosoft()) {
