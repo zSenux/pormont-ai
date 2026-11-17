@@ -84,7 +84,7 @@ export async function sendConfirmation(orderId: string, input: z.input<typeof co
   const m = confirmationInput.parse(input);
   const { pdf, order, filename } = await confirmationPdf(orderId);
   try {
-    await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, attachments: [{ filename, content: pdf, contentType: "application/pdf" }] });
+    await sendMail({ to: m.an, cc: m.cc, subject: m.betreff, text: m.text, attachments: [{ filename, content: pdf, contentType: "application/pdf" }], signature: "system" });
   } catch (e) {
     throw new BookError(e instanceof MailError ? e.message : "Senden fehlgeschlagen.");
   }

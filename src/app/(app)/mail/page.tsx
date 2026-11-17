@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mail, Paperclip, PenSquare, Search, Sparkles } from "lucide-react";
+import { Mail, Paperclip, PenSquare, Search, Signature, Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 import { requireUser } from "@/lib/auth/user";
 import { formatDateTime } from "@/lib/berlin";
@@ -35,6 +35,9 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
         </div>
         {cfg && (
           <div className="flex flex-wrap gap-2">
+          <Link href="/mail/signatur" className="btn-secondary" title="Mail-Signatur">
+            <Signature className="size-4" /> Signatur
+          </Link>
           <Link href="/mail/neu" className="btn-primary">
             <PenSquare className="size-4" /> Neue Mail
           </Link>

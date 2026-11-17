@@ -1,5 +1,6 @@
 import "server-only";
-import { mailConfig } from "./config";
+import { mailAddress, mailConfig } from "./config";
+import { withSignature } from "./signature";
 import * as graph from "./graph";
 import * as imap from "./imap";
 import { MailError, type MailFull, type MailSummary, type OutgoingMail } from "./types";
@@ -14,8 +15,13 @@ const backend = () => (mailConfig()?.kind === "graph" ? graph : imap);
 export const listMails = (opts: Parameters<typeof imap.listMails>[0] = {}) => backend().listMails(opts);
 export const readMail = (uid: string, markRead = false) => backend().readMail(uid, markRead);
 export const setFlag = (uid: string, flag: "seen" | "flagged", on: boolean) => backend().setFlag(uid, flag, on);
-export const sendMail = (m: OutgoingMail) => backend().sendMail(m);
-export const saveDraft = (m: OutgoingMail) => backend().saveDraft(m);
+/** Signatur (Einstellungen → Mail-Signatur) wird hier für alle Wege angehängt */
+async function signed(m: OutgoingMail) {
+  const c = mailConfig();
+  return withSignature(m, c ? mailAddress(c) : "");
+}
+export const sendMail = async (m: OutgoingMail) => backend().sendMail(await signed(m));
+export const saveDraft = async (m: OutgoingMail) => backend().saveDraft(await signed(m));
 export const mailAttachment = (uid: string, index: number) => backend().mailAttachment(uid, index);
 export const mailsSince = (last: { uid: number | string; validity: string } | null) => backend().mailsSince(last);
 
