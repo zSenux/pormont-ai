@@ -8,6 +8,7 @@ import { AREA_LABEL, areasOf, TOOL_AREA } from "@/lib/rights-shared";
 import { unbookedReceiptsWhere } from "@/lib/buchhaltung/purchases";
 import { BOOK_TOOLS, BOOK_TOOL_NAMES, bookOverview, runBookTool } from "./book-tools";
 import { MAIL_TOOLS, MAIL_TOOL_NAMES, runMailTool } from "./mail-tools";
+import { STAMM_TOOLS, STAMM_TOOL_NAMES, runStammTool } from "./stamm-tools";
 import { eventLine, todayEvents } from "@/lib/calendar";
 import { createJob, PcError } from "@/lib/pc";
 import { WORK_TOOLS, WORK_TOOL_NAMES, runWorkTool } from "./work-tools";
@@ -59,6 +60,7 @@ export const TOOLS: Def[] = [
   { name: "merken", description: "Dauerhaft merken, z. B. Vorlieben, Abläufe, Preise, Kundenbesonderheiten („Merk dir …“).", input_schema: { type: "object", properties: { text: str("Was gemerkt werden soll, als ganzer Satz") }, required: ["text"] } },
   { name: "vergessen", description: "Einen gemerkten Eintrag löschen.", input_schema: { type: "object", properties: { id: str("ID aus dem Gedächtnis-Block") }, required: ["id"] } },
   ...MAIL_TOOLS,
+  ...STAMM_TOOLS,
   ...WORK_TOOLS,
   ...TEAM_TOOLS,
   ...SUPPLIER_TOOLS,
@@ -139,6 +141,7 @@ export async function runTool(name: string, input: unknown, ctx: ToolCtx): Promi
   const need = TOOL_AREA[name];
   if (need && !(await userAreas(ctx.userId)).includes(need)) return `Keine Berechtigung: ${AREA_LABEL[need]} ist für deine Funktion nicht freigegeben. Bitte einen Administrator fragen.`;
   if (MAIL_TOOL_NAMES.has(name)) return runMailTool(name, i, ctx);
+  if (STAMM_TOOL_NAMES.has(name)) return runStammTool(name, i, ctx);
   if (SUPPLIER_TOOL_NAMES.has(name)) return runSupplierTool(name, i, ctx);
   if (VORLAGEN_TOOL_NAMES.has(name)) return runVorlagenTool(name, i, ctx);
   if (STOCK_TOOL_NAMES.has(name)) return runStockTool(name, i, ctx);
