@@ -26,6 +26,13 @@ export type MailBelegResult = {
 
 // Läuft gerade schon (gleiche Datei zweimal gleichzeitig angestoßen)
 const busy = new Set<string>();
+// Auslesen läuft parallel, Doppelt-Prüfung + Buchen nacheinander (sonst zwei Mails mit derselben Rechnung gleichzeitig)
+let bookLock: Promise<unknown> = Promise.resolve();
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const run = bookLock.then(fn, fn);
+  bookLock = run.catch(() => null);
+  return run;
+}
 
 const RECHTSFORM = /\b(gmbh|mbh|ag|kg|ohg|gbr|ug|se|co|e\.?\s?k\.?|haftungsbeschränkt|deutschland|germany|und|&)\b/g;
 /** Erstes kennzeichnendes Wort des Lieferanten („Würth GmbH & Co. KG“ → „würth“) */
@@ -107,6 +114,7 @@ async function bookOne(uid: string, m: { from: string; fromAddress: string; subj
     const meta = receiptData.parse((await db.storedFile.findUniqueOrThrow({ where: { id: file.id }, select: { meta: true } })).meta);
     if (!meta.lesbar || !pre.grossEuro || !pre.supplier) return { ...base, status: "unlesbar", text: `${a.filename}: keine lesbare Rechnung${meta.hinweis ? ` (${meta.hinweis})` : ""}. [Von Hand buchen](/buchhaltung/ausgaben/neu?foto=${file.id})` };
     const grossCents = Math.round(pre.grossEuro * 100);
+    return await serial(async (): Promise<MailBelegResult> => {
     // 3) Gleiche Rechnung schon gebucht (z. B. vorher fotografiert oder zweite Mail)?
     const dup = await findDuplicatePurchase({ supplier: pre.supplier, docNo: pre.docNo || null, date: pre.date, grossCents });
     if (dup) return { ...base, status: "doppelt", purchaseId: dup.id, number: dup.number, text: `${a.filename}: ${pre.supplier}${pre.docNo ? ` Nr. ${pre.docNo}` : ""} ist schon als ${dup.number} gebucht (${euro(dup.grossCents)}) – nicht doppelt gebucht.` };
@@ -131,6 +139,7 @@ async function bookOne(uid: string, m: { from: string; fromAddress: string; subj
       user,
     );
     return { ...base, status: "gebucht", purchaseId: p.id, number: p.number, text: `${a.filename}: gebucht als ${p.number} – ${p.supplier}${p.docNo ? ` Nr. ${p.docNo}` : ""}, ${euro(p.grossCents)} brutto, ${PURCHASE_CATEGORIES[category as PurchaseCategory]}${p.status === "BEZAHLT" ? ", bezahlt" : ""}.` };
+    });
   } finally {
     busy.delete(sha);
   }

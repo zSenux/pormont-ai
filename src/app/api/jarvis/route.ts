@@ -7,6 +7,19 @@ import { jarvisError, MAX_MESSAGES, runJarvis, type JarvisEvent } from "@/lib/ja
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+// Laufende Durchgänge je Chat. Reißt die Verbindung ab (Handy gesperrt, Funkloch, Proxy), arbeitet Jarvis
+// trotzdem weiter und speichert den Verlauf; die App fragt per GET nach, bis der Durchgang fertig ist.
+const running = new Map<string, { userId: string; since: number }>();
+
+/** Läuft für diesen Chat noch ein Durchgang? (für die App nach einem Verbindungsabbruch) */
+export async function GET(req: Request) {
+  const user = await currentUser();
+  if (!user) return Response.json({ error: "Nicht angemeldet." }, { status: 401 });
+  const id = new URL(req.url).searchParams.get("chat") ?? "";
+  const r = running.get(id);
+  return Response.json({ running: Boolean(r && r.userId === user.id && Date.now() - r.since < 30 * 60_000) });
+}
+
 const input = z.object({ chatId: z.cuid().nullish(), text: z.string().trim().min(1).max(8000), voice: z.boolean().optional(), source: z.enum(["web", "windows", "handy"]).optional() });
 
 /** Ein Durchgang mit Jarvis als Server-Sent Events: chat → text/tool/action … → done | error */
@@ -36,6 +49,15 @@ export async function POST(req: Request) {
         } catch {}
       };
       send("chat", { id: chatId });
+      // Lebenszeichen alle 10 s: lange Werkzeuge (z. B. viele PDFs auslesen) senden sonst minutenlang nichts,
+      // und Safari/Proxys brechen stille Verbindungen ab („Load failed“).
+      const ping = setInterval(() => {
+        try {
+          controller.enqueue(enc.encode(": ping\n\n"));
+        } catch {}
+      }, 10_000);
+      let current = chatId;
+      running.set(current, { userId: user.id, since: Date.now() });
       const run = (id: string) =>
         runJarvis({
           chatId: id,
@@ -60,6 +82,9 @@ export async function POST(req: Request) {
           if (!(e instanceof Anthropic.BadRequestError) || !hadHistory) throw e;
           console.error("[jarvis] 400 im bisherigen Verlauf, neue Unterhaltung:", e.message);
           const fresh = await db.chat.create({ data: { userId: user.id, source, title: text.slice(0, 80) } });
+          running.delete(current);
+          current = fresh.id;
+          running.set(current, { userId: user.id, since: Date.now() });
           send("chat", { id: fresh.id });
           r = await run(fresh.id);
         }
@@ -68,7 +93,11 @@ export async function POST(req: Request) {
         console.error("[jarvis]", e);
         send("error", { message: jarvisError(e) });
       } finally {
-        controller.close();
+        clearInterval(ping);
+        running.delete(current);
+        try {
+          controller.close();
+        } catch {}
       }
     },
   });
