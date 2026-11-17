@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { clsx } from "clsx";
 import { requireUser } from "@/lib/auth/user";
+import { db } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import { todayYmd } from "@/lib/berlin";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { ARTEN, LIST_LIMIT, loadList, readParams, type ListParams } from "@/lib/buchhaltung/belegliste";
@@ -15,7 +17,17 @@ export default async function BelegeListe({ searchParams }: { searchParams: Prom
   await requireUser();
   const p = readParams(await searchParams);
   const { art, conf, status, q, herkunft, jahr } = p;
-  const { rows, count, firstYear } = await loadList(p);
+  const kinds = [...conf.kinds] as string[];
+  const [{ rows, count }, perYear, pending] = await Promise.all([
+    loadList(p),
+    // Belege je Jahr (für die Jahres-Auswahl mit Anzahl; Lexware-Belege liegen oft in früheren Jahren)
+    db.$queryRaw<{ y: number; n: number }[]>`
+      SELECT EXTRACT(YEAR FROM "date" AT TIME ZONE 'Europe/Berlin')::int AS y, COUNT(*)::int AS n
+      FROM "SalesDoc" WHERE "kind"::text = ANY(${kinds}) ${herkunft === "alle" ? Prisma.empty : Prisma.sql`AND "imported" = ${herkunft === "lexware"}`}
+      GROUP BY 1 ORDER BY 1 DESC`,
+    // Alte Rechnungen, die in der Datenübernahme liegen, aber noch nicht in die Buchhaltung übernommen wurden
+    db.erpRecord.count({ where: { kind: "rechnung", lexId: null, amount: { not: null } } }),
+  ]);
 
   const qs = (o: Partial<Record<"art" | "status" | "herkunft" | "jahr", string>>) => {
     const v = { art, status, herkunft, jahr, ...o };
@@ -28,7 +40,9 @@ export default async function BelegeListe({ searchParams }: { searchParams: Prom
   };
   const href = (o: Parameters<typeof qs>[0]) => `/buchhaltung/belege?${qs(o)}`;
   const thisYear = +todayYmd().slice(0, 4);
-  const years = Array.from({ length: Math.max(1, thisYear - Math.min(firstYear, thisYear) + 1) }, (_, i) => String(thisYear - i));
+  const yearCount = new Map(perYear.map((r) => [String(r.y), r.n]));
+  const years = [...new Set([String(thisYear), ...perYear.map((r) => String(r.y))])].sort((a, b) => +b - +a);
+  const otherYears = years.filter((y) => y !== jahr && yearCount.get(y));
 
   const sum = rows.reduce((s, r) => ({ gross: s.gross + r.gross, prepaid: s.prepaid + r.prepaid, claim: s.claim + r.claim, open: s.open + r.open }), { gross: 0, prepaid: 0, claim: 0, open: 0 });
   const chip = (on: boolean, soft = false) => clsx("chip px-3 py-1", on ? (soft ? "border-brand bg-brand-soft text-brand" : "border-brand bg-brand text-white") : "border-line bg-white text-steel hover:text-ink");
@@ -41,7 +55,7 @@ export default async function BelegeListe({ searchParams }: { searchParams: Prom
           <span className="font-normal text-steel">{jahr === "alle" ? "alle Jahre" : `Jahr ${jahr}`}</span>
         </h1>
         <nav className="flex flex-wrap gap-1" aria-label="Jahr">
-          {years.slice(0, 6).map((y) => <Link key={y} href={href({ jahr: y })} className={chip(y === jahr, true)}>{y}</Link>)}
+          {years.slice(0, 8).map((y) => <Link key={y} href={href({ jahr: y })} className={chip(y === jahr, true)}>{y}{yearCount.get(y) ? <span className="ml-1 text-xs opacity-70">{yearCount.get(y)}</span> : null}</Link>)}
           <Link href={href({ jahr: "alle" })} className={chip(jahr === "alle", true)}>Alle</Link>
         </nav>
       </div>
@@ -74,6 +88,19 @@ export default async function BelegeListe({ searchParams }: { searchParams: Prom
 
       {conf.kinds.length === 1 && conf.kinds[0] === "GUTSCHRIFT" && <p className="text-sm text-steel">Gutschriften entstehen beim Stornieren einer Rechnung (Rechnung markieren → „Beleg öffnen“ → „Stornieren“).</p>}
 
+      {pending > 0 && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-warn">
+          {pending} alte Rechnungen aus Lexware liegen noch in der Datenübernahme und stehen deshalb hier noch nicht.{" "}
+          <Link href="/datenuebernahme" className="font-semibold underline">Dort „In die Buchhaltung übernehmen“ klicken</Link> (nur Admin).
+        </p>
+      )}
+      {rows.length === 0 && jahr !== "alle" && otherYears.length > 0 && (
+        <p className="rounded-xl border border-line bg-white px-4 py-2.5 text-sm text-steel">
+          In {jahr} gibt es hier keine Belege. Belege gibt es in{" "}
+          {otherYears.slice(0, 6).map((y, i) => <span key={y}>{i ? ", " : ""}<Link href={href({ jahr: y })} className="font-semibold text-brand">{y}</Link> ({yearCount.get(y)})</span>)}
+          {" "}oder <Link href={href({ jahr: "alle" })} className="font-semibold text-brand">alle Jahre</Link>.
+        </p>
+      )}
       <BelegTabelle rows={rows} exportHref={`/api/buchhaltung/belegliste?${qs({})}`} />
 
       <p className="text-sm text-steel">
