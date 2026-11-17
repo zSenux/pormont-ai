@@ -159,7 +159,11 @@ export function jarvisError(e: unknown): string {
   if (e instanceof Anthropic.RateLimitError) return "Zu viele Anfragen – bitte gleich noch einmal.";
   if (e instanceof Anthropic.APIConnectionTimeoutError) return "Die Antwort hat zu lange gedauert.";
   if (e instanceof Anthropic.APIConnectionError) return "Keine Verbindung zur KI.";
-  if (e instanceof Anthropic.APIError) return `KI-Fehler ${e.status ?? ""}`.trim();
+  if (e instanceof Anthropic.APIError) {
+    // Grund mit anzeigen, damit man ihn ohne Server-Log sieht (Text der API, kein Geheimnis)
+    const detail = (e.error as { error?: { message?: string } } | undefined)?.error?.message;
+    return `KI-Fehler ${e.status ?? ""}${detail ? `: ${detail.slice(0, 240)}` : ""}`.trim();
+  }
   if (e instanceof Error && /ANTHROPIC_API_KEY|apiKey|authToken/i.test(e.message)) return "Der Claude-API-Schlüssel fehlt – ein Administrator trägt ihn unter Einstellungen → Verbindungen ein.";
   return "Unbekannter Fehler.";
 }

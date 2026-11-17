@@ -97,8 +97,8 @@ export const STAMM_TOOLS: Anthropic.Tool[] = [
       properties: {
         aktion: { type: "string", enum: ["anlegen", "aendern"] },
         id: str("Lieferanten-ID (aendern)"),
-        name: str("Firmenname"), art: { type: "string", enum: [...SUPPLIER_KINDS] }, ansprechpartner: str(""), email: str(""), telefon: str(""), website: str(""),
-        strasse: str(""), plz: str(""), ort: str(""), kundennummer: str("Unsere Kundennummer beim Lieferanten"), notiz: str(""),
+        name: str("Firmenname"), art: { type: "string", enum: [...SUPPLIER_KINDS] }, ansprechpartner: str("Ansprechpartner"), email: str("E-Mail"), telefon: str("Telefon"), website: str("Website"),
+        strasse: str("Straße + Nr."), plz: str("PLZ"), ort: str("Ort"), kundennummer: str("Unsere Kundennummer beim Lieferanten"), notiz: str("Notiz"),
       },
       required: ["aktion"],
     },

@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { currentUser, lockedResponse } from "@/lib/auth/user";
@@ -35,9 +36,9 @@ export async function POST(req: Request) {
         } catch {}
       };
       send("chat", { id: chatId });
-      try {
-        const r = await runJarvis({
-          chatId,
+      const run = (id: string) =>
+        runJarvis({
+          chatId: id,
           userId: user.id,
           userName: user.name,
           input: text,
@@ -48,6 +49,20 @@ export async function POST(req: Request) {
             else if (e.type === "action") void db.pendingAction.findUnique({ where: { id: e.id }, select: { id: true, kind: true, summary: true, status: true } }).then((a) => a && send("action", a));
           },
         });
+      try {
+        let r;
+        try {
+          r = await run(chatId);
+        } catch (e) {
+          // 400 = Anfrage ungültig, meist ein kaputter Verlauf. Alter Verlauf bleibt unverändert (append-only),
+          // die Frage läuft einmal in einer neuen Unterhaltung.
+          const hadHistory = Array.isArray(chat.messages) && chat.messages.length > 0;
+          if (!(e instanceof Anthropic.BadRequestError) || !hadHistory) throw e;
+          console.error("[jarvis] 400 im bisherigen Verlauf, neue Unterhaltung:", e.message);
+          const fresh = await db.chat.create({ data: { userId: user.id, source, title: text.slice(0, 80) } });
+          send("chat", { id: fresh.id });
+          r = await run(fresh.id);
+        }
         send("done", { reply: r.reply, actions: r.actions });
       } catch (e) {
         console.error("[jarvis]", e);
