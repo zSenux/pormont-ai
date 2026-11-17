@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { StateForm } from "@/components/state-form";
-import { removeLetterheadAction, saveBookConfigAction, saveLetterheadAction, setNextNumberAction, startImportAction } from "@/app/actions/buchhaltung";
+import { removeLetterheadAction, saveBookConfigAction, saveLetterheadAction, setNextNumberAction, setNumberFormatAction, startImportAction } from "@/app/actions/buchhaltung";
 import type { BookConfig } from "@/lib/buchhaltung/config";
 
 const n = (v: number) => String(v).replace(".", ",");
@@ -67,12 +67,22 @@ export function ConfigForm({ c }: { c: BookConfig }) {
   );
 }
 
-export function NumberForm({ year }: { year: number }) {
+export function NumberFormatForm({ format }: { format: "lexware" | "jarvis" }) {
+  const router = useRouter();
+  return (
+    <StateForm action={setNumberFormatAction} submit="Format speichern" onOk={() => router.refresh()} className="space-y-1.5">
+      <label className="flex items-start gap-2 text-sm"><input type="radio" name="numberFormat" value="lexware" defaultChecked={format === "lexware"} className="mt-1 accent-brand" /> <span><strong>Wie Lexware weiterzählen</strong> – nur Zahlen, laufen über den Jahreswechsel weiter (z. B. 202641 → 202642). Jarvis schließt an die höchste Nummer aus Lexware an.</span></label>
+      <label className="flex items-start gap-2 text-sm"><input type="radio" name="numberFormat" value="jarvis" defaultChecked={format === "jarvis"} className="mt-1 accent-brand" /> <span><strong>Jarvis-Format</strong> – mit Kürzel und Jahr, jedes Jahr ab 0001 (z. B. RE-2026-0001)</span></label>
+    </StateForm>
+  );
+}
+
+export function NumberForm({ year, lexware }: { year: number; lexware: boolean }) {
   return (
     <StateForm action={setNextNumberAction} submit="Übernehmen" className="space-y-2">
-      <div className="grid grid-cols-3 gap-2">
+      <div className={lexware ? "grid grid-cols-2 gap-2" : "grid grid-cols-3 gap-2"}>
         <select name="kind" className="input" aria-label="Art"><option value="RECHNUNG">Rechnungen</option><option value="ANGEBOT">Angebote</option><option value="GUTSCHRIFT">Gutschriften</option></select>
-        <input name="year" inputMode="numeric" defaultValue={year} className="input" aria-label="Jahr" />
+        {lexware ? <input type="hidden" name="year" value={year} /> : <input name="year" inputMode="numeric" defaultValue={year} className="input" aria-label="Jahr" />}
         <input name="next" inputMode="numeric" placeholder="nächste Nr." className="input" aria-label="Nächste Nummer" required />
       </div>
     </StateForm>

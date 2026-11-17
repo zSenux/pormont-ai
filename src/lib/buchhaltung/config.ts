@@ -92,6 +92,9 @@ export const bookConfigSchema = z.object({
   /** Freiraum oben (Folgeseiten) und unten in mm, damit der Text nicht in Kopf/Fuß des Briefpapiers läuft */
   letterheadTopMm: z.number().int().min(10).max(80).default(30),
   letterheadBottomMm: z.number().int().min(10).max(80).default(30),
+  /** Nummern beim Festschreiben: „lexware“ = einfach fortlaufend wie in Lexware faktura (202641 → 202642, auch über den
+   *  Jahreswechsel, schließt an die höchste übernommene Lexware-Nummer an); „jarvis“ = RE-2026-0001 je Jahr neu */
+  numberFormat: z.enum(["lexware", "jarvis"]).default("lexware"),
 });
 export type BookConfig = z.infer<typeof bookConfigSchema>;
 

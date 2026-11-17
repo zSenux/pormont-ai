@@ -331,12 +331,22 @@ export async function setNextNumberAction(_prev: Result, form: FormData): Promis
   const p = z.object({ kind: z.enum(["RECHNUNG", "ANGEBOT", "GUTSCHRIFT"]), year: z.number().int().min(2020).max(2100), next: z.number().int().min(1).max(999_999) }).safeParse({ kind: opt(form.get("kind")), year: num(form.get("year")), next: num(form.get("next")) });
   if (!p.success) return { error: "Bitte Art, Jahr und nächste Nummer angeben." };
   try {
-    await setNextNumber(p.data.kind, p.data.year, p.data.next);
+    await setNextNumber(p.data.kind, p.data.year, p.data.next, (await bookConfig()).numberFormat);
     refresh();
     return { ok: "Nummernkreis angepasst." };
   } catch (e) {
     return fail(e);
   }
+}
+
+/** Nummernformat umstellen: wie Lexware (202642) oder Jarvis (RE-2026-0001). Betrifft nur künftig festgeschriebene Belege. */
+export async function setNumberFormatAction(_prev: Result, form: FormData): Promise<Result> {
+  await requireAdmin();
+  const p = z.enum(["lexware", "jarvis"]).safeParse(form.get("numberFormat"));
+  if (!p.success) return { error: "Bitte ein Nummernformat wählen." };
+  await saveBookConfig({ ...(await bookConfig()), numberFormat: p.data });
+  refresh();
+  return { ok: p.data === "lexware" ? "Nummern laufen jetzt wie in Lexware weiter." : "Nummern jetzt im Jarvis-Format." };
 }
 
 export async function startImportAction(_prev: Result, form: FormData): Promise<Result> {

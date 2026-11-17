@@ -4,9 +4,9 @@ import { berlinParts, formatDateTime, todayYmd } from "@/lib/berlin";
 import { lexwareConfigured } from "@/lib/lexware/client";
 import { bookConfig, fmtIban, missingForInvoices } from "@/lib/buchhaltung/config";
 import { COMPANY } from "@/lib/company";
-import { numberState, PREFIX } from "@/lib/buchhaltung/docs";
+import { numberState } from "@/lib/buchhaltung/docs";
 import { importState } from "@/lib/buchhaltung/lexware-import";
-import { ConfigForm, ImportForm, LetterheadForm, NumberForm } from "./forms";
+import { ConfigForm, ImportForm, LetterheadForm, NumberForm, NumberFormatForm } from "./forms";
 
 export const metadata = { title: "Buchhaltung – Einstellungen" };
 export const dynamic = "force-dynamic";
@@ -14,7 +14,9 @@ export const dynamic = "force-dynamic";
 export default async function BookSettings() {
   await requireAdmin();
   const year = berlinParts().y;
-  const [cfg, nums, imp] = await Promise.all([bookConfig(), numberState(year), importState()]);
+  const [cfg, imp] = await Promise.all([bookConfig(), importState()]);
+  const nums = await numberState(year, cfg.numberFormat);
+  const lex = cfg.numberFormat === "lexware";
   const missing = missingForInvoices(cfg);
   const running = imp?.status === "laeuft";
   const today = todayYmd();
@@ -45,12 +47,18 @@ export default async function BookSettings() {
       </section>
 
       <section className="card space-y-3 p-4">
-        <h2 className="flex items-center gap-2 font-semibold"><Hash className="size-4 text-brand" /> Nummernkreise {year}</h2>
-        <p className="text-sm text-steel">Nummern werden beim Festschreiben fortlaufend vergeben (z. B. {PREFIX.RECHNUNG}-{year}-0001) und nie doppelt. Zuletzt vergeben: Rechnungen {nums.RECHNUNG || "–"}, Angebote {nums.ANGEBOT || "–"}, Gutschriften {nums.GUTSCHRIFT || "–"}.</p>
+        <h2 className="flex items-center gap-2 font-semibold"><Hash className="size-4 text-brand" /> Nummernkreise</h2>
+        <NumberFormatForm format={cfg.numberFormat} />
+        <p className="text-sm text-steel">
+          Nummern werden beim Festschreiben fortlaufend vergeben und nie doppelt.{" "}
+          {nums.mode === "next"
+            ? <>Nächste Nummer: Rechnung <strong className="text-ink">{nums.RECHNUNG}</strong>, Angebot <strong className="text-ink">{nums.ANGEBOT}</strong>, Gutschrift/Storno <strong className="text-ink">{nums.GUTSCHRIFT}</strong>. Lädst du später noch Belege aus Lexware hoch, zählt Jarvis automatisch hinter der höchsten Nummer weiter.</>
+            : <>Zuletzt vergeben {year}: Rechnungen {nums.RECHNUNG}, Angebote {nums.ANGEBOT}, Gutschriften {nums.GUTSCHRIFT}.</>}
+        </p>
         <details>
-          <summary className="cursor-pointer text-sm font-medium text-brand">Mit einer höheren Nummer weitermachen (z. B. nach Lexware)</summary>
-          <div className="mt-2"><NumberForm year={year} /></div>
-          <p className="mt-1 text-xs text-steel">Geht nur nach oben – bereits vergebene Nummern bleiben gesperrt.</p>
+          <summary className="cursor-pointer text-sm font-medium text-brand">Mit einer höheren Nummer weitermachen</summary>
+          <div className="mt-2"><NumberForm year={year} lexware={lex} /></div>
+          <p className="mt-1 text-xs text-steel">Geht nur nach oben – bereits vergebene Nummern bleiben gesperrt.{lex ? " Zum Beispiel, wenn die Angebote in Lexware einen eigenen Nummernkreis hatten." : ""}</p>
         </details>
       </section>
 
