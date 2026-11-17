@@ -6,6 +6,7 @@ import { requireArea } from "@/lib/rights";
 import { addDaysYmd, berlinDateTime, formatDate, todayYmd } from "@/lib/berlin";
 import { customerName, openCentsOf, payableCents, ymdOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
+import { purchaseDueYmd } from "@/lib/buchhaltung/purchases";
 import { docLabel } from "@/lib/buchhaltung/types";
 import { payInvoiceAction, setPurchasePaidAction } from "@/app/actions/offene-posten";
 import { ResultButton } from "../beleg/[id]/panels";
@@ -30,15 +31,17 @@ function DueBadge({ due, today }: { due: Date | null; today: string }) {
   return <span className="text-xs text-steel">fällig {formatDate(due)}</span>;
 }
 
-export default async function OffenePosten({ searchParams }: { searchParams: Promise<{ zeige?: string }> }) {
+export default async function OffenePosten({ searchParams }: { searchParams: Promise<{ zeige?: string; filter?: string }> }) {
   await requireArea("buchhaltung");
   const sp = await searchParams;
   const show = (sp.zeige && sp.zeige in SHOW ? sp.zeige : "offen") as keyof typeof SHOW;
+  // „Überfällig“ (Knopf auf der Übersicht): nur offene Posten, deren Fälligkeit vorbei ist
+  const late = show === "offen" && sp.filter === "ueberfaellig";
   const today = todayYmd();
   const since = berlinDateTime(addDaysYmd(today, -90));
-  const [docs, purchases, openDocAll, openPurAll] = await Promise.all([
+  const [docs, purchasesAll, openDocAll, openPurAll] = await Promise.all([
     db.salesDoc.findMany({
-      where: show === "offen" ? { kind: "RECHNUNG", status: "OFFEN" } : { kind: "RECHNUNG", status: "BEZAHLT", updatedAt: { gte: since } },
+      where: show === "offen" ? { kind: "RECHNUNG", status: "OFFEN", ...(late ? { dueDate: { lt: berlinDateTime(today) } } : {}) } : { kind: "RECHNUNG", status: "BEZAHLT", updatedAt: { gte: since } },
       orderBy: show === "offen" ? [{ dueDate: "asc" }, { date: "asc" }] : [{ updatedAt: "desc" }],
       take: 300,
       include: { customer: { select: { name: true } }, payments: { orderBy: { day: "desc" }, take: 1, select: { day: true } } },
@@ -51,6 +54,7 @@ export default async function OffenePosten({ searchParams }: { searchParams: Pro
     db.salesDoc.findMany({ where: { kind: "RECHNUNG", status: "OFFEN" }, select: { grossCents: true, prepaidCents: true, paidCents: true, dueDate: true } }),
     db.purchaseDoc.findMany({ where: { status: "OFFEN" }, select: { grossCents: true, dueDate: true, date: true } }),
   ]);
+  const purchases = late ? purchasesAll.filter((p) => purchaseDueYmd(p) < today) : purchasesAll;
   const bankLinked = new Set(
     (await db.bankTx.findMany({ where: { OR: [{ docId: { in: docs.map((d) => d.id) } }, { purchaseId: { in: purchases.map((p) => p.id) } }] }, select: { docId: true, purchaseId: true } })).flatMap((t) => [t.docId, t.purchaseId]).filter(Boolean) as string[],
   );
@@ -58,7 +62,7 @@ export default async function OffenePosten({ searchParams }: { searchParams: Pro
   const recv = openDocAll.reduce((s, d) => s + openCentsOf(d), 0);
   const recvLate = openDocAll.filter((d) => (lateDays(d.dueDate, today) ?? 0) > 0).reduce((s, d) => s + openCentsOf(d), 0);
   // Ausgaben ohne Fälligkeit: Datum + 14 Tage (wie in der Liquidität)
-  const purDue = (p: { dueDate: Date | null; date: Date }) => p.dueDate ?? berlinDateTime(addDaysYmd(ymdOf(p.date)!, 14));
+  const purDue = (p: { dueDate: Date | null; date: Date }) => berlinDateTime(purchaseDueYmd(p));
   const pay = openPurAll.reduce((s, p) => s + p.grossCents, 0);
   const payLate = openPurAll.filter((p) => (lateDays(purDue(p), today) ?? 0) > 0).reduce((s, p) => s + p.grossCents, 0);
 
@@ -71,8 +75,9 @@ export default async function OffenePosten({ searchParams }: { searchParams: Pro
         </div>
         <nav className="flex gap-2">
           {(Object.keys(SHOW) as (keyof typeof SHOW)[]).map((k) => (
-            <Link key={k} href={`/buchhaltung/offene-posten?zeige=${k}`} className={clsx("chip px-3 py-1", show === k ? "border-brand bg-brand text-white" : "bg-white text-steel")}>{SHOW[k]}</Link>
+            <Link key={k} href={`/buchhaltung/offene-posten?zeige=${k}`} className={clsx("chip px-3 py-1", show === k && !late ? "border-brand bg-brand text-white" : "bg-white text-steel")}>{SHOW[k]}</Link>
           ))}
+          <Link href="/buchhaltung/offene-posten?filter=ueberfaellig" className={clsx("chip px-3 py-1", late ? "border-bad bg-bad text-white" : "bg-white text-bad")}>Überfällig</Link>
         </nav>
       </div>
 
@@ -90,9 +95,9 @@ export default async function OffenePosten({ searchParams }: { searchParams: Pro
       </section>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <section className="card">
-          <h2 className="flex items-center gap-2 border-b border-line p-4 font-semibold"><ArrowDownLeft className="size-4 text-ok" /> Rechnungsausgang <span className="font-normal text-steel">({docs.length})</span></h2>
-          {docs.length === 0 && <p className="p-4 text-sm text-steel">{show === "offen" ? "Keine offenen Rechnungen – alles bezahlt." : "Keine bezahlten Rechnungen in den letzten 90 Tagen."}</p>}
+        <section id="ausgang" className="card scroll-mt-24">
+          <h2 className="flex items-center gap-2 border-b border-line p-4 font-semibold"><ArrowDownLeft className="size-4 text-ok" /> {late ? "Überfällig – Kunde nicht bezahlt" : "Rechnungsausgang"} <span className="font-normal text-steel">({docs.length})</span></h2>
+          {docs.length === 0 && <p className="p-4 text-sm text-steel">{late ? "Kein Kunde ist mit einer Zahlung im Verzug. 🎉" : show === "offen" ? "Keine offenen Rechnungen – alles bezahlt." : "Keine bezahlten Rechnungen in den letzten 90 Tagen."}</p>}
           <ul className="divide-y divide-line">
             {docs.map((d) => (
               <li key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-3 text-sm">
@@ -113,9 +118,9 @@ export default async function OffenePosten({ searchParams }: { searchParams: Pro
           </ul>
         </section>
 
-        <section className="card">
-          <h2 className="flex items-center gap-2 border-b border-line p-4 font-semibold"><ArrowUpRight className="size-4 text-bad" /> Rechnungseingang <span className="font-normal text-steel">({purchases.length})</span></h2>
-          {purchases.length === 0 && <p className="p-4 text-sm text-steel">{show === "offen" ? "Keine offenen Eingangsrechnungen." : "Keine bezahlten Eingangsrechnungen in den letzten 90 Tagen."}</p>}
+        <section id="eingang" className="card scroll-mt-24">
+          <h2 className="flex items-center gap-2 border-b border-line p-4 font-semibold"><ArrowUpRight className="size-4 text-bad" /> {late ? "Überfällig – wir müssen zahlen" : "Rechnungen zu bezahlen"} <span className="font-normal text-steel">({purchases.length})</span></h2>
+          {purchases.length === 0 && <p className="p-4 text-sm text-steel">{late ? "Keine überfälligen Eingangsrechnungen." : show === "offen" ? "Keine offenen Eingangsrechnungen." : "Keine bezahlten Eingangsrechnungen in den letzten 90 Tagen."}</p>}
           <ul className="divide-y divide-line">
             {purchases.map((p) => (
               <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-3 text-sm">

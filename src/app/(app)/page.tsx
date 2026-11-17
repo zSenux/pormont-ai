@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Calendar, Camera, CheckSquare, Clock, FileText, FolderSearch, Mic, Receipt, ShieldAlert, Sparkles, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowRight, ArrowUpRight, Calendar, Camera, CheckSquare, Clock, FileText, FolderSearch, Mic, Receipt, ShieldAlert, Sparkles, Wallet } from "lucide-react";
 import { db } from "@/lib/db";
 import { firstName, requireUser } from "@/lib/auth/user";
 import { AREA_LABEL, canArea, type Area } from "@/lib/rights-shared";
 import { berlinDateTime, berlinParts, formatDate, formatDateTime, formatEuro, todayYmd } from "@/lib/berlin";
 import { customerName, isOverdue, openInvoices, revenue, openCentsOf } from "@/lib/buchhaltung/docs";
 import { archiveRevenue } from "@/lib/erp-import";
+import { openPurchases } from "@/lib/buchhaltung/purchases";
 import { fmtEuroCents } from "@/lib/buchhaltung/money";
 import { COMPANY } from "@/lib/company";
 import { timeHm, todayEvents } from "@/lib/calendar";
@@ -72,6 +73,27 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
           </Link>
         ))}
       </nav>
+
+      {/* Finanzen ganz vorne: was wir zahlen müssen und welche Kunden nicht bezahlt haben */}
+      {money && (
+        <section className="space-y-4" aria-labelledby="finanzen">
+          <div className="flex items-center gap-2">
+            <h2 id="finanzen" className="text-lg font-bold">Finanzen</h2>
+            <Link href="/buchhaltung/offene-posten" className="ml-auto text-sm font-medium text-brand">Offene Posten</Link>
+          </div>
+          <Suspense fallback={<div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>}>
+            <BookTiles />
+          </Suspense>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Suspense fallback={<div className="card h-48 animate-pulse" />}>
+              <PayList />
+            </Suspense>
+            <Suspense fallback={<div className="card h-48 animate-pulse" />}>
+              <OverdueList />
+            </Suspense>
+          </div>
+        </section>
+      )}
 
       {/* Arbeitsablauf wie im gewohnten Startbild (am Handy über „Mehr“ → Arbeitsablauf) */}
       <div className="hidden md:block">
@@ -145,46 +167,88 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ k
       </Suspense>
 
       {money && (
-        <section className="space-y-4" aria-labelledby="finanzen">
-          <h2 id="finanzen" className="text-lg font-bold">Finanzen</h2>
-          <Suspense fallback={<div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="card h-32 animate-pulse" />)}</div>}>
-            <BookTiles />
-          </Suspense>
-          <Suspense fallback={<div className="card h-48 animate-pulse" />}>
-            <SalesRow />
-          </Suspense>
-          <Suspense fallback={<div className="card h-48 animate-pulse" />}>
-            <OverdueList />
-          </Suspense>
-        </section>
+        <Suspense fallback={<div className="card h-48 animate-pulse" />}>
+          <SalesRow />
+        </Suspense>
       )}
+
     </main>
   );
 }
 
+const OVERDUE_HREF = "/buchhaltung/offene-posten?filter=ueberfaellig#ausgang";
+const PAY_HREF = "/buchhaltung/offene-posten#eingang";
+
 async function BookTiles() {
   const today = todayYmd();
-  const [open, own, old, quotes] = await Promise.all([openInvoices(), revenue(`${today.slice(0, 7)}-01`, today), archiveRevenue(`${today.slice(0, 7)}-01`, today), db.salesDoc.count({ where: { kind: "ANGEBOT", status: "OFFEN" } })]);
+  const [open, pay, own, old, quotes] = await Promise.all([openInvoices(), openPurchases(), revenue(`${today.slice(0, 7)}-01`, today), archiveRevenue(`${today.slice(0, 7)}-01`, today), db.salesDoc.count({ where: { kind: "ANGEBOT", status: "OFFEN" } })]);
   // Alte Rechnungen aus dem Archiv (z. B. Lexware) zählen mit, bis alles in Jarvis geschrieben wird
   const month = { netCents: own.netCents + old.netCents, count: own.count + old.count };
   const notDue = open.list.filter((d) => !isOverdue(d));
   const tiles = [
+    {
+      label: "Rechnungen zu bezahlen",
+      value: fmtEuroCents(pay.openCents),
+      hint: pay.list.length === 0 ? "Alles bezahlt" : `${pay.list.length} offen${pay.overdue.length ? ` · ${fmtEuroCents(pay.overdueCents)} überfällig` : ""}${pay.soon.length ? ` · ${fmtEuroCents(pay.soonCents)} in 7 Tagen` : ""}`,
+      icon: ArrowUpRight,
+      href: PAY_HREF,
+      tone: pay.overdue.length ? "text-bad" : pay.list.length ? "text-warn" : "text-ok",
+    },
+    { label: "Überfällig – Kunde nicht bezahlt", value: fmtEuroCents(open.overdueCents), hint: open.overdue.length ? `${open.overdue.length} Rechnungen · antippen für die Liste` : "Alle Kunden pünktlich", icon: AlertTriangle, href: OVERDUE_HREF, tone: open.overdue.length ? "text-bad" : "text-ok" },
+    { label: "Offen (noch nicht fällig)", value: fmtEuroCents(notDue.reduce((s, d) => s + openCentsOf(d), 0)), hint: `${notDue.length} Rechnungen · ${quotes} offene Angebote`, icon: FileText, href: "/buchhaltung/offene-posten#ausgang", tone: "text-ink" },
     { label: "Umsatz diesen Monat", value: fmtEuroCents(month.netCents), hint: `${month.count} Rechnungen (netto)${old.count ? `, davon ${old.count} aus Lexware` : ""}`, icon: Wallet, href: "/buchhaltung", tone: "text-brand" },
-    { label: "Überfällig", value: fmtEuroCents(open.overdueCents), hint: `${open.overdue.length} Rechnungen`, icon: AlertTriangle, href: "/buchhaltung/belege?art=rechnungen&status=ueberfaellig", tone: open.overdue.length ? "text-bad" : "text-ok" },
-    { label: "Offen (noch nicht fällig)", value: fmtEuroCents(notDue.reduce((s, d) => s + openCentsOf(d), 0)), hint: `${notDue.length} Rechnungen · ${quotes} offene Angebote`, icon: FileText, href: "/buchhaltung/belege?art=rechnungen&status=offen", tone: "text-ink" },
   ];
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
       {tiles.map((t) => (
-        <Link key={t.label} href={t.href} className="card p-5 transition hover:border-brand">
-          <div className="flex items-center gap-2 text-sm font-medium text-steel">
-            <t.icon className="size-4" /> {t.label}
+        <Link key={t.label} href={t.href} className="card min-w-0 p-4 transition hover:border-brand md:p-5">
+          <div className="flex items-start gap-2 text-sm font-medium text-steel">
+            <t.icon className="mt-0.5 size-4 shrink-0" /> {t.label}
           </div>
-          <p className={`mt-2 text-3xl font-extrabold tracking-tight ${t.tone}`}>{t.value}</p>
+          <p className={`mt-2 text-2xl font-extrabold tracking-tight tabular-nums md:text-3xl ${t.tone}`}>{t.value}</p>
           <p className="mt-1 text-xs text-steel">{t.hint}</p>
         </Link>
       ))}
     </div>
+  );
+}
+
+/** Eingangsrechnungen, die ProMont bezahlen muss – Überfälliges zuerst */
+async function PayList() {
+  const { list, today } = await openPurchases();
+  return (
+    <section className="card min-w-0 p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <ArrowUpRight className="size-5 text-warn" />
+        <h3 className="font-bold">Rechnungen zu bezahlen</h3>
+        <Link href={PAY_HREF} className="ml-auto text-sm font-medium text-brand">Alle</Link>
+      </div>
+      {list.length === 0 ? (
+        <p className="text-sm text-steel">Keine offenen Eingangsrechnungen. 👍</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {list.slice(0, 6).map((p) => {
+            const late = p.due < today;
+            return (
+              <li key={p.id}>
+                <Link href={`/buchhaltung/ausgaben/${p.id}`} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{p.supplier}</span>
+                    <span className={`text-xs ${late ? "text-bad" : p.due === today ? "text-warn" : "text-steel"}`}>
+                      {p.docNo ? `Re.-Nr. ${p.docNo} · ` : ""}
+                      {late ? `überfällig seit ${formatDate(berlinDateTime(p.due))}` : p.due === today ? "heute fällig" : `fällig ${formatDate(berlinDateTime(p.due))}`}
+                      {p.payMethod === "LASTSCHRIFT" ? " · Lastschrift" : ""}
+                    </span>
+                  </span>
+                  <span className={`shrink-0 font-semibold tabular-nums ${late ? "text-bad" : ""}`}>{fmtEuroCents(p.grossCents)}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {list.length > 6 && <p className="mt-2 text-xs text-steel">und {list.length - 6} weitere</p>}
+    </section>
   );
 }
 
@@ -194,8 +258,8 @@ async function OverdueList() {
     <section className="card min-w-0 p-5">
       <div className="mb-3 flex items-center gap-2">
         <AlertTriangle className="size-5 text-bad" />
-        <h3 className="font-bold">Überfällige Rechnungen</h3>
-        <Link href="/buchhaltung/belege?art=rechnungen&status=ueberfaellig" className="ml-auto text-sm font-medium text-brand">Alle</Link>
+        <h3 className="font-bold">Überfällig – Kunde nicht bezahlt</h3>
+        <Link href={OVERDUE_HREF} className="ml-auto text-sm font-medium text-brand">Alle</Link>
       </div>
       {overdue.length === 0 ? (
         <p className="text-sm text-steel">Keine überfälligen Rechnungen. 🎉</p>
@@ -208,12 +272,14 @@ async function OverdueList() {
                   <span className="block truncate font-medium">{customerName(d)}</span>
                   <span className="text-xs text-steel">{d.number} · fällig {formatDate(d.dueDate)}</span>
                 </span>
-                <span className="shrink-0 font-semibold text-bad">{fmtEuroCents(openCentsOf(d))}</span>
+                <span className="shrink-0 font-semibold tabular-nums text-bad">{fmtEuroCents(openCentsOf(d))}</span>
               </Link>
             </li>
           ))}
         </ul>
       )}
+      {overdue.length > 6 && <p className="mt-2 text-xs text-steel">und {overdue.length - 6} weitere</p>}
+      {overdue.length > 0 && <Link href="/buchhaltung/mahnwesen" className="mt-3 inline-flex text-sm font-medium text-brand">Zum Mahnwesen →</Link>}
     </section>
   );
 }

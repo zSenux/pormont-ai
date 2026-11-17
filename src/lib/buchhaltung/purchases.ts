@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { berlinDateTime, todayYmd } from "@/lib/berlin";
+import { addDaysYmd, berlinDateTime, todayYmd } from "@/lib/berlin";
 import { receiptData } from "@/lib/receipts";
 import { BookError, nextSequence, ymdOf, type Actor } from "./docs";
 
@@ -168,4 +168,20 @@ export const purchaseYmd = (d: { date: Date }) => ymdOf(d.date)!;
 export async function unbookedReceiptsWhere() {
   const used = await db.purchaseDoc.findMany({ where: { fileId: { not: null } }, select: { fileId: true } });
   return { kind: "beleg", lexFileId: null, id: { notIn: used.map((u) => u.fileId!) } };
+}
+
+/** Fälligkeit einer Ausgabe als JJJJ-MM-TT: eigene Fälligkeit, sonst Belegdatum + 14 Tage (wie in Liquidität/Offene Posten) */
+export const purchaseDueYmd = (p: { dueDate: Date | null; date: Date }) => ymdOf(p.dueDate) ?? addDaysYmd(ymdOf(p.date)!, 14);
+
+/** Offene Eingangsrechnungen („Rechnungen zu bezahlen“) nach Fälligkeit, mit Summen für die Übersicht */
+export async function openPurchases() {
+  const today = todayYmd();
+  const week = addDaysYmd(today, 7);
+  const list = (await db.purchaseDoc.findMany({ where: { status: "OFFEN" }, select: { id: true, number: true, supplier: true, docNo: true, date: true, dueDate: true, grossCents: true, payMethod: true } }))
+    .map((p) => ({ ...p, due: purchaseDueYmd(p) }))
+    .sort((a, b) => a.due.localeCompare(b.due) || a.number.localeCompare(b.number));
+  const overdue = list.filter((p) => p.due < today);
+  const soon = list.filter((p) => p.due >= today && p.due <= week);
+  const sum = (l: typeof list) => l.reduce((s, p) => s + p.grossCents, 0);
+  return { list, overdue, soon, openCents: sum(list), overdueCents: sum(overdue), soonCents: sum(soon), today };
 }
