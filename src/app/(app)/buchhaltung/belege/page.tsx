@@ -25,8 +25,12 @@ export default async function BelegeListe({ searchParams }: { searchParams: Prom
       SELECT EXTRACT(YEAR FROM "date" AT TIME ZONE 'Europe/Berlin')::int AS y, COUNT(*)::int AS n
       FROM "SalesDoc" WHERE "kind"::text = ANY(${kinds}) ${herkunft === "alle" ? Prisma.empty : Prisma.sql`AND "imported" = ${herkunft === "lexware"}`}
       GROUP BY 1 ORDER BY 1 DESC`,
-    // Alte Rechnungen, die in der Datenübernahme liegen, aber noch nicht in die Buchhaltung übernommen wurden
-    db.erpRecord.count({ where: { kind: "rechnung", lexId: null, amount: { not: null } } }),
+    // Alte Rechnungen, die in der Datenübernahme liegen und noch nicht in der Buchhaltung stehen
+    // (gleiche Belegnummer schon da = doppelt hochgeladen, z. B. CSV und Betriebsprüfungs-ZIP → zählt nicht)
+    db.$queryRaw<{ n: number }[]>`
+      SELECT COUNT(*)::int AS n FROM "ErpRecord" r
+      WHERE r."kind" = 'rechnung' AND r."lexId" IS NULL AND r."amount" IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM "SalesDoc" d WHERE d."number" = r."number")`.then((r) => r[0]?.n ?? 0),
   ]);
 
   const qs = (o: Partial<Record<"art" | "status" | "herkunft" | "jahr", string>>) => {
@@ -34,7 +38,7 @@ export default async function BelegeListe({ searchParams }: { searchParams: Prom
     const s = new URLSearchParams({ art: v.art });
     if (v.status !== "alle" && !o.art) s.set("status", v.status);
     if (v.herkunft !== "alle") s.set("herkunft", v.herkunft);
-    if (v.jahr !== todayYmd().slice(0, 4)) s.set("jahr", v.jahr);
+    if (v.jahr !== "alle") s.set("jahr", v.jahr);
     if (q) s.set("q", q);
     return s.toString();
   };
@@ -56,7 +60,7 @@ export default async function BelegeListe({ searchParams }: { searchParams: Prom
         </h1>
         <nav className="flex flex-wrap gap-1" aria-label="Jahr">
           {years.slice(0, 8).map((y) => <Link key={y} href={href({ jahr: y })} className={chip(y === jahr, true)}>{y}{yearCount.get(y) ? <span className="ml-1 text-xs opacity-70">{yearCount.get(y)}</span> : null}</Link>)}
-          <Link href={href({ jahr: "alle" })} className={chip(jahr === "alle", true)}>Alle</Link>
+          <Link href={href({ jahr: "alle" })} className={chip(jahr === "alle", true)}>Alle Jahre</Link>
         </nav>
       </div>
 
