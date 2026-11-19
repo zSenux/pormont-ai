@@ -133,7 +133,8 @@ export async function saveDiary(input: DiaryInput, actor: { name: string }, opts
   const text = (k: "work" | "material" | "obstacles" | "visitors") => (i[k] === undefined ? undefined : join(old?.[k], i[k] || null));
   let weather: Partial<Weather> & { weatherSource?: string } = {};
   if (i.weather) weather = { weather: i.weather, weatherSource: "manuell", weatherCode: null, tempMin: null, tempMax: null, rainMm: null, windKmh: null };
-  else if (!old?.weather) weather = await fetchWeather(project.address, i.day).then((w) => ({ ...w, weatherSource: "open-meteo" })).catch(() => ({}));
+  // Nur Spalten von DiaryEntry übernehmen – `place` aus fetchWeather gibt es dort nicht (Prisma lehnt unbekannte Felder ab)
+  else if (!old?.weather) weather = await fetchWeather(project.address, i.day).then((w) => ({ weather: w.weather, weatherCode: w.weatherCode, tempMin: w.tempMin, tempMax: w.tempMax, rainMm: w.rainMm, windKmh: w.windKmh, weatherSource: "open-meteo" })).catch(() => ({}));
   const crew = i.crew ?? (old ? undefined : await crewSuggestion(project.id, i.day));
   const report = await mergeReport(project.id, i.day, old ? readReport(old.report) : null, i.report, opts.append);
   const data = { ...weather, ...(crew ? { crew } : {}), work: text("work"), material: text("material"), obstacles: text("obstacles"), visitors: text("visitors"), ...(report ? { report } : {}) };

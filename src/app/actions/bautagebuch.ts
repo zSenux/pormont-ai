@@ -67,7 +67,9 @@ export async function saveDiaryEntry(_prev: Result, form: FormData): Promise<Res
   } catch (e) {
     if (e instanceof DiaryError) return { error: e.message };
     if (e instanceof z.ZodError) return { error: "Bitte Tag und Projekt prüfen." };
-    throw e;
+    // Unerwarteter Fehler: Meldung im Formular statt „This page couldn't load“ – Eingaben bleiben stehen
+    console.error("[Bautagebuch] Speichern fehlgeschlagen", e);
+    return { error: "Speichern hat nicht geklappt – bitte noch einmal versuchen. Bleibt der Fehler, Klaic Media Bescheid geben." };
   }
 }
 
