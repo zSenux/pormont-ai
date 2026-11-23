@@ -7,6 +7,8 @@ export async function register() {
     g.__pmGuard = true;
     process.on("uncaughtException", (e) => console.error("[Jarvis] Unerwarteter Fehler (Server läuft weiter):", e));
     process.on("unhandledRejection", (e) => console.error("[Jarvis] Unbehandelter Fehler (Server läuft weiter):", e));
+    const { watchProcess } = await import("@/lib/process-watch");
+    watchProcess();
   }
   const { loadSettings } = await import("@/lib/settings");
   await loadSettings();

@@ -6,7 +6,23 @@ import { PrismaClient } from "@/generated/prisma/client";
 function createDb() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL ist nicht gesetzt.");
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  // Verbindungs-Pool mit Grenzen: ohne connectionTimeout warten Anfragen bei vollem Pool ewig –
+  // der Server wirkt dann „abgestürzt“, obwohl der Prozess noch läuft. Jetzt gibt es nach 15 s einen Fehler.
+  const adapter = new PrismaPg(
+    {
+      connectionString,
+      max: Number(process.env.DB_POOL_MAX) || 10,
+      connectionTimeoutMillis: 15_000,
+      idleTimeoutMillis: 30_000,
+      keepAlive: true,
+    },
+    {
+      // Abgebrochene Verbindungen (Datenbank-Neustart, Netz) nur melden – der Pool baut neu auf
+      onPoolError: (e) => console.warn("[db] Verbindung im Pool abgebrochen:", e.message),
+      onConnectionError: (e) => console.warn("[db] Verbindung abgebrochen:", e.message),
+    },
+  );
+  return new PrismaClient({ adapter });
 }
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };

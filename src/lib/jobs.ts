@@ -153,10 +153,29 @@ export function startJobs() {
   if (started) return;
   started = true;
   // Ohne Freischaltung durch Klaic Media laufen keine Jobs (keine Push-Nachrichten, keine Buchhaltungs-/Mail-Abfragen)
-  const safe = (name: string, fn: () => Promise<unknown>) => () =>
-    readLicense()
-      .then((s) => (s.ok ? fn() : undefined))
-      .catch((e) => console.error(`[job ${name}]`, e));
+  // Je Job nur ein Lauf gleichzeitig: hängt z. B. der Mailserver, stapeln sich sonst alle 2 Minuten neue
+  // Verbindungen und Speicher, bis der Server stehen bleibt. Nach 10 Minuten gibt der Wächter den Job wieder frei.
+  const running = new Set<string>();
+  const safe = (name: string, fn: () => Promise<unknown>) => () => {
+    if (running.has(name)) {
+      console.warn(`[job ${name}] läuft noch – Durchgang übersprungen`);
+      return;
+    }
+    running.add(name);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const limit = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        console.warn(`[job ${name}] nach 10 Minuten ohne Ende – wird freigegeben`);
+        resolve();
+      }, 10 * 60_000);
+    });
+    Promise.race([readLicense().then((s) => (s.ok ? fn() : undefined)), limit])
+      .catch((e) => console.error(`[job ${name}]`, e))
+      .finally(() => {
+        clearTimeout(timer);
+        running.delete(name);
+      });
+  };
   setInterval(safe("aufgaben", taskReminders), 60_000);
   setInterval(safe("termine", eventReminders), 60_000);
   setInterval(safe("briefing", morningBriefing), 60_000);
