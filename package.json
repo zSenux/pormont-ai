@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 3000",
     "build": "prisma generate && next build",
-    "start": "prisma db push && next start",
+    "start": "node scripts/start.mjs",
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "user:add": "tsx --conditions=react-server scripts/add-user.ts",
