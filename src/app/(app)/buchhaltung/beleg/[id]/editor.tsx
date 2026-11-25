@@ -71,7 +71,9 @@ function BlockPicker({ blocks, value, onPick, label }: { blocks: EditorTextBlock
   );
 }
 
-export function DocEditor({ doc, customers, projects, articles, defaultPaymentDays, downPayments = [], textBlocks = [] }: { doc: EditorDoc; customers: Customer[]; projects: { id: string; name: string }[]; articles: Article[]; defaultPaymentDays: number; downPayments?: DownPayment[]; textBlocks?: EditorTextBlock[] }) {
+export type NextNumber = { n: number; number: string; lexware: boolean };
+
+export function DocEditor({ doc, customers, projects, articles, defaultPaymentDays, downPayments = [], textBlocks = [], nextNumber }: { doc: EditorDoc; customers: Customer[]; projects: { id: string; name: string }[]; articles: Article[]; defaultPaymentDays: number; downPayments?: DownPayment[]; textBlocks?: EditorTextBlock[]; nextNumber?: NextNumber }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok?: string; error?: string } | null>(null);
@@ -128,14 +130,25 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
     };
   }
 
-  function run(kind: "save" | "final") {
+  // Rückfrage vor dem Speichern/Fertigstellen: Entwurf behalten oder mit fortlaufender Nummer fertigstellen
+  const [ask, setAsk] = useState<null | "save" | "final">(null);
+  const [wantNo, setWantNo] = useState(() => (nextNumber ? (nextNumber.lexware ? nextNumber.number : String(nextNumber.n)) : ""));
+  const docName = doc.kind === "ANGEBOT" ? "Angebot" : f.invoiceType === "ABSCHLAG" ? "Abschlagsrechnung" : f.invoiceType === "SCHLUSS" ? "Schlussrechnung" : "Rechnung";
+
+  function run(kind: "save" | "final", number?: number | null) {
     if (bad) return setMsg({ error: "Bitte Mengen und Preise als Zahl eintragen (z. B. 12,5)." });
-    if (kind === "final" && !window.confirm(`${doc.kind === "ANGEBOT" ? "Angebot" : f.invoiceType === "ABSCHLAG" ? "Abschlagsrechnung" : f.invoiceType === "SCHLUSS" ? "Schlussrechnung" : "Rechnung"} jetzt festschreiben?\n\nDanach bekommt der Beleg seine Nummer und kann nicht mehr geändert werden (GoBD). Korrektur nur noch per Storno.`)) return;
+    setAsk(null);
     start(async () => {
-      const r = kind === "final" ? await finalizeAction(doc.id, payload()) : await saveDraftAction(doc.id, payload());
-      setMsg(r ?? null);
+      const r = kind === "final" ? await finalizeAction(doc.id, payload(), number) : await saveDraftAction(doc.id, payload());
+      setMsg(kind === "save" && r?.ok ? { ok: `Als Entwurf gespeichert – noch ohne Nummer. Zum Verschicken auf „Fertigstellen“ klicken.` } : (r ?? null));
       if (r?.ok) router.refresh();
     });
+  }
+
+  function confirmFinal() {
+    const n = Number(wantNo.trim().replace(/\D/g, ""));
+    if (!Number.isInteger(n) || n < 1) return setMsg({ error: "Bitte eine gültige Nummer eingeben." });
+    run("final", n === (nextNumber?.n ?? n) ? null : n);
   }
 
   // ---------- Live-Vorschau: PDF mit Briefpapier und Fußzeile, aus den ungespeicherten Eingaben ----------
@@ -225,7 +238,7 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
             </select>
             <Link href={`/buchhaltung/kunden/neu?back=/buchhaltung/beleg/${doc.id}`} className="btn-secondary shrink-0" title="Neuen Kunden anlegen"><UserPlus className="size-4" /><span className="hidden sm:inline">Neu</span></Link>
           </div>
-          {customer && !customer.complete && <span className="mt-1 block text-xs text-warn">Beim Kunden fehlt die vollständige Anschrift – vor dem Festschreiben <Link className="underline" href={`/buchhaltung/kunden/${customer.id}`}>ergänzen</Link>.</span>}
+          {customer && !customer.complete && <span className="mt-1 block text-xs text-warn">Beim Kunden fehlt die vollständige Anschrift – vor dem Fertigstellen <Link className="underline" href={`/buchhaltung/kunden/${customer.id}`}>ergänzen</Link>.</span>}
         </label>
         <label className="block">
           <span className="label">Projekt / Bauvorhaben</span>
@@ -312,7 +325,7 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
               <span><strong>§ 13b UStG – netto</strong><span className="block text-xs text-steel">Bauleistung an Bauunternehmen: keine USt., der Kunde schuldet die Steuer</span></span>
             </label>
           </div>
-          {f.reverseCharge && customer && !customer.vatId && <p className="mt-1 text-sm text-warn">Dafür braucht der Kunde eine USt-IdNr.</p>}
+          {f.reverseCharge && customer && !customer.vatId && <p className="mt-1 text-sm text-steel">Tipp: USt-IdNr. des Kunden in den Kundendaten ergänzen – nötig nur für Kunden im Ausland und für XRechnungen an Behörden.</p>}
         </fieldset>
         <div className="block sm:col-span-2">
           <div className="flex items-end justify-between gap-2"><label htmlFor="beleg-intro" className="label">Einleitung</label><BlockPicker blocks={textBlocks} value={f.intro} onPick={(v) => set("intro", v)} label="Textbaustein in die Einleitung" /></div>
@@ -395,14 +408,32 @@ export function DocEditor({ doc, customers, projects, articles, defaultPaymentDa
       </section>
 
       <div className="sticky bottom-20 z-20 flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-white/95 p-3 shadow-lg backdrop-blur md:bottom-4">
-        <button type="button" onClick={() => run("save")} disabled={pending} className="btn-secondary">{pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Speichern</button>
+        <button type="button" onClick={() => (doc.kind === "RECHNUNG" && nextNumber ? setAsk("save") : run("save"))} disabled={pending} className="btn-secondary">{pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Speichern</button>
         <button type="button" onClick={() => (wide ? setSide((v) => !v) : setSheet(true))} className="btn-secondary">{wide && side ? <><EyeOff className="size-4" /> Vorschau aus</> : <><Eye className="size-4" /> Vorschau</>}</button>
-        {doc.kind !== "GUTSCHRIFT" && <button type="button" onClick={() => run("final")} disabled={pending} className="btn-primary"><Lock className="size-4" /> Festschreiben</button>}
+        {doc.kind !== "GUTSCHRIFT" && <button type="button" onClick={() => setAsk("final")} disabled={pending} className="btn-primary"><Lock className="size-4" /> Fertigstellen{nextNumber ? ` als Nr. ${nextNumber.number}` : ""}</button>}
         <button type="button" onClick={() => { if (window.confirm("Entwurf löschen?")) start(() => deleteDraftAction(doc.id)); }} disabled={pending} className="btn-danger ml-auto"><Trash2 className="size-4" /><span className="hidden sm:inline">Entwurf löschen</span></button>
         {msg?.error && <p className="w-full text-sm text-bad" role="alert">{msg.error}</p>}
         {msg?.ok && <p className="flex w-full items-center gap-1 text-sm text-ok"><Check className="size-4" /> {msg.ok}</p>}
       </div>
     </div>
+    {ask && (
+      <div className="fixed inset-0 z-[80] flex items-end justify-center bg-ink/60 p-3 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="fertig-titel" onClick={(e) => { if (e.target === e.currentTarget) setAsk(null); }}>
+        <div className="w-full max-w-md space-y-3 rounded-2xl border border-line bg-white p-5 shadow-xl">
+          <h2 id="fertig-titel" className="text-lg font-semibold">{ask === "save" ? `${docName} fertigstellen oder als Entwurf speichern?` : `${docName} fertigstellen?`}</h2>
+          <p className="text-sm text-steel">Beim Fertigstellen bekommt {doc.kind === "ANGEBOT" ? "das Angebot" : "die Rechnung"} die fortlaufende Nummer, das PDF wird erstellt und kann sofort verschickt werden. Danach ist keine Änderung mehr möglich (GoBD) – Korrektur nur per Storno.</p>
+          <label className="block">
+            <span className="label">Nummer</span>
+            <input value={wantNo} onChange={(e) => setWantNo(e.target.value)} inputMode="numeric" className="input text-lg font-semibold" aria-describedby="fertig-nr-hinweis" />
+            <span id="fertig-nr-hinweis" className="mt-1 block text-xs text-steel">Vorschlag: nächste freie Nummer {nextNumber?.number}{nextNumber && !nextNumber.lexware ? ` (hier nur die laufende Zahl eingeben, z. B. ${nextNumber.n})` : ""}. Eine andere freie Nummer ist möglich, danach wird von dort weitergezählt.</span>
+          </label>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button type="button" onClick={confirmFinal} disabled={pending} className="btn-primary"><Lock className="size-4" /> Fertigstellen mit Nr. {nextNumber?.lexware ? wantNo.trim() || "…" : wantNo.trim() ? `${nextNumber?.number.replace(/\d+$/, "")}${wantNo.trim().padStart(4, "0")}` : "…"}</button>
+            {ask === "save" && <button type="button" onClick={() => run("save")} disabled={pending} className="btn-secondary"><Save className="size-4" /> Nur als Entwurf speichern</button>}
+            <button type="button" onClick={() => setAsk(null)} className="btn-secondary ml-auto">Abbrechen</button>
+          </div>
+        </div>
+      </div>
+    )}
     {wide && side && <aside className="sticky top-20 min-w-0">{previewPanel(() => setSide(false), "max-h-[calc(100vh-8.5rem)]")}</aside>}
     {!wide && sheet && (
       <div className="fixed inset-0 z-[70] flex flex-col bg-ink/60 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))]" role="dialog" aria-modal="true" aria-label="PDF-Vorschau">
