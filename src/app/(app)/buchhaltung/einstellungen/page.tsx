@@ -50,15 +50,12 @@ export default async function BookSettings() {
         <h2 className="flex items-center gap-2 font-semibold"><Hash className="size-4 text-brand" /> Nummernkreise</h2>
         <NumberFormatForm format={cfg.numberFormat} />
         <p className="text-sm text-steel">
-          Nummern werden beim Festschreiben fortlaufend vergeben und nie doppelt.{" "}
-          {nums.mode === "next"
-            ? <>Nächste Nummer: Rechnung <strong className="text-ink">{nums.RECHNUNG}</strong>, Angebot <strong className="text-ink">{nums.ANGEBOT}</strong>, Gutschrift/Storno <strong className="text-ink">{nums.GUTSCHRIFT}</strong>. Lädst du später noch Belege aus Lexware hoch, zählt Jarvis automatisch hinter der höchsten Nummer weiter.</>
-            : <>Zuletzt vergeben {year}: Rechnungen {nums.RECHNUNG}, Angebote {nums.ANGEBOT}, Gutschriften {nums.GUTSCHRIFT}.</>}
+          Nummern werden beim Fertigstellen (Festschreiben) fortlaufend vergeben und nie doppelt. Nächste Nummer: Rechnung <strong className="text-ink">{nums.RECHNUNG}</strong>, Angebot <strong className="text-ink">{nums.ANGEBOT}</strong>, Gutschrift/Storno <strong className="text-ink">{nums.GUTSCHRIFT}</strong>.
         </p>
         <details>
-          <summary className="cursor-pointer text-sm font-medium text-brand">Mit einer höheren Nummer weitermachen</summary>
+          <summary className="cursor-pointer text-sm font-medium text-brand">Nächste Nummer ändern</summary>
           <div className="mt-2"><NumberForm year={year} lexware={lex} /></div>
-          <p className="mt-1 text-xs text-steel">Geht nur nach oben – bereits vergebene Nummern bleiben gesperrt.{lex ? " Zum Beispiel, wenn die Angebote in Lexware einen eigenen Nummernkreis hatten." : ""}</p>
+          <p className="mt-1 text-xs text-steel">Jede freie Nummer ist möglich, danach wird von dort aus weitergezählt. Schon vergebene Nummern werden nie ein zweites Mal benutzt. Die Nummer lässt sich auch direkt beim Fertigstellen einer Rechnung ändern.</p>
         </details>
       </section>
 

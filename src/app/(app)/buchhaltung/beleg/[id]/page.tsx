@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/user";
 import { formatDate, formatDateTime, todayYmd } from "@/lib/berlin";
 import { blocksFor, bookConfig, fillBlock, missingForInvoices } from "@/lib/buchhaltung/config";
-import { customerName, deductionIds, isOverdue, readDeductions, PAYMENT_METHODS, readParty, statusText, ymdOf, openCentsOf } from "@/lib/buchhaltung/docs";
+import { previewNumber, customerName, deductionIds, isOverdue, readDeductions, PAYMENT_METHODS, readParty, statusText, ymdOf, openCentsOf } from "@/lib/buchhaltung/docs";
 import { fmtEuroCents, fmtNum, fmtPrice, lineNetCents, readLines } from "@/lib/buchhaltung/money";
 import { defaultDocMail, defaultDunningMail } from "@/lib/buchhaltung/send";
 import { DUNNING_LABEL } from "@/lib/buchhaltung/pdf";
@@ -49,6 +49,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
       db.article.findMany({ where: { archived: false }, orderBy: { name: "asc" }, take: 1000 }),
     ]);
     const missing = d.kind !== "ANGEBOT" ? missingForInvoices(cfg) : [];
+    const next = await previewNumber(d.kind, Number(ymdOf(d.date)!.slice(0, 4)), cfg.numberFormat);
     // Textbausteine dieser Belegart, Platzhalter {angebot} schon gefüllt
     const srcQuote = d.sourceId ? await db.salesDoc.findUnique({ where: { id: d.sourceId }, select: { kind: true, number: true, date: true } }) : null;
     const quoteRef = srcQuote?.kind === "ANGEBOT" && srcQuote.number ? `${srcQuote.number} vom ${formatDate(srcQuote.date)}` : null;
@@ -61,11 +62,11 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
       <main data-wide className="space-y-4">
         <Link href={`/buchhaltung/belege?art=${back}`} className="flex items-center gap-1 text-sm text-steel hover:text-brand"><ArrowLeft className="size-4" /> {back === "angebote" ? "Angebote" : back === "gutschriften" ? "Gutschriften" : "Rechnungen"}</Link>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="page-title">{label} <span className="text-steel">(Entwurf)</span></h1>
+          <h1 className="page-title">{label} <span className="text-steel">(Entwurf – noch ohne Nummer)</span></h1>
           {related.map((r) => <Link key={r.id} href={`/buchhaltung/beleg/${r.id}`} className="chip border-brand/30 bg-brand-soft text-brand">aus {docLabel(r)} {r.number ?? "Entwurf"}</Link>)}
         </div>
         {missing.length > 0 && (
-          <p className="card flex items-start gap-2 border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mt-0.5 size-4 shrink-0" /> Vor dem Festschreiben fehlt noch: {missing.join(", ")}. {user.role === "ADMIN" ? <Link href="/buchhaltung/einstellungen" className="font-semibold underline">Jetzt eintragen</Link> : "Ein Administrator trägt das unter Buchhaltung → Einstellungen ein."}</p>
+          <p className="card flex items-start gap-2 border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mt-0.5 size-4 shrink-0" /> Vor dem Fertigstellen fehlt noch: {missing.join(", ")}. {user.role === "ADMIN" ? <Link href="/buchhaltung/einstellungen" className="font-semibold underline">Jetzt eintragen</Link> : "Ein Administrator trägt das unter Buchhaltung → Einstellungen ein."}</p>
         )}
         <DocEditor
           doc={{ id: d.id, kind: d.kind, customerId: d.customerId, projectId: d.projectId, title: d.title, intro: d.intro, outro: d.outro, date: ymdOf(d.date)!, serviceFrom: ymdOf(d.serviceFrom), serviceTo: ymdOf(d.serviceTo), dueDate: ymdOf(d.dueDate), paymentDays: d.paymentDays, reverseCharge: d.reverseCharge, lines: readLines(d.lines), invoiceType: d.invoiceType as "NORMAL" | "ABSCHLAG" | "SCHLUSS", deductionIds: deductionIds(d.deductions) }}
@@ -75,6 +76,7 @@ export default async function BelegPage({ params }: { params: Promise<{ id: stri
           articles={articles.map((a) => ({ id: a.id, name: a.name, number: a.number, unit: a.unit, priceNet: a.priceNet, taxRate: a.taxRate, description: a.description }))}
           defaultPaymentDays={d.customer?.paymentDays ?? cfg.paymentDays}
           textBlocks={textBlocks}
+          nextNumber={{ n: next.n, number: next.number, lexware: cfg.numberFormat === "lexware" }}
         />
         {configs.map((c) => <DocConfigPanel key={c.id} config={c} draft origin={origin} />)}
       </main>

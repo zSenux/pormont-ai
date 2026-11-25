@@ -326,44 +326,75 @@ async function lexFloor(tx: Tx | typeof db, kind: DocKind) {
   return Number(rows[0]?.m ?? 0);
 }
 
-async function nextNumber(tx: Tx, kind: DocKind, year: number, format: BookConfig["numberFormat"]) {
-  if (format === "lexware") {
-    // Ohne Vorgänger wie Lexware: Jahr + laufende Nummer (202601); Gutschriften/Stornos zählen einfach ab 1
+/** Merker: Nummernkreis wurde von Hand gesetzt (Einstellungen oder beim Fertigstellen) – dann zählt er einfach weiter,
+ *  ohne auf die höchste alte Nummer zu springen. Vergebene Nummern werden trotzdem nie doppelt benutzt. */
+const manualKey = (kind: DocKind) => `${lexKey(kind)}-MANUELL`;
+const seqKey = (kind: DocKind, year: number, format: BookConfig["numberFormat"]) => (format === "lexware" ? lexKey(kind) : `${kind}-${year}`);
+const formatNo = (kind: DocKind, year: number, n: number, format: BookConfig["numberFormat"]) => (format === "lexware" ? String(n) : `${PREFIX[kind]}-${year}-${String(n).padStart(4, "0")}`);
+
+/** Ist diese Nummer bei dieser Belegart schon vergeben (Buchhaltung oder Datenübernahme)? */
+async function numberTaken(tx: Tx | typeof db, kind: DocKind, number: string, exceptId?: string) {
+  const [a, b] = await Promise.all([
+    tx.salesDoc.count({ where: { kind, number, ...(exceptId ? { id: { not: exceptId } } : {}) } }),
+    tx.erpRecord.count({ where: { kind: ERP_KIND[kind], number } }),
+  ]);
+  return a + b > 0;
+}
+
+/** Sperre je Belegart innerhalb der Transaktion – zwei gleichzeitige Fertigstellungen bekommen nie dieselbe Nummer */
+async function lockNumbers(tx: Tx, kind: DocKind) {
+  await tx.$queryRaw`SELECT 1 AS ok FROM (SELECT pg_advisory_xact_lock(hashtext(${`nummer-${kind}`}))) AS l`;
+}
+
+/** Nächste Nummer ohne etwas zu verändern (für Anzeige und Rückfrage) */
+export async function previewNumber(kind: DocKind, year: number, format: BookConfig["numberFormat"], tx: Tx | typeof db = db) {
+  const [seq, manual] = await Promise.all([
+    tx.numberSeq.findUnique({ where: { key: seqKey(kind, year, format) } }),
+    format === "lexware" ? tx.numberSeq.findUnique({ where: { key: manualKey(kind) } }) : null,
+  ]);
+  let n = (seq?.value ?? 0) + 1;
+  if (format === "lexware" && !manual) {
     const floor = (await lexFloor(tx, kind)) || (kind === "GUTSCHRIFT" ? 0 : year * 100);
-    const rows = await tx.$queryRaw<{ value: number }[]>`
-      INSERT INTO "NumberSeq" ("key", "value") VALUES (${lexKey(kind)}, ${floor + 1})
-      ON CONFLICT ("key") DO UPDATE SET "value" = GREATEST("NumberSeq"."value" + 1, ${floor + 1}) RETURNING "value"`;
-    return String(rows[0]!.value);
+    n = Math.max(n, floor + 1);
   }
-  const n = await nextSequence(tx, `${kind}-${year}`);
-  return `${PREFIX[kind]}-${year}-${String(n).padStart(4, "0")}`;
+  for (let i = 0; i < 500 && (await numberTaken(tx, kind, formatNo(kind, year, n, format))); i++) n++;
+  return { n, number: formatNo(kind, year, n, format) };
 }
 
-/** Nummernkreise für die Einstellungen: zuletzt vergebene bzw. nächste Nummer je Art */
+async function nextNumber(tx: Tx, kind: DocKind, year: number, format: BookConfig["numberFormat"], wanted?: number | null) {
+  await lockNumbers(tx, kind);
+  const auto = await previewNumber(kind, year, format, tx);
+  let n = auto.n;
+  if (wanted && wanted !== auto.n) {
+    const number = formatNo(kind, year, wanted, format);
+    if (await numberTaken(tx, kind, number)) throw new BookError(`Die Nummer ${number} ist schon vergeben – bitte eine andere wählen (frei wäre ${auto.number}).`);
+    n = wanted;
+    if (format === "lexware") await tx.$executeRaw`INSERT INTO "NumberSeq" ("key", "value") VALUES (${manualKey(kind)}, 1) ON CONFLICT ("key") DO NOTHING`;
+  }
+  const key = seqKey(kind, year, format);
+  await tx.$executeRaw`INSERT INTO "NumberSeq" ("key", "value") VALUES (${key}, ${n}) ON CONFLICT ("key") DO UPDATE SET "value" = ${n}`;
+  return formatNo(kind, year, n, format);
+}
+
+/** Nummernkreise für die Einstellungen: nächste Nummer je Art */
 export async function numberState(year: number, format: BookConfig["numberFormat"]) {
-  const kinds = ["RECHNUNG", "ANGEBOT", "GUTSCHRIFT"] as const;
-  if (format === "lexware") {
-    const rows = await db.numberSeq.findMany({ where: { key: { in: kinds.map(lexKey) } } });
-    const next = async (k: DocKind) => {
-      const floor = (await lexFloor(db, k)) || (k === "GUTSCHRIFT" ? 0 : year * 100);
-      return String(Math.max((rows.find((r) => r.key === lexKey(k))?.value ?? 0) + 1, floor + 1));
-    };
-    const [RECHNUNG, ANGEBOT, GUTSCHRIFT] = await Promise.all(kinds.map(next));
-    return { mode: "next" as const, RECHNUNG, ANGEBOT, GUTSCHRIFT };
-  }
-  const rows = await db.numberSeq.findMany({ where: { key: { in: kinds.map((k) => `${k}-${year}`) } } });
-  const get = (k: DocKind) => { const v = rows.find((r) => r.key === `${k}-${year}`)?.value; return v ? `${PREFIX[k]}-${year}-${String(v).padStart(4, "0")}` : "–"; };
-  return { mode: "last" as const, RECHNUNG: get("RECHNUNG"), ANGEBOT: get("ANGEBOT"), GUTSCHRIFT: get("GUTSCHRIFT") };
+  const [RECHNUNG, ANGEBOT, GUTSCHRIFT] = await Promise.all((["RECHNUNG", "ANGEBOT", "GUTSCHRIFT"] as const).map(async (k) => (await previewNumber(k, year, format)).number));
+  return { mode: "next" as const, RECHNUNG, ANGEBOT, GUTSCHRIFT };
 }
 
-/** Nächste Nummer setzen (z. B. um an Lexware anzuschließen) – nur nach oben, nie zurück */
+/** Nächste Nummer setzen (z. B. um an Lexware oder an eine Papier-Rechnung anzuschließen). Auch nach unten möglich,
+ *  solange die Nummer noch frei ist – schon vergebene Nummern werden beim Fertigstellen übersprungen. */
 export async function setNextNumber(kind: DocKind, year: number, next: number, format: BookConfig["numberFormat"] = "jarvis") {
-  const key = format === "lexware" ? lexKey(kind) : `${kind}-${year}`;
-  const r = await db.$executeRaw`INSERT INTO "NumberSeq" ("key", "value") VALUES (${key}, ${next - 1}) ON CONFLICT ("key") DO UPDATE SET "value" = ${next - 1} WHERE "NumberSeq"."value" < ${next - 1}`;
-  if (!r) throw new BookError("Die Nummer darf nur erhöht werden – diese oder eine höhere Nummer ist schon vergeben.");
+  const number = formatNo(kind, year, next, format);
+  if (await numberTaken(db, kind, number)) throw new BookError(`Die Nummer ${number} ist schon vergeben.`);
+  await db.$transaction(async (tx) => {
+    await lockNumbers(tx, kind);
+    await tx.$executeRaw`INSERT INTO "NumberSeq" ("key", "value") VALUES (${seqKey(kind, year, format)}, ${next - 1}) ON CONFLICT ("key") DO UPDATE SET "value" = ${next - 1}`;
+    if (format === "lexware") await tx.$executeRaw`INSERT INTO "NumberSeq" ("key", "value") VALUES (${manualKey(kind)}, 1) ON CONFLICT ("key") DO NOTHING`;
+  });
 }
 
-async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
+async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig, wanted?: number | null) {
   const d = await tx.salesDoc.findUnique({ where: { id }, include: { customer: true, project: { select: { name: true } } } });
   if (!d) throw new BookError("Beleg nicht gefunden.");
   if (d.status !== "ENTWURF") throw new BookError("Dieser Beleg ist schon festgeschrieben.");
@@ -374,7 +405,9 @@ async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
   if (d.kind !== "ANGEBOT") {
     const missing = missingForInvoices(cfg);
     if (missing.length) throw new BookError(`Für Rechnungen fehlt noch: ${missing.join(", ")} – bitte unter Buchhaltung → Einstellungen eintragen.`);
-    if (d.reverseCharge && !d.customer.vatId) throw new BookError("Für § 13b (Steuerschuldnerschaft des Leistungsempfängers) braucht der Kunde eine USt-IdNr.");
+    // § 13b im Inland (Bauleistung): Pflicht ist nur der Hinweis auf der Rechnung (§ 14a Abs. 5 UStG), die USt-IdNr. des Kunden nicht.
+    // Nur für Kunden im Ausland ist sie Pflicht. Für eine XRechnung an Behörden prüft xrechnungGaps sie separat.
+    if (d.reverseCharge && !d.customer.vatId && (d.customer.country || "DE").toUpperCase() !== "DE") throw new BookError("Für die Steuerschuldnerschaft des Leistungsempfängers bei Kunden im Ausland braucht der Kunde eine USt-IdNr.");
     const t = computeTotals(lines, d.reverseCharge);
     if (t.grossCents <= 0) throw new BookError("Der Rechnungsbetrag muss größer als 0 sein.");
   }
@@ -402,7 +435,7 @@ async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
   const dateYmd = ymdOf(d.date)!;
   const days = d.paymentDays ?? d.customer.paymentDays ?? cfg.paymentDays;
   const dueDate = d.kind === "RECHNUNG" ? dayOf(addDaysYmd(dateYmd, days)) : d.kind === "ANGEBOT" ? (d.dueDate ?? dayOf(addDaysYmd(dateYmd, cfg.quoteDays))) : null;
-  const number = await nextNumber(tx, d.kind, Number(dateYmd.slice(0, 4)), cfg.numberFormat);
+  const number = await nextNumber(tx, d.kind, Number(dateYmd.slice(0, 4)), cfg.numberFormat, wanted);
   const address = partyOf(d.customer);
   const t = computeTotals(lines, d.reverseCharge);
 
@@ -439,9 +472,9 @@ async function finalizeInTx(tx: Tx, id: string, user: Actor, cfg: BookConfig) {
 }
 
 /** Entwurf festschreiben: Nummer vergeben, PDF (mit E-Rechnung) und XML archivieren. Danach unveränderlich. */
-export async function finalizeDoc(id: string, user: Actor) {
+export async function finalizeDoc(id: string, user: Actor, opts: { number?: number | null } = {}) {
   const cfg = await bookConfig();
-  return db.$transaction((tx) => finalizeInTx(tx, id, user, cfg), { timeout: 30_000 });
+  return db.$transaction((tx) => finalizeInTx(tx, id, user, cfg, opts.number), { timeout: 30_000 });
 }
 
 // ---------- Storno, Angebot → Rechnung, Kopie ----------

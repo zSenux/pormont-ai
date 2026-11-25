@@ -58,13 +58,14 @@ export async function saveDraftAction(id: string, input: DraftInput): Promise<Re
   }
 }
 
-export async function finalizeAction(id: string, input: DraftInput): Promise<Result> {
+export async function finalizeAction(id: string, input: DraftInput, number?: number | null): Promise<Result> {
   const user = await requireArea("buchhaltung");
   try {
+    const wanted = number == null ? null : z.number().int().min(1, "Bitte eine gültige Nummer eingeben.").max(999_999_999, "Die Nummer ist zu lang.").parse(number);
     await updateDraft(cuid.parse(id), draftInput.parse(input), user);
-    const r = await finalizeDoc(id, user);
+    const r = await finalizeDoc(id, user, { number: wanted });
     refresh(id);
-    return { ok: `Festgeschrieben: ${r.number}` };
+    return { ok: `Fertiggestellt mit Nr. ${r.number} – jetzt kannst du sie verschicken.` };
   } catch (e) {
     return fail(e);
   }
