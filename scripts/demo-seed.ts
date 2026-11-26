@@ -31,7 +31,7 @@ const day = (offset: number) => {
 // Team (Passwort für alle Demo-Konten: demo-passwort)
 const pw = await hashPassword("demo-passwort");
 const people = [
-  ["dirk.linke@demo.promont", "Dirk Linke", "ADMIN", "GF"],
+  ["markus.heller@demo.promont", "Markus Heller", "ADMIN", "GF"],
   ["josip.cabraja@demo.promont", "Josip Cabraja", "ADMIN", "PROJEKTLEITUNG"],
   ["sven.mueller@demo.promont", "Sven Müller", "MEMBER", "FERTIGUNG"],
   ["anna.weber@demo.promont", "Anna Weber", "MEMBER", "VERTRIEB"],
@@ -47,11 +47,11 @@ for (const [email, name, role, funktion] of people) {
 type Demo = { name: string; customer: string; address: string; description: string; leader: string; team: [string, string][]; done: number; running?: boolean; start: number; end: number; budget: number; milestones: [string, number, boolean][]; tasks: [string, string, number, string][] };
 const projects: Demo[] = [
   { name: "Stahltreppe mit Podest MFH Käfertal", customer: "Wohnbau Rhein-Neckar GmbH", address: "Mannheimer Str. 112, 68309 Mannheim", description: "Gerade Stahltreppe 16 Stufen, Wangen U-Profil 200, Gitterroststufen, Podest 1,2 × 2,4 m, feuerverzinkt", leader: "Josip Cabraja", team: [["Sven Müller", "Werkstatt"], ["Mehmet Yılmaz", "Montage"]], done: 6, running: true, start: -30, end: 18, budget: 28400, milestones: [["Freigabe Werkplanung", -12, true], ["Rückkehr Verzinkerei", 6, false], ["Montage fertig", 15, false]], tasks: [["Schweißnähte Podest prüfen", "Sven Müller", -1, "HOCH"], ["Verzinkung Termin bestätigen", "Anna Weber", 2, "NORMAL"]] },
-  { name: "Edelstahl-Geländer Balkone Neckarstadt", customer: "Hausverwaltung Krämer", address: "Lange Rötterstr. 41, 68167 Mannheim", description: "12 Balkongeländer V2A geschliffen K320, Glasfüllung VSG 2×8 mm, Handlauf Ø 42,4", leader: "Dirk Linke", team: [["Tobias Kern", "Werkstatt"], ["Mehmet Yılmaz", "Montage"]], done: 4, running: true, start: -14, end: 35, budget: 41750, milestones: [["Aufmaß abgeschlossen", -5, true], ["Glas bestellt", 3, false]], tasks: [["Glasmaße an Lieferanten", "Anna Weber", -2, "DRINGEND"], ["Konstruktionszeichnung Pfosten", "Josip Cabraja", 4, "HOCH"]] },
+  { name: "Edelstahl-Geländer Balkone Neckarstadt", customer: "Hausverwaltung Krämer", address: "Lange Rötterstr. 41, 68167 Mannheim", description: "12 Balkongeländer V2A geschliffen K320, Glasfüllung VSG 2×8 mm, Handlauf Ø 42,4", leader: "Markus Heller", team: [["Tobias Kern", "Werkstatt"], ["Mehmet Yılmaz", "Montage"]], done: 4, running: true, start: -14, end: 35, budget: 41750, milestones: [["Aufmaß abgeschlossen", -5, true], ["Glas bestellt", 3, false]], tasks: [["Glasmaße an Lieferanten", "Anna Weber", -2, "DRINGEND"], ["Konstruktionszeichnung Pfosten", "Josip Cabraja", 4, "HOCH"]] },
   { name: "Hallenvordach Logistikzentrum Ladenburg", customer: "Neckar Logistik AG", address: "Benzstr. 7, 68526 Ladenburg", description: "Vordach 18 × 4 m, HEA 200 / IPE 160, Trapezblech, Entwässerung, Statik durch Büro Hartmann", leader: "Josip Cabraja", team: [["Sven Müller", "Werkstatt"], ["Tobias Kern", "Werkstatt"], ["Mehmet Yılmaz", "Montage"]], done: 2, running: true, start: -7, end: 60, budget: 86200, milestones: [["Statik freigegeben", 5, false], ["Stahl bestellt", 12, false]], tasks: [["Statik bei Hartmann nachfragen", "Josip Cabraja", -3, "HOCH"]] },
-  { name: "Schiebetor mit Antrieb Weinheim", customer: "Familie Schneider", address: "Bergstr. 88, 69469 Weinheim", description: "Freitragendes Schiebetor 5,5 m, Füllung Flachstahl senkrecht, Antrieb Sommer, RAL 7016", leader: "Dirk Linke", team: [["Tobias Kern", "Werkstatt"]], done: 1, running: true, start: -3, end: 40, budget: 9800, milestones: [], tasks: [["Angebot nachfassen", "Anna Weber", 1, "NORMAL"]] },
+  { name: "Schiebetor mit Antrieb Weinheim", customer: "Familie Schneider", address: "Bergstr. 88, 69469 Weinheim", description: "Freitragendes Schiebetor 5,5 m, Füllung Flachstahl senkrecht, Antrieb Sommer, RAL 7016", leader: "Markus Heller", team: [["Tobias Kern", "Werkstatt"]], done: 1, running: true, start: -3, end: 40, budget: 9800, milestones: [], tasks: [["Angebot nachfassen", "Anna Weber", 1, "NORMAL"]] },
   { name: "Brandschutztüren T30 Schule Feudenheim", customer: "Stadt Mannheim – Fachbereich Bau", address: "Neckarstr. 1, 68259 Mannheim", description: "6 Stahltüren T30-1 inkl. Zarge, Panikschloss, Montage in den Ferien", leader: "Josip Cabraja", team: [["Mehmet Yılmaz", "Montage"]], done: 8, running: true, start: -45, end: 5, budget: 15600, milestones: [["Montage in den Herbstferien", -2, true], ["Abnahme mit Bauamt", 4, false]], tasks: [["Abnahmeprotokoll vorbereiten", "Josip Cabraja", 3, "HOCH"]] },
-  { name: "Anfrage: Carport Stahl Viernheim", customer: "Herr Bauer", address: "Rathausstr. 12, 68519 Viernheim", description: "Doppelcarport Stahl, Flachdach, feuerverzinkt + pulverbeschichtet", leader: "Dirk Linke", team: [], done: 0, running: true, start: 0, end: 50, budget: 0, milestones: [], tasks: [["Aufmaß-Termin vereinbaren", "Anna Weber", 2, "NORMAL"]] },
+  { name: "Anfrage: Carport Stahl Viernheim", customer: "Herr Bauer", address: "Rathausstr. 12, 68519 Viernheim", description: "Doppelcarport Stahl, Flachdach, feuerverzinkt + pulverbeschichtet", leader: "Markus Heller", team: [], done: 0, running: true, start: 0, end: 50, budget: 0, milestones: [], tasks: [["Aufmaß-Termin vereinbaren", "Anna Weber", 2, "NORMAL"]] },
 ];
 
 for (const d of projects) {
@@ -249,13 +249,13 @@ for (const [part, title, kind, notes, release] of drawDemo) {
   const last = versions.length;
   // Geländer: Index A freigegeben, Index B in Prüfung
   const rel = release ? last : last > 1 ? last - 1 : null;
-  await db.drawing.create({ data: { number: `ZG-DEMO-${String(zgNo++).padStart(3, "0")}`, projectId, title, kind, status: release ? "FREIGEGEBEN" : "PRUEFUNG", currentVersion: last, releasedVersion: rel, releasedAt: rel ? day(-5) : null, releasedBy: rel ? "Dirk Linke" : null, createdBy: "Josip Cabraja", versions: { create: versions } } });
+  await db.drawing.create({ data: { number: `ZG-DEMO-${String(zgNo++).padStart(3, "0")}`, projectId, title, kind, status: release ? "FREIGEGEBEN" : "PRUEFUNG", currentVersion: last, releasedVersion: rel, releasedAt: rel ? day(-5) : null, releasedBy: rel ? "Markus Heller" : null, createdBy: "Josip Cabraja", versions: { create: versions } } });
 }
 
 // Urlaub & Krank: Montag nächster Woche als Bezug
 const t0 = todayYmd();
 const nextMon = addDaysYmd(t0, 7 - ((new Date(`${t0}T00:00:00Z`).getUTCDay() + 6) % 7));
-const gf = { id: users["Dirk Linke"], name: "Dirk Linke", role: "ADMIN" };
+const gf = { id: users["Markus Heller"], name: "Markus Heller", role: "ADMIN" };
 await requestAbsence({ userId: users["Mehmet Yılmaz"], kind: "URLAUB", from: nextMon, to: addDaysYmd(nextMon, 4), note: "Familienbesuch" }, gf);
 await requestAbsence({ userId: users["Tobias Kern"], kind: "KRANK", from: addDaysYmd(t0, -2), to: addDaysYmd(t0, 2), certificate: true }, gf);
 await requestAbsence({ userId: users["Anna Weber"], kind: "URLAUB", from: addDaysYmd(nextMon, 14), to: addDaysYmd(nextMon, 18), note: "Vertretung: Josip" }, { id: users["Anna Weber"], name: "Anna Weber", role: "MEMBER" });
@@ -391,7 +391,7 @@ for (const [name, trade, contactName, city, docs, contracts] of nuDemo) {
 
 // ---------- Personalakte ----------
 const prof: [string, string, number, string, string | null][] = [
-  ["Dirk Linke", "Metallbaumeister, Betriebsleiter", -4200, "UNBEFRISTET", null],
+  ["Markus Heller", "Metallbaumeister, Betriebsleiter", -4200, "UNBEFRISTET", null],
   ["Josip Cabraja", "Projektleiter Stahlbau", -2900, "UNBEFRISTET", null],
   ["Sven Müller", "Metallbauer (Schweißer)", -1500, "UNBEFRISTET", null],
   ["Anna Weber", "Kauffrau Büromanagement", -800, "UNBEFRISTET", null],
@@ -415,7 +415,7 @@ const empDocs: [string, string, string, number | null, number | null][] = [
   ["Josip Cabraja", "FUEHRERSCHEIN", "Klasse B", 4000, 60],
   ["Josip Cabraja", "UNTERWEISUNG", "Jahresunterweisung Arbeitsschutz", 200, null],
   ["Anna Weber", "ERSTE_HILFE", "Ersthelfer-Ausbildung (DGUV)", 28, null],
-  ["Dirk Linke", "QUALIFIKATION", "Schweißaufsicht (IWT)", null, null],
+  ["Markus Heller", "QUALIFIKATION", "Schweißaufsicht (IWT)", null, null],
 ];
 for (const [name, kind, title, until, check] of empDocs) await db.employeeDoc.create({ data: { userId: users[name], kind, title, validUntil: until === null ? null : day(until), nextCheck: check === null ? null : day(check), issuedAt: day(-700), createdBy: "Demo" } });
 
@@ -436,7 +436,7 @@ for (const [part, off, ls, status] of invDemo) {
   const inv = await db.salesDoc.create({ data: { kind: "RECHNUNG", status, number: `DEMO-RE-${docNo++}`, customerId: c.customerId, projectId: c.id, title: "Rechnung", date: day(off), dueDate: day(off + 14), lines: ls, ...tot(ls), paidCents: status === "BEZAHLT" ? tot(ls).grossCents : 0, finalizedAt: day(off), sentAt: day(off) } });
   // Neckar Logistik (Vordach): Zahlungserinnerung schon gesendet, Frist abgelaufen → 1. Mahnung fällig
   if (part === "Hallenvordach") {
-    await db.dunning.create({ data: { docId: inv.id, level: 1, day: day(-12), openCents: inv.grossCents, dueDate: day(-5), pdf: new Uint8Array(dunPdf), sentAt: day(-12), sentTo: "kunde@example.com", userName: "Dirk Linke" } });
+    await db.dunning.create({ data: { docId: inv.id, level: 1, day: day(-12), openCents: inv.grossCents, dueDate: day(-5), pdf: new Uint8Array(dunPdf), sentAt: day(-12), sentTo: "kunde@example.com", userName: "Markus Heller" } });
     await db.salesDoc.update({ where: { id: inv.id }, data: { dunningLevel: 1, dunnedAt: day(-12) } });
   }
   // Familie Schneider: Zahlung zugesagt → zurückgestellt
@@ -476,7 +476,7 @@ const spesenDemo: [string, number, string, string, Record<string, unknown>][] = 
 ];
 for (const [name, off, kind, description, extra] of spesenDemo) {
   const status = off <= -3 ? "GENEHMIGT" : "EINGEREICHT";
-  await db.expense.create({ data: { userId: users[name], day: day(off), kind, description, status, ...(status === "GENEHMIGT" ? { reviewedBy: "Dirk Linke", reviewedAt: new Date() } : {}), ...(extra as { amountCents: number }) } });
+  await db.expense.create({ data: { userId: users[name], day: day(off), kind, description, status, ...(status === "GENEHMIGT" ? { reviewedBy: "Markus Heller", reviewedAt: new Date() } : {}), ...(extra as { amountCents: number }) } });
 }
 
 // KI-Kosten: 3 Monate Verbrauch (nur wenn noch nichts erfasst ist). Preise wie in src/lib/costs.ts (USD je 1 Mio. Tokens)
@@ -486,7 +486,7 @@ if ((await db.apiUsage.count()) === 0) {
   const PRICE: Record<string, [number, number, number]> = { "claude-opus-5-5": [4, 20, 0.2], "claude-sonnet-5-5": [2, 10, 0.1] };
   // [Funktion, Modell, Nutzer (null = Hintergrund), Aufrufe je Werktag (Ø), Eingabe, Cache-Anteil, Ausgabe]
   const kinds: [string, string, string | null, number, number, number, number][] = [
-    ["Jarvis Chat", "claude-opus-5-5", "Dirk Linke", 9, 22000, 0.8, 900],
+    ["Jarvis Chat", "claude-opus-5-5", "Markus Heller", 9, 22000, 0.8, 900],
     ["Jarvis Chat", "claude-opus-5-5", "Josip Cabraja", 7, 24000, 0.8, 1100],
     ["Jarvis Chat", "claude-opus-5-5", "Anna Weber", 5, 20000, 0.75, 800],
     ["Jarvis Sprache", "claude-opus-5-5", "Sven Müller", 3, 18000, 0.8, 250],
