@@ -16,7 +16,7 @@ export const COMPANY = {
   website: "https://promont.gmbh",
   /** Schreibweise auf Belegen */
   web: "www.promont.gmbh",
-  managers: ["Dirk Linke (Metallbaumeister, Betriebsleiter)", "Josip Cabraja"],
+  managers: ["Josip Cabraja"],
   register: "Amtsgericht Mannheim, HRB 742630",
   vatId: "DE350131180",
   /** Standard-Bankverbindung (Briefpapier). Gilt, solange unter Buchhaltung → Einstellungen keine eigene IBAN steht. */
