@@ -86,9 +86,17 @@ export async function setLicense(input: z.infer<typeof licenseInput>) {
   return readLicense();
 }
 
+/** Gesperrt oder abgelaufen: App wird grau und ist nicht bedienbar (nur „noch nicht freigeschaltet“ zeigt bloß den Hinweis oben) */
+export const lockedHard = (s: LicenseState) => s.status === "gesperrt" || s.status === "abgelaufen";
+
+/** Text auf der grauen Sperr-Ansicht (darunter steht immer „Bitte bei Klaic Media melden.“) */
+export function lockScreenText(s: LicenseState) {
+  return s.hinweis || (s.status === "abgelaufen" ? "Die Freischaltung von Jarvis ist abgelaufen." : "Jarvis kann im Moment nicht benutzt werden. Anmelden geht weiter, alles andere ist gesperrt.");
+}
+
 /** Text für Banner, APIs und Telefon */
 export function lockReason(s: LicenseState) {
-  if (s.status === "gesperrt") return `Jarvis ist gesperrt. ${s.hinweis || "Bitte offene Rechnungen bei Klaic Media begleichen, dann wird Jarvis wieder freigeschaltet."}`;
+  if (s.status === "gesperrt") return `Jarvis ist gesperrt. ${s.hinweis || "Bitte bei Klaic Media melden, dann wird Jarvis wieder freigeschaltet."}`;
   if (s.status === "abgelaufen") return `Die Freischaltung von Jarvis ist abgelaufen. ${s.hinweis || "Bitte bei Klaic Media verlängern."}`;
   return `Jarvis ist noch nicht freigeschaltet. Du kannst dich schon umsehen – benutzen kannst du Jarvis, sobald Klaic Media freigeschaltet hat.${s.hinweis ? ` ${s.hinweis}` : ""}`;
 }

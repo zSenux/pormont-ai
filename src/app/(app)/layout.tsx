@@ -4,8 +4,9 @@ import { areasOf, FUNKTION_LABEL, type Funktion } from "@/lib/rights-shared";
 import { MobileHeader, MobileNav, TopNav } from "@/components/nav";
 import { logout } from "@/app/actions";
 import { InstallHint } from "@/components/pwa";
-import { license, lockReason } from "@/lib/license";
+import { license, lockedHard, lockReason, lockScreenText } from "@/lib/license";
 import { LicenseBanner } from "@/components/license-banner";
+import { LicenseLock } from "@/components/license-lock";
 import { addDaysYmd, formatDate, todayYmd } from "@/lib/berlin";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -13,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Befristete Freischaltung: Administratoren 14 Tage vorher erinnern
   const lic = await license();
   const soon = lic.ok && user.role === "ADMIN" && lic.bis && lic.bis <= addDaysYmd(todayYmd(), 14);
-  return (
+  const app = (
     <div className="min-h-dvh pb-20 md:pb-0">
       <TopNav
         name={user.name}
@@ -23,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         logout={logout}
       />
       <MobileHeader />
-      {!lic.ok && (
+      {!lic.ok && !lockedHard(lic) && (
         <Suspense>
           <LicenseBanner tone={lic.status === "offen" ? "info" : "bad"} text={lockReason(lic)} kontakt={process.env.KLAIC_KONTAKT ?? null} />
         </Suspense>
@@ -38,4 +39,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <MobileNav areas={areasOf(user)} />
     </div>
   );
+  // Von Klaic Media gesperrt: alles grau und nicht bedienbar, nur Abmelden geht
+  if (lockedHard(lic)) {
+    return (
+      <LicenseLock text={lockScreenText(lic)} kontakt={process.env.KLAIC_KONTAKT ?? null} logout={logout}>
+        {app}
+      </LicenseLock>
+    );
+  }
+  return app;
 }
